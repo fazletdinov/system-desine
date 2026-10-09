@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatBytes, formatMs, formatNs, formatNumber, formatSeconds } from './format'
 
-const NBSP = ' '
+const NBSP = ' '
 
 describe('formatNumber', () => {
   it.each<[number, number | undefined, string]>([
