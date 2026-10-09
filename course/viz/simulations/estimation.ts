@@ -31,18 +31,30 @@ export const PRESETS: Record<PresetId, EstimationInput> = {
   messenger: { dau: 100_000_000, messagesPerUser: 40, messageBytes: 200, peakFactor: 3, retentionDays: 1825, replicationFactor: 3 },
 }
 
-function nonNegative(value: number): number {
-  return Number.isFinite(value) && value > 0 ? value : 0
+// Потолки для значений, введённых руками: без них 1e308 в поле превращает
+// произведения в Infinity. Пределы заведомо шире любой реальной системы
+// (10 млрд DAU — больше населения Земли), но держат все шаги конечными.
+export const INPUT_LIMITS: Readonly<Record<keyof EstimationInput, number>> = {
+  dau: 1e10,
+  messagesPerUser: 1e4,
+  messageBytes: 1e7,
+  peakFactor: 100,
+  retentionDays: 36_500,
+  replicationFactor: 10,
+}
+
+function clamp(value: number, max: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.min(value, max) : 0
 }
 
 export function sanitizeInput(raw: EstimationInput): EstimationInput {
   return {
-    dau: nonNegative(raw.dau),
-    messagesPerUser: nonNegative(raw.messagesPerUser),
-    messageBytes: nonNegative(raw.messageBytes),
-    peakFactor: Math.max(nonNegative(raw.peakFactor), 1),
-    retentionDays: nonNegative(raw.retentionDays),
-    replicationFactor: Math.max(nonNegative(raw.replicationFactor), 1),
+    dau: clamp(raw.dau, INPUT_LIMITS.dau),
+    messagesPerUser: clamp(raw.messagesPerUser, INPUT_LIMITS.messagesPerUser),
+    messageBytes: clamp(raw.messageBytes, INPUT_LIMITS.messageBytes),
+    peakFactor: Math.max(clamp(raw.peakFactor, INPUT_LIMITS.peakFactor), 1),
+    retentionDays: clamp(raw.retentionDays, INPUT_LIMITS.retentionDays),
+    replicationFactor: Math.max(clamp(raw.replicationFactor, INPUT_LIMITS.replicationFactor), 1),
   }
 }
 

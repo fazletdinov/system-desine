@@ -72,7 +72,8 @@ function reset(): void {
 .steps li { display: flex; gap: 12px; margin-bottom: 14px; }
 .no { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--vp-c-brand-soft); color: var(--vp-c-brand-1); font-weight: 600; }
 .steps p { margin: 0; }
-.label strong { white-space: nowrap; }
+/* inline-block переносит короткое значение целиком («28 МБ/с» не рвётся после «/»), а слишком длинное — разрывает. */
+.label strong { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
 .formula { color: var(--vp-c-text-2); font-size: 13px; }
 .expr { font-family: var(--vp-font-family-mono); font-size: 13px; overflow-wrap: anywhere; }
 </style>

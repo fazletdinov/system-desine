@@ -25,11 +25,35 @@ describe('estimate: пресет мессенджера', () => {
   })
 })
 
+describe('estimate: пресет по умолчанию (числа урока 0.5)', () => {
+  it.each([
+    ['messages-per-day', 2e7],
+    ['avg-rps', 231.481],
+    ['peak-rps', 462.963],
+    ['storage-per-day', 4e9],
+    ['storage-total', 4.38e12],
+    ['peak-ingress', 92_592.593],
+  ])('%s ≈ %s', (id, expected) => {
+    expect(valueOf(PRESETS.default, id)).toBeCloseTo(expected, 2)
+  })
+})
+
 describe('sanitizeInput', () => {
   it('отрицательные, NaN и бесконечность → 0; коэффициенты пика и репликации не меньше 1', () => {
     expect(
       sanitizeInput({ dau: -5, messagesPerUser: Number.NaN, messageBytes: Number.POSITIVE_INFINITY, peakFactor: 0.5, retentionDays: -1, replicationFactor: 0 }),
     ).toEqual({ dau: 0, messagesPerUser: 0, messageBytes: 0, peakFactor: 1, retentionDays: 0, replicationFactor: 1 })
+  })
+
+  it('огромные введённые значения ограничены и дают конечные результаты', () => {
+    const steps = estimate({ ...PRESETS.messenger, messagesPerUser: 1e308 })
+    for (const step of steps) {
+      expect(Number.isFinite(step.value)).toBe(true)
+      expect(formatStepValue(step)).not.toMatch(/NaN|Infinity/)
+    }
+    const huge = sanitizeInput({ dau: 1e308, messagesPerUser: 1e308, messageBytes: 1e308, peakFactor: 1e308, retentionDays: 1e308, replicationFactor: 1e308 })
+    expect(Object.values(huge).every((v) => Number.isFinite(v) && v <= 1e10)).toBe(true)
+    for (const step of estimate(huge)) expect(Number.isFinite(step.value)).toBe(true)
   })
 
   it('нулевая аудитория даёт нули, а не NaN', () => {
@@ -54,8 +78,8 @@ describe('слайдер DAU (логарифмический)', () => {
     expect(sliderToDau(7.5)).toBe(32_000_000)
   })
 
-  it('dauToSlider зажимает ноль и отрицательные к минимуму', () => {
-    expect(dauToSlider(0)).toBe(3)
+  it.each([0, -5])('dauToSlider зажимает %s к минимуму', (dau) => {
+    expect(dauToSlider(dau)).toBe(3)
   })
 })
 
