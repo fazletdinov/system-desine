@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 import { loadGlossaryFile } from '../glossary/load'
 import { buildSidebar } from './sidebar'
 import { termsCheckPlugin } from './terms-check'
@@ -8,12 +9,14 @@ const MODULES_DIR = fileURLToPath(new URL('../modules', import.meta.url))
 const GLOSSARY_FILE = fileURLToPath(new URL('../glossary/terms.yaml', import.meta.url))
 const KNOWN_TERMS: ReadonlySet<string> = new Set(Object.keys(loadGlossaryFile(GLOSSARY_FILE)))
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   lang: 'ru-RU',
   title: 'System Design на практике',
   description: 'Курс по проектированию высоконагруженных систем на Go: пошаговые визуализации и сквозной проект-мессенджер',
   cleanUrls: true,
   srcExclude: ['**/README.md'],
+  // mermaid тянет CommonJS-зависимости (fastdom и др.); без пребандлинга dev-сервер падает на импорте.
+  vite: { optimizeDeps: { include: ['mermaid'] } },
   markdown: {
     config: (md) => termsCheckPlugin(md, KNOWN_TERMS),
   },
@@ -48,4 +51,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
