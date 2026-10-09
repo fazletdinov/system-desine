@@ -1,4 +1,8 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitepress'
+import { buildSidebar } from './sidebar'
+
+const MODULES_DIR = fileURLToPath(new URL('../modules', import.meta.url))
 
 export default defineConfig({
   lang: 'ru-RU',
@@ -7,7 +11,8 @@ export default defineConfig({
   cleanUrls: true,
   srcExclude: ['**/README.md'],
   themeConfig: {
-    nav: [{ text: 'Курс', link: '/' }],
+    nav: [{ text: 'Курс', link: '/modules/00-foundation/' }],
+    sidebar: buildSidebar(MODULES_DIR),
     outline: { level: [2, 3], label: 'На этой странице' },
     docFooter: { prev: 'Предыдущий урок', next: 'Следующий урок' },
     darkModeSwitchLabel: 'Тема',
