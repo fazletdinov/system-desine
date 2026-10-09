@@ -14,6 +14,7 @@ export default withMermaid(defineConfig({
   title: 'System Design на практике',
   description: 'Курс по проектированию высоконагруженных систем на Go: пошаговые визуализации и сквозной проект-мессенджер',
   cleanUrls: true,
+  head: [['link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }]],
   srcExclude: ['**/README.md'],
   // mermaid тянет CommonJS-зависимости (fastdom и др.); без пребандлинга dev-сервер падает на импорте.
   vite: { optimizeDeps: { include: ['mermaid'] } },

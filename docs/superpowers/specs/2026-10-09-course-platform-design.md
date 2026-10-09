@@ -131,7 +131,7 @@ system-desine/
 │   │   ├── config.ts            # локализация, сайдбар, поиск, mermaid
 │   │   └── theme/               # расширение стандартной темы, глобальные компоненты
 │   ├── viz/                     # движок визуализаций; README.md — палитра и легенда
-│   │   ├── core/                # типы Step/Simulation, логика плеера (без Vue)
+│   │   ├── core/                # тип Step, логика плеера (без Vue)
 │   │   ├── components/          # Player, CodePanel
 │   │   ├── renderers/           # SVG-рендереры по типам картинок
 │   │   └── simulations/         # чистые функции, генерирующие шаги
