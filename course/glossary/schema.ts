@@ -17,6 +17,8 @@ export type Glossary = Record<string, Term>
 export class GlossaryError extends Error {}
 
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/
+// long вставляется через v-html: компоненты Vue внутри него не работают.
+const T_TAG = /<T[\s>]/
 
 type Dict = Record<string, unknown>
 
@@ -62,7 +64,12 @@ function parseTerm(id: string, raw: unknown): Term {
   const en = optionalString(id, raw, 'en')
   const long = optionalString(id, raw, 'long')
   if (en !== undefined) term.en = en
-  if (long !== undefined) term.long = long
+  if (long !== undefined) {
+    if (T_TAG.test(long)) {
+      throw new GlossaryError(`glossary: в long у "${id}" нельзя использовать <T>; используйте ссылку [текст](#id)`)
+    }
+    term.long = long
+  }
   return term
 }
 

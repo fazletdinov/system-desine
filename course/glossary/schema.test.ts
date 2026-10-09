@@ -1,4 +1,6 @@
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { loadGlossaryFile } from './load'
 import { GlossaryError, parseGlossary, sortTerms } from './schema'
 
 const valid = {
@@ -26,6 +28,7 @@ describe('parseGlossary', () => {
     ['пустой short', { wal: { term: 'x', short: '  ' } }],
     ['en не строка', { wal: { term: 'x', short: 'y', en: 5 } }],
     ['links не массив', { wal: { term: 'x', short: 'y', links: 'a' } }],
+    ['<T> внутри long', { wal: { term: 'x', short: 'y', long: 'см. <T id="rps">RPS</T>' } }],
     ['ссылка без title', { wal: { term: 'x', short: 'y', links: [{ url: 'https://a' }] } }],
   ])('отклоняет: %s', (_name, raw) => {
     expect(() => parseGlossary(raw)).toThrow(GlossaryError)
@@ -40,5 +43,12 @@ describe('sortTerms', () => {
       c: { term: 'Аудит', short: '.' },
     })
     expect(sortTerms(Object.values(g)).map((t) => t.id)).toEqual(['c', 'b', 'a'])
+  })
+})
+
+describe('terms.yaml', () => {
+  it('реальный глоссарий проходит валидацию', () => {
+    const path = fileURLToPath(new URL('./terms.yaml', import.meta.url))
+    expect(Object.keys(loadGlossaryFile(path)).length).toBeGreaterThan(0)
   })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { withBase } from 'vitepress'
 import { data as glossary } from '../glossary/terms.data'
 
@@ -7,15 +7,55 @@ const props = defineProps<{ id: string }>()
 const term = computed(() => glossary[props.id])
 const href = computed(() => withBase(`/glossary#${props.id}`))
 const tipId = useId()
+
+const root = ref<HTMLElement | null>(null)
+// open — подсказка раскрыта нажатием (тач); dismissed — закрыта Esc, пока курсор/фокус не уйдут.
+const open = ref(false)
+const dismissed = ref(false)
+
+function onLinkClick(event: MouseEvent): void {
+  if (!term.value || open.value) return
+  // На устройствах без hover первое нажатие показывает определение, второе открывает глоссарий.
+  if (window.matchMedia('(hover: none)').matches) {
+    event.preventDefault()
+    open.value = true
+    dismissed.value = false
+  }
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !(open.value || !dismissed.value)) return
+  open.value = false
+  dismissed.value = true
+}
+
+function resetDismissed(): void {
+  dismissed.value = false
+}
+
+function closeOnOutsideTap(event: Event): void {
+  if (open.value && root.value && !root.value.contains(event.target as Node)) open.value = false
+}
+
+onMounted(() => document.addEventListener('click', closeOnOutsideTap))
+onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideTap))
 </script>
 
 <template>
-  <span class="term">
-    <a class="term-link" :href="href" :aria-describedby="term ? tipId : undefined"><slot /></a>
+  <span
+    ref="root"
+    class="term"
+    :class="{ open, dismissed }"
+    @keydown="onKeydown"
+    @mouseleave="resetDismissed"
+    @focusout="resetDismissed"
+  >
+    <a class="term-link" :href="href" :aria-describedby="term ? tipId : undefined" @click="onLinkClick"><slot /></a>
     <span v-if="term" :id="tipId" role="tooltip" class="term-tip">
       <strong>{{ term.term }}</strong>
       <span v-if="term.en" class="term-en"> ({{ term.en }})</span>
       <span class="term-short">{{ term.short }}</span>
+      <a class="term-more" :href="href">Подробнее в глоссарии →</a>
     </span>
   </span>
 </template>
@@ -49,8 +89,10 @@ const tipId = useId()
 }
 .term-en { color: var(--vp-c-text-2); }
 .term-short { display: block; margin-top: 4px; }
-.term:hover .term-tip,
-.term:focus-within .term-tip { display: block; }
+.term-more { display: block; margin-top: 6px; font-size: 13px; }
+.term:not(.dismissed):hover .term-tip,
+.term:not(.dismissed):focus-within .term-tip,
+.term.open .term-tip { display: block; }
 
 /* На узком экране подсказка прижимается к низу окна — иначе уходит за край. */
 @media (max-width: 640px) {
