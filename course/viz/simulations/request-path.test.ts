@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { LATENCY_MS, NODES, TOTAL_MS, requestPathScenario } from './request-path'
+import { CODE_LINE, LATENCY_MS, NODES, TOTAL_MS, requestPathScenario } from './request-path'
 
 const steps = requestPathScenario()
 const nodeIds = new Set(NODES.map((n) => n.id))
@@ -47,5 +48,20 @@ describe('requestPathScenario', () => {
 
   it('итоговое время упомянуто в последнем пояснении', () => {
     expect(steps.at(-1)!.caption).toContain('144')
+  })
+})
+
+describe('CODE_LINE и Go-код урока 0.3', () => {
+  const lesson = readFileSync(new URL('../../modules/00-foundation/03-request-path.md', import.meta.url), 'utf8')
+  const goBlock = /```go\n([\s\S]*?)\n```/.exec(lesson)?.[1] ?? ''
+  const lines = goBlock.split('\n')
+
+  it.each([
+    ['entry', CODE_LINE.entry, 'func'],
+    ['auth', CODE_LINE.auth, 'auth.UserID'],
+    ['execute', CODE_LINE.execute, 'h.send.Execute'],
+    ['respond', CODE_LINE.respond, 'WriteHeader'],
+  ])('строка %s (№ %i) содержит %s', (_name, line, needle) => {
+    expect(lines[line - 1]).toContain(needle)
   })
 })
