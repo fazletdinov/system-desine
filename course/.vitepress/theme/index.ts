@@ -4,6 +4,7 @@ import T from '../../components/T.vue'
 import GlossaryList from '../../components/GlossaryList.vue'
 import Callout from '../../components/Callout.vue'
 import SelfCheck from '../../components/SelfCheck.vue'
+import '../../viz/palette.css'
 
 export default {
   extends: DefaultTheme,
