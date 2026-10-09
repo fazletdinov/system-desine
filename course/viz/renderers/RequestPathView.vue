@@ -157,5 +157,6 @@ onBeforeUnmount(() => {
 .label { fill: var(--viz-text); text-anchor: middle; dominant-baseline: central; }
 .packet.request { fill: var(--viz-request); }
 .packet.response { fill: var(--viz-response); }
+@media (prefers-reduced-motion: reduce) { .node { transition: none; } }
 .clock { fill: var(--viz-text); font-size: 26px; font-weight: 600; text-anchor: end; font-variant-numeric: tabular-nums; }
 </style>

@@ -37,7 +37,7 @@ describe('buildSidebar', () => {
       {
         text: 'Модуль 0',
         link: '/modules/00-foundation/',
-        collapsed: false,
+        collapsed: true,
         items: [
           { text: 'Урок A', link: '/modules/00-foundation/01-a' },
           { text: 'Урок B', link: '/modules/00-foundation/02-b' },
@@ -46,10 +46,26 @@ describe('buildSidebar', () => {
       {
         text: '01-go',
         link: '/modules/01-go/',
-        collapsed: false,
+        collapsed: true,
         items: [{ text: '01-x.md', link: '/modules/01-go/01-x' }],
       },
     ])
+  })
+
+  it('сортирует модули по order из index.md, а не по имени папки', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sidebar-order-'))
+    for (const [dir, order] of [['02a-b', 2.1], ['02.5-x', 2.5], ['02-a', 2]] as const) {
+      mkdirSync(join(root, dir))
+      writeFileSync(join(root, dir, 'index.md'), `---\ntitle: ${dir}\norder: ${order}\n---\n`)
+    }
+    expect(buildSidebar(root).map((m) => m.text)).toEqual(['02-a', '02a-b', '02.5-x'])
+  })
+
+  it('игнорирует папки, имя которых не начинается с двух цифр', () => {
+    const root = makeTree()
+    mkdirSync(join(root, 'drafts'))
+    writeFileSync(join(root, 'drafts', '01-x.md'), '# черновик\n')
+    expect(buildSidebar(root).map((m) => m.link)).toEqual(['/modules/00-foundation/', '/modules/01-go/'])
   })
 
   it('возвращает пустой список, если папки нет', () => {

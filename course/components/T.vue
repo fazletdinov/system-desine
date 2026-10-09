@@ -52,10 +52,12 @@ onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideTap))
   >
     <a class="term-link" :href="href" :aria-describedby="term ? tipId : undefined" @click="onLinkClick"><slot /></a>
     <span v-if="term" :id="tipId" role="tooltip" class="term-tip">
-      <strong>{{ term.term }}</strong>
-      <span v-if="term.en" class="term-en"> ({{ term.en }})</span>
-      <span class="term-short">{{ term.short }}</span>
-      <a class="term-more" :href="href">Подробнее в глоссарии →</a>
+      <span class="term-box">
+        <strong>{{ term.term }}</strong>
+        <span v-if="term.en" class="term-en"> ({{ term.en }})</span>
+        <span class="term-short">{{ term.short }}</span>
+        <a class="term-more" :href="href" tabindex="-1">Подробнее в глоссарии →</a>
+      </span>
     </span>
   </span>
 </template>
@@ -74,18 +76,23 @@ onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideTap))
   position: absolute;
   z-index: 20;
   left: 0;
-  top: calc(100% + 6px);
+  top: 100%;
   width: max-content;
   max-width: min(340px, 80vw);
+  /* Прозрачный отступ сверху вместо зазора: курсор доходит до подсказки, не покидая .term. */
+  padding-top: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+.term-box {
+  display: block;
   padding: 10px 12px;
   border: 1px solid var(--vp-c-divider);
   border-radius: 8px;
   background: var(--vp-c-bg-elv);
   box-shadow: var(--vp-shadow-3);
   color: var(--vp-c-text-1);
-  font-size: 14px;
-  line-height: 1.5;
-  font-weight: 400;
 }
 .term-en { color: var(--vp-c-text-2); }
 .term-short { display: block; margin-top: 4px; }
@@ -96,6 +103,6 @@ onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideTap))
 
 /* На узком экране подсказка прижимается к низу окна — иначе уходит за край. */
 @media (max-width: 640px) {
-  .term-tip { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-width: none; }
+  .term-tip { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-width: none; padding-top: 0; }
 }
 </style>

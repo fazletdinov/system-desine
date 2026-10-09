@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findTermIds, findUnknownTerms } from './terms-check'
+import { findMalformedTerms, findTermIds, findUnknownTerms } from './terms-check'
 
 describe('findTermIds', () => {
   it('находит id во всех вхождениях <T>', () => {
@@ -20,5 +20,20 @@ describe('findUnknownTerms', () => {
 
   it('пусто, если все известны', () => {
     expect(findUnknownTerms('<T id="wal">a</T>', new Set(['wal']))).toEqual([])
+  })
+})
+
+describe('findMalformedTerms', () => {
+  it.each([
+    ["одинарные кавычки", "<T id='wal'>a</T>"],
+    ['динамический :id', '<T :id="x">a</T>'],
+    ['без id', '<T>a</T>'],
+    ['id другим атрибутом позже', '<T class="a" :id="x">a</T>'],
+  ])('находит тег: %s', (_name, src) => {
+    expect(findMalformedTerms(src)).toHaveLength(1)
+  })
+
+  it('не трогает корректные теги и другие компоненты', () => {
+    expect(findMalformedTerms('<T id="wal">a</T> <T  id="rps" /> <Table id="x"/>')).toEqual([])
   })
 })

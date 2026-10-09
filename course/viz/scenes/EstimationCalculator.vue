@@ -45,7 +45,7 @@ function reset(): void {
       </label>
       <button type="button" class="reset" @click="reset">Вернуть исходные значения</button>
     </div>
-    <ol class="steps" aria-live="polite">
+    <ol class="steps">
       <li v-for="(s, i) in steps" :key="s.id">
         <span class="no">{{ i + 1 }}</span>
         <div>

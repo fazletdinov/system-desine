@@ -201,7 +201,7 @@ db.SetMaxOpenConns(80)
 <Callout type="source">
 
 - Colin Scott. [Latency Numbers Every Programmer Should Know](https://colin-scott.github.io/personal_website/research/interactive_latency.html) — интерактивная таблица, экстраполяция трендов на 2020 год. Все числа визуализации — отсюда.
-- J. Dean. *Designs, Lessons and Advice from Building Large Distributed Systems* (LADIS 2009) — слайд «Numbers Everyone Should Know», с которого началась эта таблица.
+- J. Dean. *Designs, Lessons and Advice from Building Large Distributed Systems* (LADIS 2009) — слайд «Numbers Everyone Should Know» — одна из классических версий таблицы (вместе с таблицей П. Норвига, 2001).
 - Клеппман М. *Высоконагруженные приложения* (Designing Data-Intensive Applications). Гл. 1 — задержка и время отклика, пропускная способность, перцентили.
 - Grigorik I. *High Performance Browser Networking* (бесплатно: [hpbn.co](https://hpbn.co)). Гл. 1 — задержка и ширина канала, скорость света в оптоволокне как нижняя граница.
 - J. D. C. Little. *A Proof for the Queuing Formula: L = λW*. Operations Research, 1961, т. 9, № 3 — доказательство закона Литтла.

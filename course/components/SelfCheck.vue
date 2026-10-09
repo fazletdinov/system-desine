@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-defineProps<{ question: string }>()
+withDefaults(defineProps<{ question: string; label?: string; button?: string }>(), {
+  label: 'Вопрос.',
+  button: 'Сначала ответьте сами, затем откройте ответ',
+})
 const open = ref(false)
 </script>
 
 <template>
   <div class="self-check">
-    <p class="question"><strong>Вопрос.</strong> {{ question }}</p>
+    <p class="question"><strong>{{ label }}</strong> {{ question }}</p>
     <button type="button" class="toggle" :aria-expanded="open" @click="open = !open">
-      {{ open ? 'Скрыть ответ' : 'Сначала ответьте сами, затем откройте ответ' }}
+      {{ open ? 'Скрыть ответ' : button }}
     </button>
     <div v-show="open" class="answer"><slot /></div>
   </div>
