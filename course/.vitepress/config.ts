@@ -1,8 +1,12 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitepress'
+import { loadGlossaryFile } from '../glossary/load'
 import { buildSidebar } from './sidebar'
+import { termsCheckPlugin } from './terms-check'
 
 const MODULES_DIR = fileURLToPath(new URL('../modules', import.meta.url))
+const GLOSSARY_FILE = fileURLToPath(new URL('../glossary/terms.yaml', import.meta.url))
+const KNOWN_TERMS: ReadonlySet<string> = new Set(Object.keys(loadGlossaryFile(GLOSSARY_FILE)))
 
 export default defineConfig({
   lang: 'ru-RU',
@@ -10,9 +14,18 @@ export default defineConfig({
   description: 'Курс по проектированию высоконагруженных систем на Go: пошаговые визуализации и сквозной проект-мессенджер',
   cleanUrls: true,
   srcExclude: ['**/README.md'],
+  markdown: {
+    config: (md) => termsCheckPlugin(md, KNOWN_TERMS),
+  },
   themeConfig: {
-    nav: [{ text: 'Курс', link: '/modules/00-foundation/' }],
-    sidebar: buildSidebar(MODULES_DIR),
+    nav: [
+      { text: 'Курс', link: '/modules/00-foundation/' },
+      { text: 'Глоссарий', link: '/glossary' },
+    ],
+    sidebar: [
+      ...buildSidebar(MODULES_DIR),
+      { text: 'Справочник', items: [{ text: 'Глоссарий', link: '/glossary' }] },
+    ],
     outline: { level: [2, 3], label: 'На этой странице' },
     docFooter: { prev: 'Предыдущий урок', next: 'Следующий урок' },
     darkModeSwitchLabel: 'Тема',
