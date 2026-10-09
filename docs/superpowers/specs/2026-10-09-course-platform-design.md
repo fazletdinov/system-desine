@@ -35,6 +35,7 @@
 | 0 | Фундамент: требования, оценки на салфетке, задержки, SLA/SLO | Требования и расчёт нагрузки |
 | 1 | Сервис на Go: Clean Architecture, DDD-lite, ошибки, контекст, тесты | Монолит v0: пользователи, чаты, сообщения, REST, JWT |
 | 2 | PostgreSQL изнутри: страницы, heap, TOAST, WAL, MVCC, VACUUM, индексы, планировщик, EXPLAIN, блокировки, изоляция, аномалии, пул соединений | Схема БД, индексы, keyset-пагинация |
+| 2.5 | Балансировка нагрузки и Nginx с нуля: горизонтальное масштабирование, stateless-сервисы, L4 vs L7, алгоритмы (round robin, least connections, ip_hash/consistent hash), health checks, reverse proxy, TLS-терминация, `limit_req`, кэширование ответов, проксирование WebSocket | Два экземпляра монолита за Nginx в docker-compose |
 | 3 | Real-time: WebSocket, long polling, heartbeats, presence | WebSocket-шлюз, статусы «в сети» и «печатает» |
 | 4 | Redis с нуля + кэширование: стратегии, инвалидация, stampede, горячие ключи | Кэш профилей и последних сообщений |
 | 5 | Устойчивость: rate limiting, таймауты, ретраи с jitter, circuit breaker, идемпотентность, backpressure | Rate limiter на Redis + Lua, идемпотентная отправка |
@@ -46,7 +47,7 @@
 | 10 | Согласованность и консенсус: CAP/PACELC, линеаризуемость, часы, Raft, распределённые блокировки, выбор лидера | Порядок сообщений, leader election через Lease |
 | 11 | Медиа, поиск, уведомления: объектное хранилище, presigned URL, CDN, полнотекстовый поиск, push fan-out | MinIO, поиск, уведомления |
 | 12 | Наблюдаемость: логи, метрики, трейсы, OpenTelemetry, Prometheus, Grafana, SLO | Сквозной трейс «отправка → доставка» |
-| 13a | Kubernetes с нуля: Pod, Deployment, Service, Ingress, ConfigMap, Secret, probes, requests/limits, kind | Мессенджер в kind |
+| 13a | Kubernetes с нуля: Pod, Deployment, Service, Ingress и Gateway API (связь с Nginx из модуля 2.5), ConfigMap, Secret, probes, requests/limits, kind | Мессенджер в kind |
 | 13b | Kubernetes, продвинутое: StatefulSet, PV, HPA, rolling/canary, graceful shutdown, Helm | Автомасштабирование и выкатка |
 | 14 | Нагрузка: k6, pprof, capacity planning | Поиск и устранение узких мест |
 | 15 | Практика интервью: классические задачи | — |
