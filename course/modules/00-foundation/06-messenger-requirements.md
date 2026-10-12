@@ -171,7 +171,7 @@ import EstimationCalculator from '../../viz/scenes/EstimationCalculator.vue'
 
 </Callout>
 
-## <Part kind="selfcheck" /> Мини-интервью модуля 0
+## <Part kind="practice" /> Мини-интервью модуля 0
 
 В конце каждого модуля — задача в формате system design интервью. Засеките 45 минут, возьмите бумагу и не подглядывайте в разбор, пока не закончите.
 

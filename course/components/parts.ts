@@ -9,6 +9,7 @@ export const PARTS = {
   selfcheck: 'Самопроверка',
   sources: 'Источники',
   deep: 'Под капотом',
+  practice: 'Практика',
 } as const
 
 export type PartKind = keyof typeof PARTS
