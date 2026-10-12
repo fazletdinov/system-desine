@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, useId, watch } from 'vue'
 import { useData } from 'vitepress'
+import VizFrame from '../viz/components/VizFrame.vue'
 import { mermaidThemeVariables, withPaletteClasses } from '../viz/core/mermaid-palette'
 
 const props = defineProps<{ code: string }>()
@@ -35,10 +36,12 @@ watch([isDark, () => props.code], render)
 </script>
 
 <template>
-  <div class="mermaid-diagram">
-    <div ref="host" class="mermaid-host" role="img" aria-label="Схема" />
-    <pre v-if="error" class="mermaid-error">Ошибка схемы: {{ error }}</pre>
-  </div>
+  <VizFrame label="Схема">
+    <div class="mermaid-diagram">
+      <div ref="host" class="mermaid-host" role="img" aria-label="Схема" />
+      <pre v-if="error" class="mermaid-error">Ошибка схемы: {{ error }}</pre>
+    </div>
+  </VizFrame>
 </template>
 
 <style scoped>

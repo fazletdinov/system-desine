@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import VizFrame from '../components/VizFrame.vue'
 import { computed, ref } from 'vue'
 import { LATENCIES, LATENCY_SOURCE, barWidth, compare, humanSeconds, type LatencyKind } from '../simulations/latency'
 import { formatNs, formatSeconds } from '../core/format'
@@ -20,36 +21,38 @@ const value = (ns: number): string => (mode.value === 'real' ? formatNs(ns) : fo
 </script>
 
 <template>
-  <section class="latency" aria-label="Шкала задержек">
-    <div class="toolbar">
-      <div class="modes" role="group" aria-label="Масштаб">
-        <button type="button" :aria-pressed="mode === 'real'" :class="{ on: mode === 'real' }" @click="mode = 'real'">Реальное время</button>
-        <button type="button" :aria-pressed="mode === 'human'" :class="{ on: mode === 'human' }" @click="mode = 'human'">Человеческий масштаб: 1 нс = 1 с</button>
+  <VizFrame label="Шкала задержек">
+    <section class="latency" aria-label="Шкала задержек">
+      <div class="toolbar">
+        <div class="modes" role="group" aria-label="Масштаб">
+          <button type="button" :aria-pressed="mode === 'real'" :class="{ on: mode === 'real' }" @click="mode = 'real'">Реальное время</button>
+          <button type="button" :aria-pressed="mode === 'human'" :class="{ on: mode === 'human' }" @click="mode = 'human'">Человеческий масштаб: 1 нс = 1 с</button>
+        </div>
+        <label class="baseline">
+          Сравнивать с:
+          <select v-model="baselineId">
+            <option v-for="l in LATENCIES" :key="l.id" :value="l.id">{{ l.label }}</option>
+          </select>
+        </label>
       </div>
-      <label class="baseline">
-        Сравнивать с:
-        <select v-model="baselineId">
-          <option v-for="l in LATENCIES" :key="l.id" :value="l.id">{{ l.label }}</option>
-        </select>
-      </label>
-    </div>
-    <ol class="rows">
-      <li v-for="l in LATENCIES" :key="l.id" :class="{ base: l.id === baselineId }">
-        <div class="row-head">
-          <span class="label">{{ l.label }}</span>
-          <strong class="value">{{ value(l.ns) }}</strong>
-        </div>
-        <div class="track" aria-hidden="true">
-          <div class="bar" :style="{ width: `${barWidth(l.ns) * 100}%`, background: KIND_COLOR[l.kind] }" />
-        </div>
-        <span class="meta">{{ KIND_LABEL[l.kind] }} · {{ compare(l, baseline) }}</span>
-      </li>
-    </ol>
-    <p class="note">
-      Длина полос — в логарифмической шкале: каждые ~12% ширины означают ×10. Значения — порядки величин, источник:
-      <a :href="LATENCY_SOURCE.url" target="_blank" rel="noopener">{{ LATENCY_SOURCE.title }}</a>.
-    </p>
-  </section>
+      <ol class="rows">
+        <li v-for="l in LATENCIES" :key="l.id" :class="{ base: l.id === baselineId }">
+          <div class="row-head">
+            <span class="label">{{ l.label }}</span>
+            <strong class="value">{{ value(l.ns) }}</strong>
+          </div>
+          <div class="track" aria-hidden="true">
+            <div class="bar" :style="{ width: `${barWidth(l.ns) * 100}%`, background: KIND_COLOR[l.kind] }" />
+          </div>
+          <span class="meta">{{ KIND_LABEL[l.kind] }} · {{ compare(l, baseline) }}</span>
+        </li>
+      </ol>
+      <p class="note">
+        Длина полос — в логарифмической шкале: каждые ~12% ширины означают ×10. Значения — порядки величин, источник:
+        <a :href="LATENCY_SOURCE.url" target="_blank" rel="noopener">{{ LATENCY_SOURCE.title }}</a>.
+      </p>
+    </section>
+  </VizFrame>
 </template>
 
 <style scoped>
