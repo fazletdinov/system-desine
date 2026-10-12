@@ -116,6 +116,8 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 	return runClient(ctx, cfg, os.Stdout)
 }
 
+// #region server
+
 // server хранит активные соединения, чтобы при остановке разбудить простаивающие обработчики.
 type server struct {
 	idle time.Duration
@@ -182,8 +184,6 @@ func (s *server) forceClose() {
 		_ = c.Close() // обработчик сам закроет соединение и залогирует причину
 	}
 }
-
-// #region server
 
 // serve принимает соединения до отмены ctx, потом ждёт активные не дольше shutdown
 // и закрывает оставшиеся. Владелец каждой горутины-обработчика — wg.
@@ -270,8 +270,6 @@ func handle(conn net.Conn, arm func(net.Conn) error, idle time.Duration) (lines 
 	}
 }
 
-// #endregion server
-
 func (s *server) closeReason(err error) string {
 	switch {
 	case errors.Is(err, io.EOF):
@@ -286,6 +284,8 @@ func (s *server) closeReason(err error) string {
 		return err.Error()
 	}
 }
+
+// #endregion server
 
 func runClient(ctx context.Context, cfg config, out io.Writer) error {
 	d := net.Dialer{Timeout: cfg.dial}

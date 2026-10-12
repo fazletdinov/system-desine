@@ -281,12 +281,19 @@ func TestServeForcesCloseAfterShutdownTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	conn.Write([]byte("stuck\n"))
-	<-ln.entered
+	if _, err := conn.Write([]byte("stuck\n")); err != nil {
+		t.Fatal(err)
+	}
+	<-ln.entered // обработчик застрял на записи эха, обмен не завершится сам
 	cancel()
-	// Write застрял на gate и не реагирует на Close; отпускаем его после таймаута остановки.
-	time.Sleep(300 * time.Millisecond)
-	close(ln.gate)
+
+	// Ворота закрыты: EOF клиент может увидеть только если сервер принудительно закрыл сокет.
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("клиент должен увидеть EOF от принудительного закрытия, получил %v", err)
+	}
+
+	close(ln.gate) // освобождаем зависшую запись, чтобы serve мог вернуться
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

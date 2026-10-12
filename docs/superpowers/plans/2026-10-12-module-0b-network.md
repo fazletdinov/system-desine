@@ -1719,7 +1719,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `course/modules/00b-network/index.md` (раскомментировать ссылку на 0b.1), `labs/0b/README.md`
 
 **Interfaces:**
-- Consumes: сцены `Encapsulation`, `TcpSandbox`; программы `echo`; окружение `labs/0b`.
+- Consumes: сцены `Encapsulation`, `TcpSandbox`; программы `tcpecho`; окружение `labs/0b`.
 
 - [ ] **Step 1: Урок 0b.1 `01-layers.md`**
 
@@ -1771,7 +1771,8 @@ Frontmatter: `title: 0b.2. TCP изнутри`.
   - окно 2 и потерять 1 — повтор по таймеру; почему;
   - потерять ACK — ничего не случилось; почему.
 - **Лабораторная:**
-  - `echo` под `netem.sh 40ms 0%`, затем `5%`;
+  - `tcpecho` под `netem.sh 40ms 0%`, затем `5%`;
+  - демонстрация Нейгла: `-writes 2 -nodelay=false` против `-writes 2 -nodelay=true` (p50 ≈ 120 мс против ≈ 40 мс при RTT 40 мс);
   - `ss -ti dst 172.28.0.10` — rtt, cwnd, retrans;
   - `tcpdump` повторов;
   - код сервера и клиента регионами `#server` и `#client`.

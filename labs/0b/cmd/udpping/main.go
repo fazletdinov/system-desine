@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -181,7 +182,8 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 	var (
 		wg      sync.WaitGroup
 		replies []udpstat.Reply // пишет только получатель; читаем после wg.Wait
-		rep     report          // Malformed/Refused пишет только получатель
+		rep     report          // Malformed пишет только получатель
+		refused atomic.Int64    // ICMP-отказ может прийти и на Write, и на Read
 		sent    int
 		sendErr error
 		recvErr error
@@ -208,7 +210,9 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 		}()
 		for i := range cfg.n {
 			pkt := encode(uint32(i), time.Since(base))
-			if _, err := conn.Write(pkt[:]); err != nil {
+			if _, err := conn.Write(pkt[:]); errors.Is(err, syscall.ECONNREFUSED) {
+				refused.Add(1) // сервер не слушает; продолжаем, итог покажут потери
+			} else if err != nil {
 				sendErr = fmt.Errorf("send seq %d: %w", i, err)
 				return
 			}
@@ -234,7 +238,7 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 			case errors.Is(err, os.ErrDeadlineExceeded):
 				return // штатное завершение
 			case errors.Is(err, syscall.ECONNREFUSED):
-				rep.Refused++ // сервер не слушает: ICMP вернулся, ждём дальше
+				refused.Add(1) // сервер не слушает: ICMP вернулся, ждём дальше
 				continue
 			case err != nil:
 				recvErr = fmt.Errorf("recv: %w", err)
@@ -251,6 +255,7 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 
 	wg.Wait()
 	rep.Result = udpstat.Analyze(sent, replies)
+	rep.Refused = int(refused.Load())
 
 	// #endregion client
 
