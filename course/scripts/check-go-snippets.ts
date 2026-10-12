@@ -9,6 +9,13 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const MODULES = join(ROOT, 'modules')
 const HARNESS = join(ROOT, 'scripts', 'go-harness')
 
+try {
+  execFileSync('go', ['version'], { stdio: 'ignore' })
+} catch {
+  console.error('Go не найден в PATH: установите Go, чтобы проверять фрагменты.')
+  process.exit(1)
+}
+
 const files = readdirSync(MODULES, { recursive: true, encoding: 'utf8' })
   .filter((f) => f.endsWith('.md'))
   .map((f) => join(MODULES, f))
@@ -35,7 +42,7 @@ for (const path of files) {
     try {
       writeFileSync(join(dir, 'go.mod'), 'module snippet\n\ngo 1.26\n')
       writeFileSync(join(dir, 'main.go'), buildGoFile(snippet, template))
-      const unformatted = execFileSync('gofmt', ['-l', 'main.go'], { cwd: dir, encoding: 'utf8' }).trim()
+      const unformatted = execFileSync('gofmt', ['-l', 'main.go'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
       if (unformatted !== '') failures.push(`${rel}:${snippet.line}: gofmt требует форматирования`)
       execFileSync('go', ['vet', './...'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
     } catch (e) {

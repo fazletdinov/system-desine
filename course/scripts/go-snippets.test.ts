@@ -56,3 +56,27 @@ describe('buildGoFile', () => {
     expect(() => buildGoFile(snip('x', 'x'), 'package snippet\n')).toThrow(/a\.md:1.*SNIPPET/)
   })
 })
+
+describe('варианты ограждения', () => {
+  it('```go{2} с маркером извлекается', () => {
+    const m = '<!-- go-check -->\n```go{2}\nx := 1\n```'
+    expect(extractGoSnippets(m, 'a.md')).toEqual([{ file: 'a.md', line: 2, harness: null, code: 'x := 1' }])
+  })
+
+  it('```go:line-numbers без маркера попадает в отчёт', () => {
+    expect(findUnmarkedGoBlocks('```go:line-numbers\nx := 1\n```')).toEqual([1])
+  })
+
+  it('блок с отступом (в списке) без маркера попадает в отчёт', () => {
+    expect(findUnmarkedGoBlocks('- пункт\n\n  ```go\n  x := 1\n  ```')).toEqual([3])
+  })
+
+  it('~~~go без маркера попадает в отчёт', () => {
+    expect(findUnmarkedGoBlocks('~~~go\nx := 1\n~~~')).toEqual([1])
+  })
+
+  it('CRLF не ломает маркер и код', () => {
+    const m = '<!-- go-check -->\r\n```go\r\nx := 1\r\n```\r\n'
+    expect(extractGoSnippets(m, 'a.md')).toEqual([{ file: 'a.md', line: 2, harness: null, code: 'x := 1' }])
+  })
+})

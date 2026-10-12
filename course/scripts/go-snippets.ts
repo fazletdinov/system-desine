@@ -6,8 +6,8 @@ export interface GoSnippet {
 }
 
 const MARKER = /^<!--\s*go-check(?::\s*harness=([a-z0-9-]+))?\s*-->\s*$/
-const GO_FENCE = /^```go\s*$/
-const FENCE_END = /^```\s*$/
+const GO_FENCE = /^\s*(```|~~~)\s*go\b.*$/
+const FENCE_END: Record<string, RegExp> = { '```': /^\s*```\s*$/, '~~~': /^\s*~~~\s*$/ }
 
 interface Block {
   start: number
@@ -16,12 +16,14 @@ interface Block {
 }
 
 function goBlocks(markdown: string): Block[] {
-  const lines = markdown.split('\n')
+  const lines = markdown.split(/\r?\n/)
   const blocks: Block[] = []
   for (let i = 0; i < lines.length; i++) {
-    if (!GO_FENCE.test(lines[i] ?? '')) continue
+    const open = GO_FENCE.exec(lines[i] ?? '')
+    if (open === null) continue
+    const closing = FENCE_END[open[1] ?? '```'] as RegExp
     let end = i + 1
-    while (end < lines.length && !FENCE_END.test(lines[end] ?? '')) end++
+    while (end < lines.length && !closing.test(lines[end] ?? '')) end++
     // Маркер — ближайшая непустая строка над блоком.
     let prev = i - 1
     while (prev >= 0 && (lines[prev] ?? '').trim() === '') prev--

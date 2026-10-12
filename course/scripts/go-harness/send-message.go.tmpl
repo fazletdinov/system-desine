@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -61,6 +62,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	}
 }
 
+// Держит импорт time, чтобы обвязка компилировалась, даже если фрагмент перестанет его использовать.
 var _ = time.Second
 
 // SNIPPET
