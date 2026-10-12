@@ -5,7 +5,7 @@ import { mermaidThemeVariables, withPaletteClasses } from '../viz/core/mermaid-p
 
 const props = defineProps<{ code: string }>()
 const { isDark } = useData()
-const host = ref<HTMLElement>()
+const host = ref<HTMLElement | null>(null)
 const error = ref<string | null>(null)
 const baseId = `mmd-${useId().replace(/[^a-zA-Z0-9-]/g, '')}`
 // Каждый рендер получает свой id: при смене темы на странице не появятся два SVG с одинаковым id.
@@ -13,21 +13,25 @@ let renderSeq = 0
 
 async function render(): Promise<void> {
   const seq = ++renderSeq
+  error.value = null
   const theme = isDark.value ? 'dark' : 'light'
-  const { default: mermaid } = await import('mermaid')
-  mermaid.initialize({ startOnLoad: false, theme: 'base', themeVariables: mermaidThemeVariables(theme), securityLevel: 'strict' })
+  const id = `${baseId}-${seq}`
   try {
-    const { svg } = await mermaid.render(`${baseId}-${seq}`, withPaletteClasses(decodeURIComponent(props.code), theme))
-    if (seq !== renderSeq || host.value === undefined) return
+    const { default: mermaid } = await import('mermaid')
+    mermaid.initialize({ startOnLoad: false, theme: 'base', themeVariables: mermaidThemeVariables(theme), securityLevel: 'strict' })
+    const { svg } = await mermaid.render(id, withPaletteClasses(decodeURIComponent(props.code), theme))
+    if (seq !== renderSeq || !host.value) return
     host.value.innerHTML = svg
-    error.value = null
   } catch (e) {
+    document.getElementById(id)?.remove()
+    document.getElementById(`d${id}`)?.remove()
+    if (seq !== renderSeq) return
     error.value = e instanceof Error ? e.message : String(e)
   }
 }
 
 onMounted(render)
-watch(isDark, render)
+watch([isDark, () => props.code], render)
 </script>
 
 <template>

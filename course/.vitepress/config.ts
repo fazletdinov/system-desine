@@ -20,9 +20,9 @@ export default defineConfig({
   // mermaid тянет CommonJS-зависимости (fastdom и др.); без пребандлинга dev-сервер падает на импорте.
   vite: {
     optimizeDeps: { include: ['mermaid'] },
-    // Mermaid грузится лениво отдельным чанком (~2 МБ), поэтому общий порог предупреждения поднят.
+    // Mermaid грузится лениво отдельными чанками (самые большие ≈ 700 КБ), поэтому порог поднят с 500 до 1000 КБ.
     // Размер основного чанка app.*.js проверяется в задаче 9.
-    build: { chunkSizeWarningLimit: 2500 },
+    build: { chunkSizeWarningLimit: 1000 },
   },
   markdown: {
     config: (md) => {

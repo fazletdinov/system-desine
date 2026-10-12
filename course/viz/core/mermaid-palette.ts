@@ -55,7 +55,7 @@ const THEME_VARIABLES: Record<ThemeName, Record<string, string>> = {
     primaryBorderColor: '#0284c7',
     secondaryColor: '#f1f5f9',
     tertiaryColor: '#ffffff',
-    lineColor: '#94a3b8',
+    lineColor: '#64748b',
     textColor: '#0f172a',
     clusterBkg: '#f8fafc',
     clusterBorder: '#e2e8f0',
