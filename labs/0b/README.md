@@ -44,3 +44,29 @@ docker compose -f labs/0b/compose.yaml down
 
 ## Лабораторные по урокам
 
+### echo — TCP-эхо
+
+Сервер возвращает каждую строку; клиент меряет время рукопожатия и RTT каждой строки.
+
+```bash
+labs/0b/netem.sh 40ms 0%
+docker compose -f labs/0b/compose.yaml exec -d server echo -serve -addr :7000
+docker compose -f labs/0b/compose.yaml exec client echo -addr 172.28.0.10:7000 -n 20
+```
+
+Флаги клиента: `-n`, `-interval`, `-size`, `-dial`, `-timeout`, `-nodelay=false` (включить алгоритм Нейгла).
+Флаги сервера: `-idle` (закрыть молчащее соединение), `-shutdown` (сколько ждать при остановке по SIGINT/SIGTERM).
+Инспекция сокета во время работы клиента: `docker compose -f labs/0b/compose.yaml exec client ss -ti dst 172.28.0.10`.
+
+### udpping — UDP-пинг
+
+Клиент шлёт датаграммы с номером и временем отправки и считает потери, дубликаты и переупорядочивание.
+
+```bash
+labs/0b/netem.sh 40ms 5%
+docker compose -f labs/0b/compose.yaml exec -d server udpping -serve -addr :7001
+docker compose -f labs/0b/compose.yaml exec client udpping -addr 172.28.0.10:7001 -n 200
+```
+
+Потери netem действуют на каждом конце, поэтому при 5% теряется около 1 − 0,95² ≈ 10% round trip'ов.
+Флаги клиента: `-n`, `-interval`, `-wait`.
