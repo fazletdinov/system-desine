@@ -125,7 +125,7 @@ lab exec client dig www.messenger.example +noall +answer
 lab exec client dig _api._tcp.messenger.example SRV +noall +answer
 lab exec client dig nope.messenger.example             # NXDOMAIN + SOA: отрицательный кэш
 lab exec client dig api.messenger.example AAAA         # NODATA
-lab exec client dig messenger.example NS               # адрес ns в ADDITIONAL (как glue)
+lab exec client dig messenger.example NS               # адрес ns в ADDITIONAL (похоже на glue)
 for i in 1 2 3; do lab exec client dig go.dev +noall +answer +stats | grep -E 'IN|Query time'; sleep 5; done   # TTL убывает (нужен интернет)
 lab exec client dig +trace go.dev
 ```
@@ -152,7 +152,8 @@ Kubernetes-подобный `resolv.conf` (`search` из трёх доменов
 ```bash
 lab exec client cp /etc/resolv.conf /tmp/resolv.conf.orig
 lab exec client sh -c 'printf "nameserver 127.0.0.11\nsearch default.svc.cluster.local svc.cluster.local cluster.local\noptions ndots:5\n" > /etc/resolv.conf'
-lab exec client httpbench -url https://api.github.com/ -c 1 -n 1    # 8 DNS-запросов
+lab exec client httpbench -url https://api.github.com/ -c 1 -n 1    # 8 DNS-запросов, холодный кэш
+lab exec client httpbench -url https://api.github.com/ -c 1 -n 1    # повтор: NXDOMAIN уже в отрицательном кэше
 lab exec client httpbench -url https://api.github.com./ -c 1 -n 1   # 2 запроса, но HTTP 400 из-за точки в Host
 lab exec client sh -c 'printf "nameserver 172.28.0.99\n" > /etc/resolv.conf'
 lab exec client httpbench -url https://api.messenger.example:8443/ -ca /captures/ca.pem -c 1 -n 1 -timeout 60s   # i/o timeout через 10 с
@@ -162,7 +163,7 @@ lab exec client cp /tmp/resolv.conf.orig /etc/resolv.conf
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): `dig` своей зоны — 20–21 мс (первый — 42 мс из-за ARP);
 `go.dev` — 94 мс холодный кэш, 20 мс тёплый, TTL 30 → 25 → 20; зона перечитана в пределах минуты после смены серийного
 номера; долгое соединение: 75 запросов, `errors=0 tcp_conns=1`, хотя DNS уже отдавал новый адрес; без keep-alive —
-`dns: n=5`; с `ndots:5` — 83 мс против 21 мс с точкой; недоступный DNS — `total=10.00364s` (5 с × 2 попытки).
+`dns: n=5`; с `ndots:5` — 169 мс холодный и 83 мс повторный против 21 мс с точкой; недоступный DNS — `total=10.00364s` (5 с × 2 попытки).
 `dig +trace` на нашей сети показал перехват DNS провайдером (ответ «корня» с флагом `ra` и без `aa`).
 
 ### tcpecho — TCP-эхо
