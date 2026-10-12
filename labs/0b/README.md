@@ -28,6 +28,9 @@ labs/0b/netem.sh off       # снять
 docker compose -f labs/0b/compose.yaml exec client tcpdump -i eth0 -w /captures/x.pcap
 ```
 
+Останавливайте запись не сразу после нагрузки, а через секунду (`sleep 1; … pkill tcpdump`): `tcpdump` получает пакеты
+от ядра пачками примерно раз в секунду, и по сигналу последнюю пачку не дописывает — файл выйдет пустым или обрезанным.
+
 Файлы `.pcap` появляются в `labs/0b/captures/` и не попадают в git. Их пишет root внутри контейнера, поэтому удалить с хоста может понадобиться через `sudo`.
 
 ## DNS
@@ -59,7 +62,7 @@ lab exec server ss -tlnp
 lab exec -d client tcpdump -i eth0 -w /captures/first.pcap
 lab exec client curl -s http://172.28.0.10:8080/
 lab exec client ss -tan
-lab exec client pkill tcpdump
+sleep 1; lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/first.pcap
 lab exec client tcpdump -nn -e -v -r /captures/first.pcap
 ```
@@ -84,7 +87,7 @@ lab exec client ss -tan dst 172.28.0.10
 ```
 
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): при 5% потерь p50 40,7 мс,
-p99 294 мс (повтор по таймеру: RTO ≈ 240 мс + RTT); при 10% потерь из 40 рукопожатий 33 заняли ≈ 40 мс,
+p99 294 мс (повтор по таймеру: RTO ≈ 240 мс + RTT; в других прогонах до 350–530 мс — два таймера подряд); при 10% потерь из 40 рукопожатий 33 заняли ≈ 40 мс,
 4 — ≈ 1,05 с, 3 — ≈ 2,07 с (начальный RTO 1 с). Демонстрация Нейгла — в разделе tcpecho ниже.
 
 ### Урок 0b.3 — UDP под потерями
@@ -103,7 +106,7 @@ lab exec client udpping -addr 172.28.0.10:7001 -n 5000 -interval 2ms   # точ�
 labs/0b/netem.sh 40ms 0%
 lab exec -d client tcpdump -i eth0 -w /captures/udp.pcap udp port 7001
 lab exec client udpping -addr 172.28.0.10:7001 -n 3 -interval 100ms
-lab exec client pkill tcpdump
+sleep 1; lab exec client pkill tcpdump
 lab exec client tcpdump -nn -X -c1 -r /captures/udp.pcap   # заголовок UDP побайтно
 lab exec client udpping -addr 172.28.0.10:7999 -n 5 -interval 100ms   # порт не слушают: refused=5
 ```
@@ -187,7 +190,7 @@ lab exec client tlsdemo inspect -addr 172.28.0.10:8443 -server-name api.messenge
 `x509: certificate is valid for api.messenger.example, server, not evil.example`; без `-ca` —
 `x509: certificate signed by unknown authority`; `openssl s_client` — `Verify return code: 0 (ok)`,
 группа `X25519MLKEM768`, билет на 604 800 с, `Max Early Data: 0`; TLS-рукопожатие по `curl` —
-82,7 мс в TLS 1.2 (2 RTT) против 42,5 мс в TLS 1.3 (1 RTT); `inspect` — `DidResume=true`, но TLS
+83–90 мс в TLS 1.2 (2 RTT) против 42–51 мс в TLS 1.3 (1 RTT), разброс — от прогона к прогону; `inspect` — `DidResume=true`, но TLS
 41,3 → 40,8 мс: в TLS 1.3 возобновление экономит проверку сертификатов, а не RTT.
 
 ### Урок 0b.6 — HTTP/1.1, keep-alive и пул соединений
@@ -211,7 +214,7 @@ lab exec client bash -c 'exec 3<>/dev/tcp/172.28.0.10/8080; printf "GET / HTTP/1
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): без keep-alive p50 121,6 мс
 (3 RTT) и `tcp_conns=20`, с keep-alive p50 40,5 мс и `tcp_conns=1`; `-c 10` с пулом на 2 —
 `tcp_conns` от 10 до 47 в разных прогонах при `new_conns=10`, с пулом на 10 — всегда 10;
-`-c 50` с пулом на 2 — `tcp_conns=239` и 246, с пулом на 50 — 50; таймаут 1 с —
+`-c 50` с пулом на 2 — `tcp_conns` чаще всего 140–250 (239, 246; в другой день 142–231 и однажды 50), с пулом на 50 — 50; таймаут 1 с —
 `Client.Timeout exceeded while awaiting headers`, `total=1.00068s`; неполные заголовки —
 сервер молча закрывает соединение через 5,045 с.
 
@@ -240,9 +243,9 @@ labs/0b/netem.sh 40ms 2%
 
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): без потерь маленькие запросы — p50 41,5 мс
 по HTTP/2 против 41,3 мс по HTTP/1.1, у HTTP/2 `new_conns=1`, но `tcp_conns=10` (лишние наборы при одновременном старте);
-при 2% потерь, маленькие ответы, шесть прогонов — p99 167–171 мс у HTTP/2 против 135–379 мс у HTTP/1.1: одиночный сегмент
+при 2% потерь, маленькие ответы, шесть прогонов — p99 167–171 мс у HTTP/2 против 135–379 мс у HTTP/1.1 (в другой день — 167–370 мс против 285–464 мс): одиночный сегмент
 HTTP/1.1 ждёт RTO, а блокировку начала очереди HTTP/2 эта нагрузка не показывает; ответы по 200 КБ — без потерь весь прогон
-0,88–1,08 с у HTTP/2 против 0,67–0,70 с, при 2% потерь 49,8–52,1 с против 3,2–4,7 с: у HTTP/2 одно окно перегрузки на все потоки.
+0,88–1,08 с у HTTP/2 против 0,67–0,70 с, при 2% потерь 45–52 с против 3,2–5,3 с (в 9–16 раз): у HTTP/2 одно окно перегрузки на все потоки.
 `GOAWAY`: запустите `curl --http2 -sv … '/slow?ms=3000'` и через секунду `lab exec server pkill -TERM h2server` —
 `curl` покажет `received GOAWAY, error=0, last_stream=1`, а ответ придёт полностью.
 
@@ -257,7 +260,7 @@ lab exec client curl -sI https://cloudflare.com                                 
 lab exec client curl --http3 -sI https://cloudflare.com -o /dev/null -w '%{http_version}\n'   # 3 или 2 (откат на TCP)
 lab exec -d client tcpdump -i eth0 -w /captures/quic.pcap udp port 443
 lab exec client bash -c 'time curl --http3-only -sS -I --max-time 10 https://cloudflare.com'
-lab exec client pkill tcpdump
+sleep 1; lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/quic.pcap                                   # Initial-датаграммы по 1200 байт
 ```
 
@@ -379,19 +382,19 @@ docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28
 возвращает всегда до следующего запроса (`Read` тела на EOF ждёт, пока транспорт положит соединение
 в пул). Всё решает, насколько плотно приходят ответы: если несколько воркеров заканчивают в пределах
 микросекунд, третье и следующие соединения находят пул на 2 места полным и закрываются.
-При `-c 50` предел виден всегда:
+При `-c 50` предел виден почти всегда:
 
 ```bash
-docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 2    # tcp_conns≈200–250 (203, 239, 246 в разных прогонах) new_conns=50
+docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 2    # tcp_conns≈140–250 (142, 203, 239, 246 в разных прогонах; изредка 50) new_conns=50
 docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 50   # tcp_conns=50 new_conns=50
 ```
 
 С пулом на 2 соединения ответы приходят пачками: первые два вернувшихся соединения занимают пул,
 третье и следующие находят его полным и закрываются (`tryPutIdleConn` → `errTooManyIdleHost`).
-Воркер, чьё соединение закрылось, не находит свободного и начинает набор нового, но раньше, чем
+Кто-то из воркеров находит список простаивающих пустым и начинает набор нового, но раньше, чем
 набор закончится (TCP + TLS — два RTT), ему достаётся соединение, которое вернул сосед. Фоновый
 набор транспорт не отменяет: готовое соединение уходит в пул, а если пул полон — закрывается, так
-и не обслужив ни одного запроса. Итог: 200–250 TCP-соединений на 500 запросов вместо 50, хотя
+и не обслужив ни одного запроса. Итог: обычно 140–250 TCP-соединений на 500 запросов вместо 50, хотя
 `new_conns` в обоих случаях 50. Строка `tls n` бывает меньше `connect n`, потому что итог
 печатается сразу после последнего запроса, когда часть фоновых наборов ещё не закончила TLS.
 

@@ -17,7 +17,30 @@ npm test           # Vitest: логика плеера, сценарии, рас
 npm run typecheck  # vue-tsc
 npm run build      # сборка; падает на неизвестном термине <T id="...">
 npm run check:go   # компилирует Go-фрагменты уроков, помеченные <!-- go-check -->
+npm run check:labs # gofmt, go vet, go test -race лабораторных и compose config
 ```
+
+## Лабораторные
+
+Практика модулей лежит в `labs/` — отдельный Go-модуль (`labs/go.mod`, Go 1.26, без внешних зависимостей). Каталог модуля 0b:
+
+- `labs/0b/compose.yaml` и `Dockerfile` — стенд из трёх контейнеров в сети `172.28.0.0/24`: `client`, `server` и `dns` (CoreDNS с зоной `messenger.example`); в образ собраны программы лабораторной и инструменты (`tcpdump`, `ss`, `dig`, `curl` с HTTP/3, `openssl`, `strace`);
+- `labs/0b/netem.sh 40ms 1%` — задержка и потери через netem на `client` и `server` (половина RTT на каждом конце), `labs/0b/netem.sh off` — снять; нужен модуль ядра `sch_netem`;
+- `labs/0b/cmd/` — программы (`tcpecho`, `udpping`, `httpbench`, `h2server`, `tlsdemo`), `labs/0b/captures/` — записи `.pcap` и `ca.pem` (в git не попадают);
+- `labs/0b/README.md` — все команды по урокам сверху вниз и результаты на нашем стенде.
+
+```bash
+docker compose -f labs/0b/compose.yaml up -d --build
+alias lab='docker compose -f labs/0b/compose.yaml'
+labs/0b/netem.sh 40ms 0%
+# … команды урока …
+labs/0b/netem.sh off
+docker compose -f labs/0b/compose.yaml down
+```
+
+Проверка — из `course/`: `npm run check:labs` (gofmt, `go vet`, `go test -race` по `labs/` и `docker compose config`).
+
+Код лабораторных попадает в уроки только импортом региона: в Go-файле регион размечен `// #region имя` … `// #endregion имя`, в уроке — `<<< @/../labs/0b/cmd/tcpecho/main.go#server{go}`. Так урок всегда показывает тот код, который проверен тестами. Вывод команд в уроках — реальный, с пометкой «у вас числа будут другими, порядок — такой».
 
 ## Как добавить урок
 

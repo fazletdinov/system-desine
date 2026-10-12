@@ -354,7 +354,7 @@ func bench(ctx context.Context, cfg config) (report, error) {
 		return rep, fmt.Errorf("прервано после %d запросов: %w", rep.requests, err)
 	}
 	if rep.failed() == rep.requests {
-		return rep, fmt.Errorf("все %d запросов завершились ошибкой", rep.requests)
+		return rep, fmt.Errorf("запросов: %d, все завершились ошибкой", rep.requests)
 	}
 	return rep, nil
 }

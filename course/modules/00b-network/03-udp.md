@@ -262,7 +262,7 @@ sent=5000 received=4485 lost=515 (10.3%) dup=0 reordered=0
 labs/0b/netem.sh 40ms 0%
 lab exec -d client tcpdump -i eth0 -w /captures/udp.pcap udp port 7001
 lab exec client udpping -addr 172.28.0.10:7001 -n 3 -interval 100ms
-lab exec client pkill tcpdump
+sleep 1; lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/udp.pcap
 lab exec client tcpdump -nn -X -c1 -r /captures/udp.pcap
 ```

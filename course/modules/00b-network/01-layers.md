@@ -99,7 +99,7 @@ LISTEN 0      4096               *:8080             *:*    users:(("h2server",pi
 
 <Deep title="что происходит при net.Dial">
 
-`net.Dial("tcp", "172.28.0.10:7000")` выглядит как один блокирующий вызов. Посмотрим, во что он превращается на уровне системных вызовов. В образе лабораторной есть трассировщик `strace`: он печатает каждый системный вызов программы. Запустим под ним клиент `tcpecho` из урока 0b.2 (сервер для него: `lab exec -d server tcpecho -serve -addr :7000`) и оставим только сетевые вызовы и `epoll_ctl`:
+`net.Dial("tcp", "172.28.0.10:7000")` выглядит как один блокирующий вызов. Посмотрим, во что он превращается на уровне системных вызовов. В образе лабораторной есть трассировщик `strace`: он печатает каждый системный вызов программы. Запустим под ним клиент `tcpecho` из урока 0b.2. Здесь и дальше `lab` — короткое имя для `docker compose -f labs/0b/compose.yaml` (команда `alias` для него — в лабораторной ниже). Сервер для клиента запускается командой `lab exec -d server tcpecho -serve -addr :7000`. В трассировке оставим только сетевые вызовы и `epoll_ctl`:
 
 ```bash
 lab exec client strace -f -e trace=%network,epoll_ctl tcpecho -addr 172.28.0.10:7000 -n 1
@@ -265,8 +265,10 @@ lab exec server ss -tlnp
 lab exec -d client tcpdump -i eth0 -w /captures/first.pcap
 lab exec client curl -s http://172.28.0.10:8080/
 lab exec client ss -tan
-lab exec client pkill tcpdump
+sleep 1; lab exec client pkill tcpdump
 ```
+
+`sleep 1` перед `pkill` — не перестраховка. `tcpdump` забирает пакеты у ядра не по одному, а пачками, примерно раз в секунду, и, остановленный сигналом, недоставленную пачку не дописывает. Без паузы файл, скорее всего, окажется пустым: мы так и получили, вставив команды разом.
 
 `tcpdump` пишет пакеты в файл формата <T id="pcap">pcap</T>. Каталог `/captures` в контейнере — это `labs/0b/captures/` на вашей машине. HTTP здесь без TLS: так содержимое видно глазами. Сервер ответил, с какого адреса и порта к нему пришли:
 
@@ -359,7 +361,7 @@ Wireshark, как и `tcpdump`, показывает номера относит
 ```bash
 lab exec -d client tcpdump -i any -w /captures/tls.pcap
 lab exec client curl -s --cacert /captures/ca.pem https://api.messenger.example:8443/
-lab exec client pkill tcpdump
+sleep 1; lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/tls.pcap
 ```
 

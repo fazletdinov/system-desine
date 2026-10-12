@@ -445,7 +445,7 @@ lab exec client dig @198.41.0.4 go.dev +norec
 dig +trace go.dev
 ```
 
-Если на хосте четыре нормальных блока — дело в Docker. У нас на хосте «корень» тоже сразу ответил адресом `go.dev`, значит, перехватывает сеть. Если у вас `dig +trace` выдаёт четыре блока — ваша сеть DNS не трогает. Если как у нас — вы только что научились распознавать перехват.
+Если на хосте четыре нормальных блока — ваша сеть DNS не трогает, а ответ подменяет Docker. У нас и на хосте «корень» сразу ответил адресом `go.dev` — значит, перехватывает сама сеть. Если у вас так же, вы только что научились распознавать перехват.
 
 Цепочку можно восстановить и через обычный резолвер, спрашивая NS-записи каждого уровня:
 
@@ -584,7 +584,7 @@ lab exec -d client tcpdump -i eth0 -w /captures/ndots.pcap udp port 53
 lab exec client httpbench -url https://api.github.com/ -c 1 -n 1
 lab exec client httpbench -url https://api.github.com/ -c 1 -n 1
 lab exec client httpbench -url https://api.github.com./ -c 1 -n 1
-lab exec client pkill tcpdump
+sleep 1; lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/ndots.pcap
 ```
 
