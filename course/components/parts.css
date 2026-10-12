@@ -24,11 +24,29 @@
   --part-deep-fg: #7dd3fc; --part-deep-bg: #0f1b2e;
 }
 
+/* Раздел (##) в цвете своей метки: класс sec-<kind> ставит плагин .vitepress/part-subheadings.ts. */
+.vp-doc h2[class*='sec-'] {
+  padding-bottom: 8px;
+  border-bottom: 2px solid color-mix(in srgb, var(--sec-color) 40%, transparent);
+  color: var(--sec-color);
+}
+.vp-doc h2.sec-problem { --sec-color: var(--part-problem-fg); }
+.vp-doc h2.sec-theory { --sec-color: var(--part-theory-fg); }
+.vp-doc h2.sec-viz { --sec-color: var(--part-viz-fg); }
+.vp-doc h2.sec-mistakes { --sec-color: var(--part-mistakes-fg); }
+.vp-doc h2.sec-tradeoff { --sec-color: var(--part-tradeoff-fg); }
+.vp-doc h2.sec-code { --sec-color: var(--part-code-fg); }
+.vp-doc h2.sec-selfcheck { --sec-color: var(--part-selfcheck-fg); }
+.vp-doc h2.sec-sources { --sec-color: var(--part-sources-fg); }
+.vp-doc h2.sec-deep { --sec-color: var(--part-deep-fg); }
+.vp-doc h2.sec-practice { --sec-color: var(--part-practice-fg); }
+
 /* Подраздел (###) в цвете своего раздела: класс sub-<kind> ставит плагин .vitepress/part-subheadings.ts. */
 .vp-doc h3[class*='sub-'] {
   padding-left: 12px;
   border-left: 4px solid var(--sub-color);
   color: var(--sub-color);
+  font-size: 18px;
 }
 .vp-doc h3.sub-problem { --sub-color: var(--part-problem-fg); }
 .vp-doc h3.sub-theory { --sub-color: var(--part-theory-fg); }

@@ -36,6 +36,12 @@ describe('partSubheadingsPlugin', () => {
     expect(h3Classes(html)).toEqual([''])
   })
 
+  it('раздел с меткой получает класс цвета своей метки', async () => {
+    const html = await render(['## <Part kind="problem" /> Проблема', '## Без метки'].join('\n\n'))
+    const classes = [...html.matchAll(/<h2([^>]*)>/g)].map((m) => /class="([^"]*)"/.exec(m[1] ?? '')?.[1] ?? '')
+    expect(classes).toEqual(['sec-problem', ''])
+  })
+
   it('заголовки внутри блоков кода не трогает', async () => {
     const html = await render(['## <Part kind="theory" /> Теория', '```markdown\n### В коде\n```'].join('\n\n'))
     expect(html).not.toContain('<h3')
