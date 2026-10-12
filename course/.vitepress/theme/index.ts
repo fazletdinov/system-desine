@@ -1,4 +1,4 @@
-import DefaultTheme from 'vitepress/theme'
+import DefaultTheme from 'vitepress/theme-without-fonts'
 import type { Theme } from 'vitepress'
 import T from '../../components/T.vue'
 import Callout from '../../components/Callout.vue'

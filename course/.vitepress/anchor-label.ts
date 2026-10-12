@@ -17,7 +17,7 @@ export function anchorLabelPlugin(md: MarkdownRenderer): void {
         .join('')
         .replace(/\s+/g, ' ')
         .trim()
-      link.attrSet('aria-label', `Permalink to "${title}"`)
+      link.attrSet('aria-label', `Ссылка на раздел «${title}»`)
     }
   })
 }

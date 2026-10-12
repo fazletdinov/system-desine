@@ -4,7 +4,7 @@ import { useData } from 'vitepress'
 import VizFrame from '../viz/components/VizFrame.vue'
 import { mermaidThemeVariables, withPaletteClasses } from '../viz/core/mermaid-palette'
 
-const props = defineProps<{ code: string }>()
+const props = defineProps<{ code: string; title?: string }>()
 const { isDark } = useData()
 const host = ref<HTMLElement | null>(null)
 const error = ref<string | null>(null)
@@ -36,9 +36,9 @@ watch([isDark, () => props.code], render)
 </script>
 
 <template>
-  <VizFrame label="Схема">
+  <VizFrame :label="props.title ?? 'Схема'">
     <div class="mermaid-diagram">
-      <div ref="host" class="mermaid-host" role="img" aria-label="Схема" />
+      <div ref="host" class="mermaid-host" />
       <pre v-if="error" class="mermaid-error">Ошибка схемы: {{ error }}</pre>
     </div>
   </VizFrame>

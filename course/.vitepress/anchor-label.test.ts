@@ -17,11 +17,11 @@ describe('anchorLabelPlugin', () => {
 
   it('убирает разметку метки из aria-label, оставляя текст и код', async () => {
     const html = await render(HEADING)
-    expect(html).toContain('aria-label="Permalink to &quot;Участники net&quot;"')
+    expect(html).toContain('aria-label="Ссылка на раздел «Участники net»"')
     expect(html).not.toMatch(/aria-label="[^"]*(Part|kind=)/)
   })
 
   it('не меняет слаг заголовка', async () => {
-    expect(await render(HEADING)).toBe((await render(HEADING, false)).replace(/aria-label="[^"]*"/, 'aria-label="Permalink to &quot;Участники net&quot;"'))
+    expect(await render(HEADING)).toBe((await render(HEADING, false)).replace(/aria-label="[^"]*"/, 'aria-label="Ссылка на раздел «Участники net»"'))
   })
 })

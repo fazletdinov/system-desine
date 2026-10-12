@@ -71,7 +71,12 @@ onBeforeUnmount(() => {
     :aria-label="props.label"
   >
     <div class="viz-frame-bar">
-      <button type="button" class="viz-fs-btn" @click="toggle">
+      <button
+        type="button"
+        class="viz-fs-btn"
+        :aria-label="mode === 'off' ? `На весь экран: ${props.label}` : `Выйти из полноэкранного режима: ${props.label}`"
+        @click="toggle"
+      >
         <span aria-hidden="true">{{ mode === 'off' ? '⛶' : '✕' }}</span>
         {{ mode === 'off' ? 'На весь экран' : 'Выйти (Esc)' }}
       </button>
