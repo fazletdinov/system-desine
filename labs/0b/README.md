@@ -172,10 +172,11 @@ lab exec client cp /tmp/resolv.conf.orig /etc/resolv.conf
 
 ```bash
 labs/0b/netem.sh 40ms 0%
-lab exec -d server h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem
+lab exec -d server sh -c 'h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem 2>/captures/h2server.log'
 lab exec client tlsdemo get -url https://api.messenger.example:8443/ -ca /captures/ca.pem                             # успех: TLS 1.3, ALPN h2, цепочка
 lab exec client tlsdemo get -url https://api.messenger.example:8443/ -ca /captures/ca.pem -server-name evil.example   # имени нет в SAN
 lab exec client tlsdemo get -url https://api.messenger.example:8443/                                                 # неизвестный CA
+lab exec server grep WARN /captures/h2server.log                                                                     # remote error: tls: bad certificate
 lab exec client openssl s_client -connect 172.28.0.10:8443 -servername api.messenger.example -CAfile /captures/ca.pem </dev/null
 lab exec client sh -c 'openssl s_client -connect 172.28.0.10:8443 -servername api.messenger.example -CAfile /captures/ca.pem </dev/null 2>/dev/null | openssl x509 -noout -text'
 for v in 1.2 1.3; do lab exec client curl -s -o /dev/null --cacert /captures/ca.pem --resolve api.messenger.example:8443:172.28.0.10 --tlsv$v --tls-max $v -w "TLS $v: connect=%{time_connect}s appconnect=%{time_appconnect}s\n" https://api.messenger.example:8443/; done
@@ -292,7 +293,9 @@ docker compose -f labs/0b/compose.yaml exec -d server h2server -addr :8443 -http
 Первая строка вывода — `requests=… errors=… tcp_conns=… new_conns=… proto=…`:
 
 - `tcp_conns` — сколько TCP-соединений клиент установил на самом деле (успешные `ConnectDone`
-  в `httptrace`), включая наборы, брошенные посреди TLS: поэтому строка `tls` может показать меньше;
+  в `httptrace`) к моменту итога, включая фоновые наборы, которые запросам не понадобились. Итог
+  печатается сразу после последнего запроса, и часть фоновых наборов к этому моменту ещё не закончила
+  TLS (а некоторые — и TCP): поэтому строка `tls` может показать меньше, а `tcp_conns` — слегка занижен;
 - `new_conns` — сколько запросов получили соединение с `GotConnInfo.Reused == false`. Это нижняя граница
   новых соединений, а не их число: `net/http` помечает соединение использованным, когда кладёт его
   в пул простаивающих, и соединение, которое набрали «впрок» и положили в пул, позже придёт к запросу
@@ -314,7 +317,7 @@ docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28
 |---|---|---|---|---|
 | `-keepalive=false -c 1 -n 20` | 20 | 20 | 126,2 мс | 127,3 мс |
 | `-keepalive=true -c 1 -n 20` | 1 | 1 | 41,5 мс | 125,9 мс |
-| `-c 10 -n 100 -max-idle-per-host 2` | 10 | 10 | 41,2 мс | 136,3 мс |
+| `-c 10 -n 100 -max-idle-per-host 2` | 10 (в других прогонах 34–47) | 10 | 41,2 мс | 136,3 мс |
 | `-c 10 -n 100 -max-idle-per-host 10` | 10 | 10 | 41,2 мс | 135,9 мс |
 | `-http2=true -c 10 -n 100` | 10 | 1 | 41,4 мс | 168,2 мс |
 
@@ -322,21 +325,25 @@ docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28
 С keep-alive так платит только первый запрос на соединении — он и даёт p99.
 
 При `-c 10` предел пула на грани: в одних прогонах `tcp_conns=10` — ни одного лишнего набора,
-в других (другой день, тот же стенд) — 34–47 при тех же `new_conns=10`. Всё решает, успеет ли
-освободившееся соединение вернуться в пул раньше, чем следующий запрос начнёт набор.
+в других (другой день, тот же стенд) — 34–47 при тех же `new_conns=10`. Своё соединение воркер
+возвращает всегда до следующего запроса (`Read` тела на EOF ждёт, пока транспорт положит соединение
+в пул). Всё решает, насколько плотно приходят ответы: если несколько воркеров заканчивают в пределах
+микросекунд, третье и следующие соединения находят пул на 2 места полным и закрываются.
 При `-c 50` предел виден всегда:
 
 ```bash
-docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 2    # tcp_conns=203 new_conns=50
+docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 2    # tcp_conns≈200–250 (203, 239, 246 в разных прогонах) new_conns=50
 docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 50   # tcp_conns=50 new_conns=50
 ```
 
-С пулом на 2 соединения освободившиеся соединения не помещаются в пул и закрываются. Следующий
-запрос не находит свободного соединения и начинает набор нового, но раньше, чем набор закончится
-(TCP + TLS — два RTT), ему достаётся чужое освободившееся соединение. Брошенный набор при этом
-продолжается: готовое соединение уходит в пул, а если пул полон — закрывается, так и не
-обслужив ни одного запроса. Итог: 203 TCP-соединения на 500 запросов вместо 50, хотя `new_conns`
-в обоих случаях 50.
+С пулом на 2 соединения ответы приходят пачками: первые два вернувшихся соединения занимают пул,
+третье и следующие находят его полным и закрываются (`tryPutIdleConn` → `errTooManyIdleHost`).
+Воркер, чьё соединение закрылось, не находит свободного и начинает набор нового, но раньше, чем
+набор закончится (TCP + TLS — два RTT), ему достаётся соединение, которое вернул сосед. Фоновый
+набор транспорт не отменяет: готовое соединение уходит в пул, а если пул полон — закрывается, так
+и не обслужив ни одного запроса. Итог: 200–250 TCP-соединений на 500 запросов вместо 50, хотя
+`new_conns` в обоих случаях 50. Строка `tls n` бывает меньше `connect n`, потому что итог
+печатается сразу после последнего запроса, когда часть фоновых наборов ещё не закончила TLS.
 
 HTTP/2 обслуживает все 100 запросов одним соединением (`new_conns=1`), но `tcp_conns=10`:
 десять одновременных первых запросов успели начать по набору, пока ни один не завершился

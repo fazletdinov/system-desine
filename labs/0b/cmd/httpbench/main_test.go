@@ -142,7 +142,8 @@ func TestBenchCountsConnections(t *testing.T) {
 				t.Fatalf("latencies = %d, want %d", len(rep.latencies), tt.n)
 			}
 			// new_conns — нижняя граница: TCP-соединений установлено не меньше. TLS-рукопожатий
-			// бывает меньше, чем TCP: ненужный уже набор транспорт может бросить посреди TLS.
+			// бывает меньше, чем TCP: итог снимается сразу после последнего запроса, когда фоновый
+			// набор мог установить TCP, но ещё не закончить TLS (транспорт его не отменяет).
 			if len(rep.connect) < rep.newConns || len(rep.tls) > len(rep.connect) {
 				t.Fatalf("tcp_conns=%d tls=%d new_conns=%d", len(rep.connect), len(rep.tls), rep.newConns)
 			}
