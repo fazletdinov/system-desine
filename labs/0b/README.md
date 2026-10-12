@@ -12,7 +12,7 @@
 
 ```bash
 docker compose -f labs/0b/compose.yaml up -d --build
-alias lab='docker compose -f labs/0b/compose.yaml'   # псевдоним из уроков 0b.1 и 0b.2
+alias lab='docker compose -f labs/0b/compose.yaml'   # псевдоним из уроков модуля 0b
 ```
 
 ## Задержки и потери (netem)
@@ -86,6 +86,84 @@ lab exec client ss -tan dst 172.28.0.10
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): при 5% потерь p50 40,7 мс,
 p99 294 мс (повтор по таймеру: RTO ≈ 240 мс + RTT); при 10% потерь из 40 рукопожатий 33 заняли ≈ 40 мс,
 4 — ≈ 1,05 с, 3 — ≈ 2,07 с (начальный RTO 1 с). Демонстрация Нейгла — в разделе tcpecho ниже.
+
+### Урок 0b.3 — UDP под потерями
+
+Урок: [0b.3. UDP: когда надёжность не нужна](../../course/modules/00b-network/03-udp.md). Программа — `udpping` (ниже).
+
+```bash
+lab exec -d server udpping -serve -addr :7001
+labs/0b/netem.sh 40ms 0%
+lab exec client udpping -addr 172.28.0.10:7001 -n 200
+labs/0b/netem.sh 40ms 2%
+lab exec client udpping -addr 172.28.0.10:7001 -n 200
+labs/0b/netem.sh 40ms 5%
+lab exec client udpping -addr 172.28.0.10:7001 -n 200
+lab exec client udpping -addr 172.28.0.10:7001 -n 5000 -interval 2ms   # точнее: выборка больше
+labs/0b/netem.sh 40ms 0%
+lab exec -d client tcpdump -i eth0 -w /captures/udp.pcap udp port 7001
+lab exec client udpping -addr 172.28.0.10:7001 -n 3 -interval 100ms
+lab exec client pkill tcpdump
+lab exec client tcpdump -nn -X -c1 -r /captures/udp.pcap   # заголовок UDP побайтно
+lab exec client udpping -addr 172.28.0.10:7999 -n 5 -interval 100ms   # порт не слушают: refused=5
+```
+
+Результат на нашем стенде (у вас числа будут другими, порядок — такой): RTT p99 ≈ 41 мс при любых потерях
+(у TCP при 5% — 294 мс); потери пингов при n=5000 — 3,8% при 2% и 10,3% при 5% на каждом конце
+(расчёт 1 − (1 − p)²: 3,96% и 9,75%). При n=200 разброс между прогонами — пара процентных пунктов.
+
+### Урок 0b.4 — DNS
+
+Урок: [0b.4. DNS глубже](../../course/modules/00b-network/04-dns.md). У контейнера `dns` netem нет, поэтому RTT до DNS
+при `netem.sh 40ms` — около 20 мс (задерживается только исходящий вопрос клиента).
+
+```bash
+labs/0b/netem.sh 40ms 0%
+lab exec client cat /etc/resolv.conf
+lab exec client dig api.messenger.example
+lab exec client dig www.messenger.example +noall +answer
+lab exec client dig _api._tcp.messenger.example SRV +noall +answer
+lab exec client dig nope.messenger.example             # NXDOMAIN + SOA: отрицательный кэш
+lab exec client dig api.messenger.example AAAA         # NODATA
+lab exec client dig messenger.example NS               # адрес ns в ADDITIONAL (как glue)
+for i in 1 2 3; do lab exec client dig go.dev +noall +answer +stats | grep -E 'IN|Query time'; sleep 5; done   # TTL убывает (нужен интернет)
+lab exec client dig +trace go.dev
+```
+
+Правка зоны: увеличьте серийный номер SOA и перезапишите файл на месте (Docker Desktop может не увидеть файл,
+заменённый `sed -i`); CoreDNS перечитает зону в течение минуты. Вернуть исходную зону — `git checkout` и `restart dns`.
+
+```bash
+sed 's/^api     IN A   172.28.0.10/api     IN A   172.28.0.11/; s/2026101201/2026101202/' labs/0b/dns/messenger.example.db > /tmp/zone.db
+cat /tmp/zone.db > labs/0b/dns/messenger.example.db
+for i in $(seq 1 14); do echo "$(date +%T) $(lab exec client dig api.messenger.example +short)"; sleep 5; done
+git checkout labs/0b/dns/messenger.example.db && lab restart dns
+```
+
+Резолвер Go и долгие соединения (нужен `h2server`, см. ниже):
+
+```bash
+lab exec -e GODEBUG=netdns=go+2 client httpbench -url https://api.messenger.example:8443/ -ca /captures/ca.pem -c 1 -n 5 -keepalive=false   # 5 поисков DNS: кэша нет
+lab exec client httpbench -url 'https://api.messenger.example:8443/slow?ms=1000' -ca /captures/ca.pem -c 1 -n 75 -keepalive=true   # поменяйте зону во время прогона
+```
+
+Kubernetes-подобный `resolv.conf` (`search` из трёх доменов, `ndots:5`) и недоступный DNS-сервер:
+
+```bash
+lab exec client cp /etc/resolv.conf /tmp/resolv.conf.orig
+lab exec client sh -c 'printf "nameserver 127.0.0.11\nsearch default.svc.cluster.local svc.cluster.local cluster.local\noptions ndots:5\n" > /etc/resolv.conf'
+lab exec client httpbench -url https://api.github.com/ -c 1 -n 1    # 8 DNS-запросов
+lab exec client httpbench -url https://api.github.com./ -c 1 -n 1   # 2 запроса, но HTTP 400 из-за точки в Host
+lab exec client sh -c 'printf "nameserver 172.28.0.99\n" > /etc/resolv.conf'
+lab exec client httpbench -url https://api.messenger.example:8443/ -ca /captures/ca.pem -c 1 -n 1 -timeout 60s   # i/o timeout через 10 с
+lab exec client cp /tmp/resolv.conf.orig /etc/resolv.conf
+```
+
+Результат на нашем стенде (у вас числа будут другими, порядок — такой): `dig` своей зоны — 20–21 мс (первый — 42 мс из-за ARP);
+`go.dev` — 94 мс холодный кэш, 20 мс тёплый, TTL 30 → 25 → 20; зона перечитана в пределах минуты после смены серийного
+номера; долгое соединение: 75 запросов, `errors=0 tcp_conns=1`, хотя DNS уже отдавал новый адрес; без keep-alive —
+`dns: n=5`; с `ndots:5` — 83 мс против 21 мс с точкой; недоступный DNS — `total=10.00364s` (5 с × 2 попытки).
+`dig +trace` на нашей сети показал перехват DNS провайдером (ответ «корня» с флагом `ra` и без `aa`).
 
 ### tcpecho — TCP-эхо
 
