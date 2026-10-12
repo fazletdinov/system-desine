@@ -9,6 +9,7 @@ import '@fontsource-variable/jetbrains-mono'
 import Part from '../../components/Part.vue'
 import N from '../../components/N.vue'
 import Deep from '../../components/Deep.vue'
+import MermaidDiagram from '../../components/MermaidDiagram.vue'
 import '../../components/parts.css'
 import '../../viz/palette.css'
 import './custom.css'
@@ -23,5 +24,6 @@ export default {
     app.component('Part', Part)
     app.component('N', N)
     app.component('Deep', Deep)
+    app.component('MermaidDiagram', MermaidDiagram)
   },
 } satisfies Theme

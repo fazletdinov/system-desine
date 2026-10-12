@@ -1,15 +1,15 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitepress'
-import { withMermaid } from 'vitepress-plugin-mermaid'
 import { loadGlossaryFile } from '../glossary/load'
 import { buildSidebar } from './sidebar'
+import { mermaidFencePlugin } from './mermaid-fence'
 import { termsCheckPlugin } from './terms-check'
 
 const MODULES_DIR = fileURLToPath(new URL('../modules', import.meta.url))
 const GLOSSARY_FILE = fileURLToPath(new URL('../glossary/terms.yaml', import.meta.url))
 const KNOWN_TERMS: ReadonlySet<string> = new Set(Object.keys(loadGlossaryFile(GLOSSARY_FILE)))
 
-export default withMermaid(defineConfig({
+export default defineConfig({
   lang: 'ru-RU',
   appearance: 'dark',
   title: 'System Design на практике',
@@ -18,9 +18,17 @@ export default withMermaid(defineConfig({
   head: [['link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }]],
   srcExclude: ['**/README.md'],
   // mermaid тянет CommonJS-зависимости (fastdom и др.); без пребандлинга dev-сервер падает на импорте.
-  vite: { optimizeDeps: { include: ['mermaid'] } },
+  vite: {
+    optimizeDeps: { include: ['mermaid'] },
+    // Mermaid грузится лениво отдельным чанком (~2 МБ), поэтому общий порог предупреждения поднят.
+    // Размер основного чанка app.*.js проверяется в задаче 9.
+    build: { chunkSizeWarningLimit: 2500 },
+  },
   markdown: {
-    config: (md) => termsCheckPlugin(md, KNOWN_TERMS),
+    config: (md) => {
+      termsCheckPlugin(md, KNOWN_TERMS)
+      mermaidFencePlugin(md)
+    },
   },
   themeConfig: {
     nav: [
@@ -53,4 +61,4 @@ export default withMermaid(defineConfig({
       },
     },
   },
-}))
+})
