@@ -11,7 +11,7 @@ describe('encapsulationScenario', () => {
     expect(steps).toHaveLength(6)
   })
 
-  it('на шаге 0 только HTTP-тело в 200 байт', () => {
+  it('на шаге 0 только HTTP-запрос в 200 байт', () => {
     expect(steps[0]!.state.layers.map((l) => l.id)).toEqual(['http'])
     expect(totalBytes(steps[0]!.state.layers)).toBe(200)
   })

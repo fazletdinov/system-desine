@@ -34,7 +34,7 @@ const WIDE: Layout = {
   node: { w: 160, h: 60 },
   clock: { x: 800, y: 36 },
   clockFont: 26,
-  cache: { x: 10, y: 230, w: 480, h: 100 },
+  cache: { x: 10, y: 230, w: 450, h: 100 },
   pos: {
     stub: { x: 90, y: 130 },
     recursive: { x: 330, y: 130 },

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { EncapsulationState, LayerId } from '../simulations/encapsulation'
-import { PAYLOAD_BYTES, totalBytes } from '../simulations/encapsulation'
+import { PAYLOAD_BYTES, payloadSharePercent, totalBytes } from '../simulations/encapsulation'
 import { formatNumber } from '../core/format'
 import { useNarrow } from '../components/useNarrow'
 
@@ -59,7 +59,7 @@ const frames = computed(() => {
 const framesOuterFirst = computed(() => [...frames.value].reverse())
 
 const total = computed(() => totalBytes(props.state.layers))
-const share = computed(() => Math.round((PAYLOAD_BYTES / total.value) * 100))
+const share = computed(() => payloadSharePercent(props.state.layers))
 const totalText = computed(() => `Всего ${formatNumber(total.value)} Б, полезных ${share.value}%`)
 </script>
 

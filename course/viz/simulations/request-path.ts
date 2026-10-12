@@ -1,4 +1,4 @@
-import type { Caption, CaptionSegment } from '../core/caption'
+import { term, type Caption } from '../core/caption'
 import type { Step } from '../core/types'
 import { formatMs } from '../core/format'
 
@@ -44,7 +44,6 @@ interface Segment {
 
 const req = (from: NodeId, to: NodeId): Packet => ({ from, to, kind: 'request' })
 const res = (from: NodeId, to: NodeId): Packet => ({ from, to, kind: 'response' })
-const term = (text: string, termId: string): CaptionSegment => ({ text, termId })
 const half = LATENCY_MS.rtt / 2
 
 const SEGMENTS: readonly Segment[] = [

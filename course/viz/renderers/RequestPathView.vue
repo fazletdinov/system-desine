@@ -4,6 +4,7 @@ import { gsap } from 'gsap'
 import { NODES, type NodeId, type NodeKind, type RequestPathState } from '../simulations/request-path'
 import { formatNumber } from '../core/format'
 import { prefersReducedMotion } from '../core/motion'
+import { useNarrow } from '../components/useNarrow'
 
 const props = defineProps<{ state: RequestPathState }>()
 
@@ -64,7 +65,6 @@ const KIND_COLOR: Record<NodeKind, string> = {
 }
 
 // SSR всегда рисует широкую схему; узкая включается только на клиенте после монтирования.
-const narrow = ref(false)
 const layout = computed(() => (narrow.value ? NARROW : WIDE))
 const pos = (id: NodeId): Point => layout.value.pos[id]
 
@@ -84,6 +84,7 @@ const packetEnd = computed(() => {
 const clockText = computed(() => `⏱ ${formatNumber(props.state.elapsedMs, 1)}\u00A0мс`)
 
 const svgEl = ref<SVGSVGElement>()
+const narrow = useNarrow(svgEl, NARROW_PX)
 const packetEl = ref<SVGCircleElement>()
 
 function animatePacket(): void {
@@ -110,23 +111,13 @@ function snapPacket(): void {
   gsap.set(el, { attr: { cx: end.x, cy: end.y } })
 }
 
-let observer: ResizeObserver | undefined
-
 onMounted(() => {
-  const container = svgEl.value?.parentElement
-  if (container) {
-    observer = new ResizeObserver(([entry]) => {
-      if (entry) narrow.value = entry.contentRect.width < NARROW_PX
-    })
-    observer.observe(container)
-  }
   animatePacket()
 })
 watch(() => props.state, animatePacket, { flush: 'post' })
 // При смене раскладки старые координаты пакета теряют смысл: ставим его сразу в конечную точку.
 watch(narrow, snapPacket, { flush: 'post' })
 onBeforeUnmount(() => {
-  observer?.disconnect()
   if (packetEl.value) gsap.killTweensOf(packetEl.value)
 })
 </script>

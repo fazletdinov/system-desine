@@ -39,7 +39,7 @@ describe('certChainScenario', () => {
     const last = failure.at(-1)!
     expect(last.state.certs.find((c) => c.id === 'root')!.status).toBe('fail')
     expect(last.state.check).toContain('unknown authority')
-    expect(UNKNOWN_AUTHORITY_ERROR).toBe('x509: certificate signed by unknown authority')
+    expect(UNKNOWN_AUTHORITY_ERROR).toBe('tls: failed to verify certificate: x509: certificate signed by unknown authority')
   })
 
   it('у шагов есть пояснения', () => {
