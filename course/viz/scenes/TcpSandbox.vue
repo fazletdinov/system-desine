@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import VizFrame from '../components/VizFrame.vue'
 import Player from '../components/Player.vue'
 import TcpView from '../renderers/TcpView.vue'
-import { tcpSimulation, type TcpAction } from '../simulations/tcp'
+import { DEFAULT_TCP, tcpSimulation, type TcpAction } from '../simulations/tcp'
 
 const state = ref(tcpSimulation.initial())
 const steps = computed(() => tcpSimulation.steps(state.value))
@@ -22,17 +22,17 @@ const onWindow = (event: Event): void => {
 <template>
   <VizFrame label="Песочница TCP">
     <p class="tcp-intro">
-      Учебная модель: 8 сегментов, задержка в одну сторону — 1 тик, кумулятивные ACK, повтор по таймеру через 6 тиков. SACK, slow start и настоящая формула таймера
+      Учебная модель: {{ DEFAULT_TCP.segments }} сегментов, задержка в одну сторону — 1 тик, кумулятивные ACK, повтор по таймеру через {{ DEFAULT_TCP.rto }} тиков. SACK, slow start и настоящая формула таймера
       здесь упрощены. Каждая потеря срабатывает один раз: повтор уже доходит.
     </p>
     <div class="tcp-panel" role="group" aria-label="Настройки песочницы TCP">
       <div class="row" role="group" aria-label="Потерять сегмент">
         <span class="row-label" aria-hidden="true">Потерять сегмент</span>
-        <button v-for="k in segmentNumbers" :key="`s${k}`" type="button" class="toggle" :aria-pressed="state.dropSegments.includes(k)" :aria-label="`Потерять сегмент ${k}`" @click="dispatch({ type: 'drop-segment', seq: k })">{{ k }}</button>
+        <button v-for="k in segmentNumbers" :key="`s${k}`" type="button" class="toggle" :aria-pressed="state.dropSegments.includes(k)" :aria-label="`Потерять сегмент ${k}`" @click="dispatch({ type: 'drop-segment', seq: k })">{{ state.dropSegments.includes(k) ? '✕ ' : '' }}{{ k }}</button>
       </div>
       <div class="row" role="group" aria-label="Потерять ACK">
         <span class="row-label" aria-hidden="true">Потерять ACK</span>
-        <button v-for="k in ackNumbers" :key="`a${k}`" type="button" class="toggle" :aria-pressed="state.dropAcks.includes(k)" :aria-label="`Потерять ACK ${k}`" @click="dispatch({ type: 'drop-ack', ack: k })">{{ k }}</button>
+        <button v-for="k in ackNumbers" :key="`a${k}`" type="button" class="toggle" :aria-pressed="state.dropAcks.includes(k)" :aria-label="`Потерять ACK ${k}`" @click="dispatch({ type: 'drop-ack', ack: k })">{{ state.dropAcks.includes(k) ? '✕ ' : '' }}{{ k }}</button>
       </div>
       <div class="row">
         <label class="row-label" for="tcp-window">Окно: {{ state.config.window }}</label>

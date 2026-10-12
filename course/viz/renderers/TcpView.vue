@@ -7,7 +7,6 @@ const props = defineProps<{ state: TcpFrame; segments: number }>()
 
 interface Layout {
   width: number
-  height: number
   cell: number
   cellGap: number
   stripX: number
@@ -27,7 +26,6 @@ const NARROW_PX = 520
 
 const WIDE: Layout = {
   width: 810,
-  height: 450,
   cell: 80,
   cellGap: 10,
   stripX: 35,
@@ -37,7 +35,7 @@ const WIDE: Layout = {
   receiverX: 680,
   headY: 104,
   arrowsTop: 160,
-  rowH: 26,
+  rowH: 22,
   slant: 18,
   font: 20,
   small: 17,
@@ -45,7 +43,6 @@ const WIDE: Layout = {
 
 const NARROW: Layout = {
   width: 400,
-  height: 450,
   cell: 41,
   cellGap: 3,
   stripX: 6,
@@ -55,7 +52,7 @@ const NARROW: Layout = {
   receiverX: 344,
   headY: 106,
   arrowsTop: 160,
-  rowH: 26,
+  rowH: 22,
   slant: 18,
   font: 17,
   small: 15,
@@ -91,6 +88,7 @@ const windowFrame = computed(() => {
 interface Arrow {
   key: string
   packet: Packet
+  arrivedNow: boolean
   x1: number
   y1: number
   x2: number
@@ -114,19 +112,27 @@ function arrowHead(x2: number, y2: number, x1: number, y1: number): string {
   return `${x2},${y2} ${bx + px},${by + py} ${bx - px},${by - py}`
 }
 
+const MIN_ROWS = 5
+const TAIL_PAD = 12
+
+// Сначала пакеты, дошедшие на этом тике (бледные), затем отправленные на нём.
 const arrows = computed<Arrow[]>(() => {
   const l = L.value
-  const ordered = [...props.state.sent.filter((p) => p.kind === 'segment'), ...props.state.sent.filter((p) => p.kind === 'ack')]
-  const rowH = Math.min(l.rowH, (l.height - l.arrowsTop - l.slant - 8) / Math.max(ordered.length, 1))
-  return ordered.map((packet, i) => {
+  const byDirection = (list: readonly Packet[]): Packet[] => [...list.filter((p) => p.kind === 'segment'), ...list.filter((p) => p.kind === 'ack')]
+  const rows = [
+    ...byDirection(props.state.arrived).map((packet) => ({ packet, arrivedNow: true })),
+    ...byDirection(props.state.sent).map((packet) => ({ packet, arrivedNow: false })),
+  ]
+  return rows.map(({ packet, arrivedNow }, i) => {
     const forward = packet.kind === 'segment'
-    const y1 = l.arrowsTop + i * rowH
+    const y1 = l.arrowsTop + i * l.rowH
     const y2 = y1 + l.slant
     const x1 = forward ? l.senderX : l.receiverX
     const x2 = forward ? l.receiverX : l.senderX
     return {
-      key: `${packet.kind}-${packet.n}-${i}`,
+      key: `${arrivedNow ? 'in' : 'out'}-${packet.kind}-${packet.n}-${i}`,
       packet,
+      arrivedNow,
       x1,
       y1,
       x2,
@@ -141,14 +147,16 @@ const arrows = computed<Arrow[]>(() => {
   })
 })
 
+const height = computed(() => L.value.arrowsTop + Math.max(arrows.value.length, MIN_ROWS) * L.value.rowH + L.value.slant + TAIL_PAD)
+
 const buffered = computed(() => props.state.received.filter((n) => n > props.state.expected))
 const bufferText = computed(() => (buffered.value.length > 0 ? `буфер: ${buffered.value.join(', ')}` : 'буфер пуст'))
-const lifelineBottom = computed(() => L.value.height - 6)
+const lifelineBottom = computed(() => height.value - 6)
 </script>
 
 <template>
   <div class="tcp">
-    <svg ref="svgEl" class="tcp-svg" :viewBox="`0 0 ${L.width} ${L.height}`" role="img" :aria-label="`Схема TCP, тик ${state.tick}: полоса сегментов, отправитель, получатель и пакеты между ними`">
+    <svg ref="svgEl" class="tcp-svg" :viewBox="`0 0 ${L.width} ${height}`" role="img" :aria-label="`Схема TCP, тик ${state.tick}: полоса сегментов, отправитель, получатель и пакеты между ними`">
       <g v-for="c in cells" :key="c.n">
         <rect :x="c.x" :y="L.stripY" :width="L.cell" :height="L.cellH" rx="6" class="cell" :class="c.state" />
         <text :x="c.x + L.cell / 2" :y="L.stripY + 22" class="cell-n" :font-size="L.font">{{ c.n }}</text>
@@ -161,7 +169,7 @@ const lifelineBottom = computed(() => L.value.height - 6)
       <text :x="L.senderX" :y="L.headY" class="head" :font-size="L.font">Отправитель</text>
       <text :x="L.receiverX" :y="L.headY" class="head" :font-size="L.font">Получатель</text>
 
-      <g v-for="a in arrows" :key="a.key" class="arrow" :class="[a.packet.kind, { lost: a.packet.lost, retransmit: a.packet.retransmit }]">
+      <g v-for="a in arrows" :key="a.key" class="arrow" :class="[a.packet.kind, { lost: a.packet.lost, retransmit: a.packet.retransmit, arrived: a.arrivedNow }]">
         <line :x1="a.x1" :y1="a.y1" :x2="a.x2" :y2="a.y2" class="shaft" />
         <polygon :points="a.head" class="tip" />
         <text :x="a.labelX" :y="a.labelY" class="plabel" :text-anchor="a.anchor" :font-size="L.small">{{ a.label }}</text>
@@ -182,6 +190,7 @@ const lifelineBottom = computed(() => L.value.height - 6)
       <li><span class="ln seg" aria-hidden="true"></span> сегмент</li>
       <li><span class="ln ack" aria-hidden="true"></span> ACK</li>
       <li><span class="ln lost" aria-hidden="true"></span> потерян (✕)</li>
+      <li><span class="ln faded" aria-hidden="true"></span> бледный — дошёл на этом тике</li>
       <li><span class="ln retr" aria-hidden="true"></span> повтор (↻)</li>
     </ul>
   </div>
@@ -201,6 +210,7 @@ const lifelineBottom = computed(() => L.value.height - 6)
 .head { fill: var(--viz-text); font-weight: 600; text-anchor: middle; }
 .note { fill: var(--viz-muted); }
 .shaft { stroke-width: 3; }
+.arrow.arrived { opacity: 0.4; }
 .arrow.segment .shaft { stroke: var(--viz-request); }
 .arrow.segment .tip { fill: var(--viz-request); }
 .arrow.ack .shaft { stroke: var(--viz-response); }
@@ -219,5 +229,6 @@ const lifelineBottom = computed(() => L.value.height - 6)
 .ln { display: inline-block; width: 22px; height: 0; border-top: 3px solid var(--viz-request); }
 .ln.ack { border-color: var(--viz-response); }
 .ln.lost { border-color: var(--viz-error); }
+.ln.faded { opacity: 0.4; }
 .ln.retr { border-top-style: dashed; }
 </style>
