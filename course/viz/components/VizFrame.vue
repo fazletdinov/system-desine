@@ -56,7 +56,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('keydown', onKeydown)
-  document.documentElement.classList.remove('viz-scroll-lock')
+  // Класс общий для всех рамок: снимаем его, только если оверлей открыт именно у этой.
+  if (mode.value === 'overlay') document.documentElement.classList.remove('viz-scroll-lock')
 })
 </script>
 

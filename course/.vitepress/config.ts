@@ -4,6 +4,7 @@ import { loadGlossaryFile } from '../glossary/load'
 import { buildSidebar } from './sidebar'
 import { mermaidFencePlugin } from './mermaid-fence'
 import { termsCheckPlugin } from './terms-check'
+import { anchorLabelPlugin } from './anchor-label'
 
 const MODULES_DIR = fileURLToPath(new URL('../modules', import.meta.url))
 const GLOSSARY_FILE = fileURLToPath(new URL('../glossary/terms.yaml', import.meta.url))
@@ -28,6 +29,7 @@ export default defineConfig({
     config: (md) => {
       termsCheckPlugin(md, KNOWN_TERMS)
       mermaidFencePlugin(md)
+      anchorLabelPlugin(md)
     },
   },
   themeConfig: {

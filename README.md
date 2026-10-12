@@ -16,6 +16,7 @@ npm run dev        # http://localhost:5173
 npm test           # Vitest: логика плеера, сценарии, расчёты, глоссарий, сайдбар
 npm run typecheck  # vue-tsc
 npm run build      # сборка; падает на неизвестном термине <T id="...">
+npm run check:go   # компилирует Go-фрагменты уроков, помеченные <!-- go-check -->
 ```
 
 ## Как добавить урок
@@ -26,5 +27,12 @@ npm run build      # сборка; падает на неизвестном те
 3. Визуализация: сценарий в `course/viz/simulations/` (чистая функция + тест), рендерер в `course/viz/renderers/`, сцена в `course/viz/scenes/`; цвета — из `course/viz/palette.css` (см. `course/viz/README.md`). Сцена подключается в самом уроке через `<script setup>` с `import`.
 4. После добавления термина или урока перезапустите `npm run dev`: список терминов и меню считаются при загрузке конфига.
 5. Перед коммитом — чек-листы подробности и визуализации из спецификации (разделы 2.2 и 2.3).
+6. Разметка урока:
+   - у каждого `##` стоит метка `<Part kind="..." />`; kind: `problem`, `theory`, `viz`, `mistakes`, `tradeoff`, `code`, `selfcheck`, `sources`, `deep` (список — в `course/components/parts.ts`). Метка не меняет якорь заголовка и подпись ссылки-якоря;
+   - `<N>` — для 3–8 ключевых чисел урока;
+   - `<Deep title="...">` — подробности «под капотом», 150–500 слов;
+   - `simplified` в `Callout` — для упрощённого кода, который отличается от продового.
+7. Go-фрагменты помечаются `<!-- go-check -->` или `<!-- go-check: harness=имя -->` перед блоком. Обвязки лежат в `course/scripts/go-harness/`, проверка — `npm run check:go`.
+8. Визуализации и схемы оборачиваются в `VizFrame` (полноэкранный режим); блоки mermaid оборачиваются автоматически.
 
 Спецификация: `docs/superpowers/specs/2026-10-09-course-platform-design.md`.
