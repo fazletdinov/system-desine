@@ -1,3 +1,4 @@
+import { h } from 'vue'
 import DefaultTheme from 'vitepress/theme-without-fonts'
 import type { Theme } from 'vitepress'
 import T from '../../components/T.vue'
@@ -9,12 +10,15 @@ import Part from '../../components/Part.vue'
 import N from '../../components/N.vue'
 import Deep from '../../components/Deep.vue'
 import MermaidDiagram from '../../components/MermaidDiagram.vue'
+import LessonKicker from '../../components/LessonKicker.vue'
 import '../../components/parts.css'
 import '../../viz/palette.css'
 import './custom.css'
 
 export default {
   extends: DefaultTheme,
+  // Над заголовком урока — строка «Модуль N · Урок M».
+  Layout: () => h(DefaultTheme.Layout, null, { 'doc-before': () => h(LessonKicker) }),
   enhanceApp({ app }) {
     app.component('T', T)
     app.component('Callout', Callout)

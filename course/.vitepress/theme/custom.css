@@ -49,3 +49,17 @@
     min-width: 15rem;
   }
 }
+
+/* Заголовок урока — фирменный градиент «Ночного терминала»: от бренда к акценту. */
+.vp-doc h1 {
+  width: fit-content;
+  max-width: 100%;
+  background: linear-gradient(90deg, var(--vp-c-brand-1), var(--course-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* Иначе значок-якорь унаследует прозрачный цвет и пропадёт. */
+.vp-doc h1 .header-anchor {
+  -webkit-text-fill-color: var(--vp-c-brand-1);
+}

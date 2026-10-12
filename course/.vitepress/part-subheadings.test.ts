@@ -36,6 +36,25 @@ describe('partSubheadingsPlugin', () => {
     expect(h3Classes(html)).toEqual([''])
   })
 
+  it('раздел с меткой получает класс цвета своей метки', async () => {
+    const html = await render(['## <Part kind="problem" /> Проблема', '## Без метки'].join('\n\n'))
+    const classes = [...html.matchAll(/<h2([^>]*)>/g)].map((m) => /class="([^"]*)"/.exec(m[1] ?? '')?.[1] ?? '')
+    expect(classes).toEqual(['sec-problem', ''])
+  })
+
+  it('ведущее слово раздела выделяется отдельно, якорь не меняется', async () => {
+    const html = await render('## <Part kind="problem" /> Проблема: код работает долго')
+    expect(html).toContain('<span class="sec-lead">Проблема:</span> код работает долго')
+    expect(html).toContain('id="проблема-код-работает-долго"')
+  })
+
+  it('без двоеточия в начале заголовок не трогает, длинную фразу до двоеточия не считает ведущим словом', async () => {
+    const html = await render(
+      ['## <Part kind="theory" /> Участники', '## <Part kind="theory" /> Закон Литтла и пулы соединений в Go: пример'].join('\n\n'),
+    )
+    expect(html).not.toContain('sec-lead')
+  })
+
   it('заголовки внутри блоков кода не трогает', async () => {
     const html = await render(['## <Part kind="theory" /> Теория', '```markdown\n### В коде\n```'].join('\n\n'))
     expect(html).not.toContain('<h3')
