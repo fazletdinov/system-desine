@@ -166,6 +166,54 @@ lab exec client cp /tmp/resolv.conf.orig /etc/resolv.conf
 `dns: n=5`; с `ndots:5` — 169 мс холодный и 83 мс повторный против 21 мс с точкой; недоступный DNS — `total=10.00364s` (5 с × 2 попытки).
 `dig +trace` на нашей сети показал перехват DNS провайдером (ответ «корня» с флагом `ra` и без `aa`).
 
+### Урок 0b.5 — TLS: свой CA, проверка имени, возобновление
+
+Урок: [0b.5. TLS на практике](../../course/modules/00b-network/05-tls.md). Программы — `h2server` и `tlsdemo` (ниже).
+
+```bash
+labs/0b/netem.sh 40ms 0%
+lab exec -d server h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem
+lab exec client tlsdemo get -url https://api.messenger.example:8443/ -ca /captures/ca.pem                             # успех: TLS 1.3, ALPN h2, цепочка
+lab exec client tlsdemo get -url https://api.messenger.example:8443/ -ca /captures/ca.pem -server-name evil.example   # имени нет в SAN
+lab exec client tlsdemo get -url https://api.messenger.example:8443/                                                 # неизвестный CA
+lab exec client openssl s_client -connect 172.28.0.10:8443 -servername api.messenger.example -CAfile /captures/ca.pem </dev/null
+lab exec client sh -c 'openssl s_client -connect 172.28.0.10:8443 -servername api.messenger.example -CAfile /captures/ca.pem </dev/null 2>/dev/null | openssl x509 -noout -text'
+for v in 1.2 1.3; do lab exec client curl -s -o /dev/null --cacert /captures/ca.pem --resolve api.messenger.example:8443:172.28.0.10 --tlsv$v --tls-max $v -w "TLS $v: connect=%{time_connect}s appconnect=%{time_appconnect}s\n" https://api.messenger.example:8443/; done
+lab exec client tlsdemo inspect -addr 172.28.0.10:8443 -server-name api.messenger.example -ca /captures/ca.pem      # DidResume=true на втором
+```
+
+Результат на нашем стенде (у вас числа будут другими, порядок — такой): неверное имя —
+`x509: certificate is valid for api.messenger.example, server, not evil.example`; без `-ca` —
+`x509: certificate signed by unknown authority`; `openssl s_client` — `Verify return code: 0 (ok)`,
+группа `X25519MLKEM768`, билет на 604 800 с, `Max Early Data: 0`; TLS-рукопожатие по `curl` —
+82,7 мс в TLS 1.2 (2 RTT) против 42,5 мс в TLS 1.3 (1 RTT); `inspect` — `DidResume=true`, но TLS
+41,3 → 40,8 мс: в TLS 1.3 возобновление экономит проверку сертификатов, а не RTT.
+
+### Урок 0b.6 — HTTP/1.1, keep-alive и пул соединений
+
+Урок: [0b.6. HTTP/1.1, keep-alive и пулы соединений](../../course/modules/00b-network/06-http1-pools.md). Программы — `httpbench` и `h2server` (ниже).
+
+```bash
+labs/0b/netem.sh 40ms 0%
+lab exec -d server h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -keepalive=false -c 1 -n 20
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -keepalive=true -c 1 -n 20
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 10 -n 100 -max-idle-per-host 2
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 10 -n 100 -max-idle-per-host 10
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 2
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 50
+lab exec client httpbench -url 'https://172.28.0.10:8443/slow?ms=3000' -ca /captures/ca.pem -server-name api.messenger.example -c 1 -n 1 -timeout 1s
+lab exec client bash -c 'exec 3<>/dev/tcp/172.28.0.10/8080; printf "GET / HTTP/1.1\r\nHost: api\r\n" >&3; time cat <&3'   # Slowloris: ReadHeaderTimeout
+lab exec client bash -c 'exec 3<>/dev/tcp/172.28.0.10/8080; printf "GET / HTTP/1.1\r\nHost: api\r\n\r\nGET /bytes?n=5 HTTP/1.1\r\nHost: api\r\nConnection: close\r\n\r\n" >&3; cat <&3'
+```
+
+Результат на нашем стенде (у вас числа будут другими, порядок — такой): без keep-alive p50 121,6 мс
+(3 RTT) и `tcp_conns=20`, с keep-alive p50 40,5 мс и `tcp_conns=1`; `-c 10` с пулом на 2 —
+`tcp_conns` от 10 до 47 в разных прогонах при `new_conns=10`, с пулом на 10 — всегда 10;
+`-c 50` с пулом на 2 — `tcp_conns=239` и 246, с пулом на 50 — 50; таймаут 1 с —
+`Client.Timeout exceeded while awaiting headers`, `total=1.00068s`; неполные заголовки —
+сервер молча закрывает соединение через 5,045 с.
+
 ### tcpecho — TCP-эхо
 
 Сервер возвращает каждую строку; клиент меряет время рукопожатия и RTT каждой строки.
@@ -273,9 +321,10 @@ docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28
 Без keep-alive каждый запрос — три RTT: TCP-рукопожатие, TLS 1.3-рукопожатие, сам запрос.
 С keep-alive так платит только первый запрос на соединении — он и даёт p99.
 
-При `-c 10` предел пула 2 и 10 неразличимы, и `tcp_conns=10` — ни одного лишнего набора: воркеры
-забирают соединение обратно сразу после ответа, и простаивающих больше двух почти не бывает.
-При `-c 50` предел становится виден:
+При `-c 10` предел пула на грани: в одних прогонах `tcp_conns=10` — ни одного лишнего набора,
+в других (другой день, тот же стенд) — 34–47 при тех же `new_conns=10`. Всё решает, успеет ли
+освободившееся соединение вернуться в пул раньше, чем следующий запрос начнёт набор.
+При `-c 50` предел виден всегда:
 
 ```bash
 docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -c 50 -n 500 -max-idle-per-host 2    # tcp_conns=203 new_conns=50
