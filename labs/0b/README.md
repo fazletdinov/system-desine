@@ -44,6 +44,49 @@ docker compose -f labs/0b/compose.yaml down
 
 ## Лабораторные по урокам
 
+### Урок 0b.1 — слои, адреса, первая запись трафика
+
+Урок: `course/modules/00b-network/01-layers.md` (на сайте — «0b.1. Слои: от IP-пакета до HTTP»).
+
+```bash
+labs/0b/netem.sh 40ms 0%
+docker compose -f labs/0b/compose.yaml exec -d server h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem
+docker compose -f labs/0b/compose.yaml exec client ip -br addr show eth0
+docker compose -f labs/0b/compose.yaml exec client ip route
+docker compose -f labs/0b/compose.yaml exec client ip route get 172.28.0.10
+docker compose -f labs/0b/compose.yaml exec server ss -tlnp
+docker compose -f labs/0b/compose.yaml exec -d client tcpdump -i eth0 -w /captures/first.pcap
+docker compose -f labs/0b/compose.yaml exec client curl -s http://172.28.0.10:8080/
+docker compose -f labs/0b/compose.yaml exec client ss -tan
+docker compose -f labs/0b/compose.yaml exec client pkill tcpdump
+docker compose -f labs/0b/compose.yaml exec client tcpdump -nn -r /captures/first.pcap
+docker compose -f labs/0b/compose.yaml exec client tcpdump -nn -e -v -r /captures/first.pcap
+```
+
+Файл `labs/0b/captures/first.pcap` откройте в Wireshark. В записи клиента между `SYN` и `SYN-ACK`
+20 мс, а не 40: `tcpdump` видит исходящий пакет, когда тот выходит из очереди netem.
+
+### Урок 0b.2 — TCP под задержкой и потерями
+
+Урок: `course/modules/00b-network/02-tcp.md` (на сайте — «0b.2. TCP изнутри»). Программа — `tcpecho` (ниже);
+`ss -ti` запускайте, пока клиент работает (`-n 30 -interval 200ms`).
+
+```bash
+docker compose -f labs/0b/compose.yaml exec -d server tcpecho -serve -addr :7000
+labs/0b/netem.sh 40ms 0%
+docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 10ms
+labs/0b/netem.sh 40ms 5%
+docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 50ms
+docker compose -f labs/0b/compose.yaml exec client ss -ti dst 172.28.0.10
+labs/0b/netem.sh 40ms 10%
+docker compose -f labs/0b/compose.yaml exec client sh -c 'for i in $(seq 1 40); do tcpecho -addr 172.28.0.10:7000 -n 1 2>&1 | grep connect; done'
+docker compose -f labs/0b/compose.yaml exec client ss -tan dst 172.28.0.10
+```
+
+Результат на нашем стенде (у вас числа будут другими, порядок — такой): при 5% потерь p50 40,7 мс,
+p99 294 мс (повтор по таймеру: RTO ≈ 240 мс + RTT); при 10% потерь из 40 рукопожатий 33 заняли ≈ 40 мс,
+4 — ≈ 1,05 с, 3 — ≈ 2,07 с (начальный RTO 1 с). Демонстрация Нейгла — в разделе tcpecho ниже.
+
 ### tcpecho — TCP-эхо
 
 Сервер возвращает каждую строку; клиент меряет время рукопожатия и RTT каждой строки.
@@ -80,8 +123,8 @@ docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:700
 | `-writes 2 -nodelay=false` | 120,8 мс | 80,3 мс |
 | `-writes 2 -nodelay=true` | 40,3 мс | 40,2 мс |
 
-Модель (не измерение) для 120 мс: 20 мс голова строки до сервера + ~40 мс отложенный ACK сервера +
-20 мс ACK назад + 20 мс хвост + 20 мс эхо; 80 мс — то же без отложенного ACK. Расклад проверяйте через `tcpdump`.
+Раскладка 120 мс (проверена `tcpdump` на сервере): 20 мс голова строки до сервера + 40 мс отложенный ACK сервера +
+20 мс ACK назад + 20 мс хвост + 20 мс эхо; 80 мс — то же без отложенного ACK.
 
 Один `Write` на строку Нейгл не задерживает: нечего ждать. Минимум 80 мс при `-writes 2 -nodelay=false`
 показывает, что первые обмены проходят быстрее: ядро Linux в начале соединения подтверждает сегменты
