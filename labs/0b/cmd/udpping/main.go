@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -105,14 +106,12 @@ func serve(ctx context.Context, pc net.PacketConn, log *slog.Logger) error {
 	defer cancel()
 	var wg sync.WaitGroup
 	// Закрытие сокета — единственный способ прервать ReadFrom.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		<-ctx.Done()
 		if err := pc.Close(); err != nil {
 			log.Warn("закрытие сокета", "err", err)
 		}
-	}()
+	})
 	defer wg.Wait()
 
 	buf := make([]byte, 1500)
@@ -164,8 +163,7 @@ func runClient(ctx context.Context, cfg config, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	printReport(out, rep)
-	return nil
+	return printReport(out, rep)
 }
 
 // report — результат анализа плюс то, что не вписывается в потери и дубликаты.
@@ -192,9 +190,7 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 
 	// #region client
 
-	wg.Add(1)
-	go func() { // отправитель
-		defer wg.Done()
+	wg.Go(func() { // отправитель
 		// Будим получателя при любом выходе; если не вышло — закрываем сокет, иначе wg.Wait зависнет.
 		defer func() {
 			if sendErr == nil {
@@ -226,11 +222,9 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 			case <-time.After(cfg.interval):
 			}
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() { // получатель
-		defer wg.Done()
+	wg.Go(func() { // получатель
 		buf := make([]byte, 64)
 		for {
 			n, err := conn.Read(buf)
@@ -251,7 +245,7 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 			}
 			replies = append(replies, udpstat.Reply{Seq: seq, RTT: time.Since(base) - stamp})
 		}
-	}()
+	})
 
 	wg.Wait()
 	rep.Result = udpstat.Analyze(sent, replies)
@@ -265,17 +259,25 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 	return rep, nil
 }
 
-func printReport(out io.Writer, r report) {
+// Вывод идёт через bufio.Writer: он запоминает первую ошибку записи, следующие записи
+// ничего не делают, а Flush её возвращает. Поэтому ошибка вывода проверяется один раз — в Flush.
+func printReport(out io.Writer, r report) error {
 	var pct float64
 	if r.Sent > 0 {
 		pct = float64(r.Lost) / float64(r.Sent) * 100
 	}
-	fmt.Fprintf(out, "sent=%d received=%d lost=%d (%.1f%%) dup=%d reordered=%d\n",
+	w := bufio.NewWriter(out)
+	printf := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) } // ошибку вернёт Flush
+	printf("sent=%d received=%d lost=%d (%.1f%%) dup=%d reordered=%d\n",
 		r.Sent, r.Received, r.Lost, pct, r.Duplicates, r.Reordered)
 	if r.Malformed > 0 || r.Refused > 0 {
-		fmt.Fprintf(out, "unexpected: malformed=%d refused=%d\n", r.Malformed, r.Refused)
+		printf("unexpected: malformed=%d refused=%d\n", r.Malformed, r.Refused)
 	}
 	if s := stats.Summary(r.RTTs); s.N > 0 {
-		fmt.Fprintf(out, "rtt: n=%d min=%v p50=%v p99=%v max=%v\n", s.N, s.Min, s.P50, s.P99, s.Max)
+		printf("rtt: n=%d min=%v p50=%v p99=%v max=%v\n", s.N, s.Min, s.P50, s.P99, s.Max)
 	}
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+	return nil
 }

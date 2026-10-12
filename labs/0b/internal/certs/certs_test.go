@@ -111,6 +111,18 @@ func TestInvalidArgumentsAreRejected(t *testing.T) {
 	}
 }
 
+func TestSerialIsPositiveAndFitsIn128Bits(t *testing.T) {
+	for range 1000 {
+		n, err := randomSerial()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n.Sign() <= 0 || n.BitLen() > 128 {
+			t.Fatalf("серийный номер %v: знак %d, бит %d", n, n.Sign(), n.BitLen())
+		}
+	}
+}
+
 func mustCA(t *testing.T, cn string) *CA {
 	t.Helper()
 	ca, err := NewCA(cn, time.Hour)
@@ -144,15 +156,13 @@ func handshakeOverPipe(srvCfg, cliCfg *tls.Config) error {
 		conn *tls.Conn
 		raw  net.Conn
 	}{{"server", srv, sc}, {"client", cli, cc}} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := side.conn.HandshakeContext(ctx); err != nil {
 				errs <- fmt.Errorf("%s handshake: %w", side.name, err)
 				// Провал одной стороны должен разбудить другую, иначе она ждёт до таймаута.
 				_ = side.raw.Close()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

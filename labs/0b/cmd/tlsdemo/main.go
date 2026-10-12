@@ -104,7 +104,8 @@ func main() {
 	}
 	if err := run(ctx, cfg, os.Stdout); err != nil {
 		if why := explainTLS(err); why != "" {
-			fmt.Fprintf(os.Stderr, "проверка сертификата не прошла: %s\nисходная ошибка: %v\n", why, err)
+			// Если не пишется и stderr, сообщить об ошибке некуда: остаётся код возврата.
+			_, _ = fmt.Fprintf(os.Stderr, "проверка сертификата не прошла: %s\nисходная ошибка: %v\n", why, err)
 		} else {
 			log.Error("tlsdemo "+cfg.cmd, "err", err)
 		}
@@ -197,15 +198,26 @@ func runGet(ctx context.Context, cfg config, out io.Writer) error {
 		return fmt.Errorf("read body: %w", err)
 	}
 
+	return printGet(out, resp, body)
+}
+
+// printGet пишет через bufio.Writer: он запоминает первую ошибку записи, следующие записи
+// ничего не делают, а Flush её возвращает. Поэтому ошибка вывода проверяется один раз.
+func printGet(out io.Writer, resp *http.Response, body []byte) error {
+	w := bufio.NewWriter(out)
+	printf := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) } // ошибку вернёт Flush
 	st := resp.TLS
-	fmt.Fprintf(out, "TLS: версия=%s ALPN=%s шифр=%s\n",
+	printf("TLS: версия=%s ALPN=%s шифр=%s\n",
 		tls.VersionName(st.Version), alpn(st.NegotiatedProtocol), tls.CipherSuiteName(st.CipherSuite))
-	fmt.Fprintln(out, "цепочка от сервера:")
+	printf("цепочка от сервера:\n")
 	for i, c := range st.PeerCertificates {
-		fmt.Fprintf(out, "  %d: subject=%s issuer=%s срок=%s..%s\n", i, c.Subject, c.Issuer,
+		printf("  %d: subject=%s issuer=%s срок=%s..%s\n", i, c.Subject, c.Issuer,
 			c.NotBefore.UTC().Format(time.RFC3339), c.NotAfter.UTC().Format(time.RFC3339))
 	}
-	fmt.Fprintf(out, "ответ: %s %s\n%s", resp.Proto, resp.Status, body)
+	printf("ответ: %s %s\n%s", resp.Proto, resp.Status, body)
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
 	return nil
 }
 
@@ -229,11 +241,15 @@ func runInspect(ctx context.Context, cfg config, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("соединение %d: %w", i, err)
 		}
-		fmt.Fprintf(out, "соединение %d: %s\n", i, line)
+		if _, err := fmt.Fprintf(out, "соединение %d: %s\n", i, line); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 	}
 	return nil
 }
 
+// inspectOnce устанавливает TCP и TLS по отдельности, чтобы время каждого рукопожатия
+// было видно само по себе (tls.Dialer делает оба шага разом).
 func inspectOnce(ctx context.Context, cfg config, roots *x509.CertPool, cache tls.ClientSessionCache) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, cfg.timeout)
 	defer cancel()
@@ -242,23 +258,39 @@ func inspectOnce(ctx context.Context, cfg config, roots *x509.CertPool, cache tl
 	tlsCfg.ClientSessionCache = cache
 	// Только HTTP/1.1: после рукопожатия мы шлём простой запрос, а для h2 понадобились бы кадры HTTP/2.
 	tlsCfg.NextProtos = []string{"http/1.1"}
-	d := tls.Dialer{NetDialer: &net.Dialer{}, Config: tlsCfg}
+	if tlsCfg.ServerName == "" {
+		// tls.Client, в отличие от tls.Dialer, сам имя из адреса не берёт, а без имени
+		// проверить сертификат нельзя.
+		host, _, err := net.SplitHostPort(cfg.addr)
+		if err != nil {
+			return "", fmt.Errorf("addr %q: %w", cfg.addr, err)
+		}
+		tlsCfg.ServerName = host
+	}
 
+	var d net.Dialer
 	start := time.Now()
-	conn, err := d.DialContext(ctx, "tcp", cfg.addr) // TCP-рукопожатие, затем TLS
+	raw, err := d.DialContext(ctx, "tcp", cfg.addr)
 	if err != nil {
 		return "", fmt.Errorf("dial %s: %w", cfg.addr, err)
 	}
-	dial := time.Since(start)
+	tcpTime := time.Since(start)
+	conn := tls.Client(raw, tlsCfg)
 	defer func() { _ = conn.Close() }() // ответ уже прочитан; ошибка закрытия ничего не меняет
 
 	deadline, _ := ctx.Deadline() // есть всегда: ctx создан с таймаутом
-	if err := conn.SetDeadline(deadline); err != nil {
+	if err := raw.SetDeadline(deadline); err != nil {
 		return "", fmt.Errorf("set deadline: %w", err)
 	}
 	// Отмена по сигналу должна прервать чтение раньше дедлайна.
-	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	stop := context.AfterFunc(ctx, func() { _ = raw.SetDeadline(time.Now()) })
 	defer stop()
+
+	start = time.Now()
+	if err := conn.HandshakeContext(ctx); err != nil {
+		return "", fmt.Errorf("tls handshake: %w", err)
+	}
+	tlsTime := time.Since(start)
 
 	// В TLS 1.3 билет сессии приходит после рукопожатия, а клиент разбирает его, только
 	// когда читает из соединения. Поэтому делаем один запрос и читаем ответ до конца:
@@ -268,10 +300,10 @@ func inspectOnce(ctx context.Context, cfg config, roots *x509.CertPool, cache tl
 		return "", err
 	}
 
-	st := conn.(*tls.Conn).ConnectionState()
-	return fmt.Sprintf("версия=%s шифр=%s ALPN=%s DidResume=%t TCP+TLS=%v статус=%s",
+	st := conn.ConnectionState()
+	return fmt.Sprintf("версия=%s шифр=%s ALPN=%s DidResume=%t TCP=%v TLS=%v статус=%s",
 		tls.VersionName(st.Version), tls.CipherSuiteName(st.CipherSuite), alpn(st.NegotiatedProtocol),
-		st.DidResume, dial.Round(10*time.Microsecond), status), nil
+		st.DidResume, tcpTime.Round(10*time.Microsecond), tlsTime.Round(10*time.Microsecond), status), nil
 }
 
 func oneRequest(conn net.Conn, cfg config) (string, error) {

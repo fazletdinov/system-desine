@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -124,6 +127,71 @@ func TestSlowHandlerStopsWhenClientGoesAway(t *testing.T) {
 	newHandler(discard).ServeHTTP(httptest.NewRecorder(), req)
 	if el := time.Since(start); el > time.Second {
 		t.Fatalf("обработчик не заметил отмену запроса: %v", el)
+	}
+}
+
+func TestLogMarksAbortedRequests(t *testing.T) {
+	tests := []struct {
+		name        string
+		cancel      bool
+		wantAborted bool
+	}{
+		{"клиент дождался ответа", false, false},
+		{"клиент ушёл раньше", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logBuf bytes.Buffer
+			h := newHandler(slog.New(slog.NewTextHandler(&logBuf, nil)))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ms := "10"
+			if tt.cancel {
+				ms = "10000"
+				time.AfterFunc(20*time.Millisecond, cancel)
+			}
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(ctx, http.MethodGet, "/slow?ms="+ms, nil))
+			if got := strings.Contains(logBuf.String(), "aborted=true"); got != tt.wantAborted {
+				t.Fatalf("aborted=true в журнале: %v, want %v:\n%s", got, tt.wantAborted, logBuf.String())
+			}
+		})
+	}
+}
+
+func TestWriteFileAtomic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ca.pem")
+	for _, content := range []string{"first", "second"} { // второй раз — замена существующего файла
+		if err := writeFileAtomic(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != content {
+			t.Fatalf("содержимое %q, want %q", got, content)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o644 {
+		t.Fatalf("права %v, want 0644", perm)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("в каталоге остались временные файлы: %v", entries)
+	}
+}
+
+func TestWriteFileAtomicFailsForMissingDir(t *testing.T) {
+	if err := writeFileAtomic(filepath.Join(t.TempDir(), "nope", "ca.pem"), []byte("x"), 0o644); err == nil {
+		t.Fatal("ожидалась ошибка: каталога нет")
 	}
 }
 

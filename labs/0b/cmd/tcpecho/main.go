@@ -216,13 +216,11 @@ func serve(ctx context.Context, ln net.Listener, idle, shutdown time.Duration, l
 			break
 		}
 		s.add(conn)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer s.remove(conn)
 			lines, err := handle(conn, s.armRead, idle)
 			log.Info("соединение закрыто", "client", conn.RemoteAddr().String(), "lines", lines, "reason", s.closeReason(err))
-		}()
+		})
 	}
 	cancel()
 	<-stopped
@@ -308,12 +306,23 @@ func runClient(ctx context.Context, cfg config, out io.Writer) error {
 	}
 
 	rtts, err := pingLoop(ctx, conn, cfg)
-	fmt.Fprintf(out, "connect: %v\n", connect)
+	return errors.Join(err, printResult(out, connect, rtts)) // и при ошибке: замеры до неё полезны
+}
+
+// Вывод идёт через bufio.Writer: он запоминает первую ошибку записи, следующие записи
+// ничего не делают, а Flush её возвращает. Поэтому ошибка вывода проверяется один раз — в Flush.
+func printResult(out io.Writer, connect time.Duration, rtts []time.Duration) error {
+	w := bufio.NewWriter(out)
+	printf := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) } // ошибку вернёт Flush
+	printf("connect: %v\n", connect)
 	if len(rtts) > 0 {
 		s := stats.Summary(rtts)
-		fmt.Fprintf(out, "rtt: n=%d min=%v p50=%v p99=%v max=%v\n", s.N, s.Min, s.P50, s.P99, s.Max)
+		printf("rtt: n=%d min=%v p50=%v p99=%v max=%v\n", s.N, s.Min, s.P50, s.P99, s.Max)
 	}
-	return err
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("write result: %w", err)
+	}
+	return nil
 }
 
 // #region client

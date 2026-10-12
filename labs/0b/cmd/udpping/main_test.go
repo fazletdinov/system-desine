@@ -30,7 +30,9 @@ func TestDecodeRejectsWrongLength(t *testing.T) {
 
 func TestPrintReport(t *testing.T) {
 	var buf bytes.Buffer
-	printReport(&buf, report{Result: udpstat.Analyze(4, []udpstat.Reply{{Seq: 0, RTT: time.Millisecond}, {Seq: 2, RTT: 3 * time.Millisecond}})})
+	if err := printReport(&buf, report{Result: udpstat.Analyze(4, []udpstat.Reply{{Seq: 0, RTT: time.Millisecond}, {Seq: 2, RTT: 3 * time.Millisecond}})}); err != nil {
+		t.Fatal(err)
+	}
 	first, _, _ := strings.Cut(buf.String(), "\n")
 	if want := "sent=4 received=2 lost=2 (50.0%) dup=0 reordered=0"; first != want {
 		t.Fatalf("got %q, want %q", first, want)
@@ -90,7 +92,9 @@ func TestClientCountsRefusedWhenNobodyListens(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := pc.LocalAddr().String()
-	pc.Close() // порт освобождён: на отправку придёт ICMP port unreachable
+	if err := pc.Close(); err != nil { // порт освобождён: на отправку придёт ICMP port unreachable
+		t.Fatal(err)
+	}
 
 	var out bytes.Buffer
 	cfg := config{addr: addr, n: 3, interval: 5 * time.Millisecond, wait: 100 * time.Millisecond}

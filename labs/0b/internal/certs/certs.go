@@ -122,13 +122,15 @@ func (ca *CA) PEM() []byte {
 	return append([]byte(nil), ca.pem...) // копия: вызывающий не испортит наш буфер
 }
 
-// randomSerial — случайный 128-битный серийный номер. RFC 5280 требует положительное
-// число не длиннее 20 байт; случайность делает номера уникальными без счётчика.
+// randomSerial — случайный серийный номер в [1, 2^128−1], то есть не длиннее 128 бит.
+// RFC 5280 требует положительное число не длиннее 20 байт; случайность делает номера
+// уникальными без счётчика.
 func randomSerial() (*big.Int, error) {
-	limit := new(big.Int).Lsh(big.NewInt(1), 128)
-	n, err := rand.Int(rand.Reader, limit)
+	maxSerial := new(big.Int).Lsh(big.NewInt(1), 128)
+	maxSerial.Sub(maxSerial, big.NewInt(1)) // rand.Int даёт [0, max): после +1 — [1, 2^128−1]
+	n, err := rand.Int(rand.Reader, maxSerial)
 	if err != nil {
 		return nil, fmt.Errorf("serial number: %w", err)
 	}
-	return n.Add(n, big.NewInt(1)), nil // [1, 2^128]: ноль запрещён
+	return n.Add(n, big.NewInt(1)), nil // ноль запрещён
 }

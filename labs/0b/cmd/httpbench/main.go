@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -105,8 +106,8 @@ func main() {
 
 func run(ctx context.Context, cfg config, out io.Writer) error {
 	rep, err := bench(ctx, cfg)
-	if rep.requests > 0 {
-		printReport(out, rep) // и при отмене: частичный результат тоже полезен
+	if rep.requests > 0 { // и при отмене: частичный результат тоже полезен
+		err = errors.Join(err, printReport(out, rep))
 	}
 	return err
 }
@@ -132,9 +133,9 @@ func newTransport(cfg config, roots *x509.CertPool) *http.Transport {
 	tr := &http.Transport{
 		Proxy:       http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{Timeout: cfg.timeout, KeepAlive: 30 * time.Second}).DialContext,
-		// Пул: всего простаивающих соединений и на один хост. Если воркеров больше, чем
-		// MaxIdleConnsPerHost, лишние соединения после ответа закрываются, и следующий
-		// запрос платит новое рукопожатие.
+		// Пул простаивающих соединений: всего и на один хост. Соединение, вернувшееся
+		// в пул, где уже лежит MaxIdleConnsPerHost простаивающих, закрывается — и запросам,
+		// которым потом не хватит свободного соединения, придётся набирать новые.
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: cfg.maxIdlePerHost,
 		IdleConnTimeout:     90 * time.Second,
@@ -153,7 +154,8 @@ func newTransport(cfg config, roots *x509.CertPool) *http.Transport {
 	if !cfg.http2 {
 		// Пустая, но не nil карта — документированный способ запретить HTTP/2:
 		// клиент не предложит h2 в ALPN, даже если сервер его умеет. Иначе сравнение
-		// с HTTP/1.1 было бы нечестным.
+		// с HTTP/1.1 было бы нечестным. С Go 1.24 то же выражается явно через
+		// Transport.Protocols (SetHTTP1(true), SetHTTP2(false)).
 		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	}
 	return tr
@@ -167,8 +169,9 @@ func newTransport(cfg config, roots *x509.CertPool) *http.Transport {
 // из горутин транспорта, в том числе из горутины установки соединения, которая может
 // пережить сам запрос, — поэтому всё под мьютексом.
 type connStats struct {
-	mu                 sync.Mutex
-	newConns           int
+	mu       sync.Mutex
+	newConns int // запросы, получившие соединение с GotConnInfo.Reused == false
+	// Длительности успешных фаз; len(connect) — сколько TCP-соединений установлено на самом деле.
 	dns, connect, tlsH []time.Duration
 }
 
@@ -191,7 +194,13 @@ func (s *connStats) newTrace() *httptrace.ClientTrace {
 		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
 			s.since(&s.tlsH, &tlsStart, err)
 		},
-		// GotConn вызывается для каждого запроса: Reused == false — соединение новое.
+		// GotConn вызывается для каждого запроса. Reused == false значит «соединение
+		// ещё не побывало в пуле», а не «установлено для этого запроса»: транспорт
+		// помечает соединение использованным, когда кладёт его в пул (tryPutIdleConn →
+		// markReused). Запрос может не дождаться своего набора и получить чужое
+		// освободившееся соединение, а набор доработает впустую и положит своё в пул —
+		// оттуда его позже возьмут уже с Reused == true. Поэтому newConns — нижняя
+		// граница, а сколько соединений установлено на самом деле, показывает len(connect).
 		GotConn: func(info httptrace.GotConnInfo) {
 			if info.Reused {
 				return
@@ -277,7 +286,7 @@ type report struct {
 	requests  int // завершённые запросы, успешные и нет; отменённые не считаются
 	errors    map[errClass]int
 	firstErr  map[errClass]error // по одному примеру на вид — чтобы было что читать
-	newConns  int
+	newConns  int                // нижняя граница новых соединений (см. GotConn в newTrace)
 	protos    map[string]int
 	latencies []time.Duration // только успешные запросы
 	dns       []time.Duration
@@ -323,16 +332,14 @@ func bench(ctx context.Context, cfg config) (report, error) {
 	start := time.Now()
 	var wg sync.WaitGroup
 	for range min(cfg.c, cfg.n) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range jobs {
 				if ctx.Err() != nil {
 					return
 				}
 				results[i] = do(ctx, client, cfg.url, &st)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -401,20 +408,27 @@ func aggregate(results []result) report {
 	return rep
 }
 
-func printReport(out io.Writer, r report) {
-	fmt.Fprintf(out, "requests=%d errors=%d new_conns=%d proto=%s\n", r.requests, r.failed(), r.newConns, r.proto())
+// Вывод идёт через bufio.Writer: он запоминает первую ошибку записи, следующие записи
+// ничего не делают, а Flush её возвращает. Поэтому ошибка вывода проверяется один раз — в Flush.
+func printReport(out io.Writer, r report) error {
+	w := bufio.NewWriter(out)
+	printf := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) } // ошибку вернёт Flush
+	// tcp_conns — установлено TCP-соединений; new_conns — сколько запросов получили
+	// соединение, ещё не побывавшее в пуле. Разница — соединения, набранные впустую.
+	printf("requests=%d errors=%d tcp_conns=%d new_conns=%d proto=%s\n",
+		r.requests, r.failed(), len(r.connect), r.newConns, r.proto())
 	if s := stats.Summary(r.latencies); s.N > 0 {
-		fmt.Fprintf(out, "latency: n=%d min=%v p50=%v p99=%v max=%v\n", s.N, round(s.Min), round(s.P50), round(s.P99), round(s.Max))
+		printf("latency: n=%d min=%v p50=%v p99=%v max=%v\n", s.N, round(s.Min), round(s.P50), round(s.P99), round(s.Max))
 	}
 	if r.failed() > 0 {
 		parts := make([]string, 0, len(errClasses))
 		for _, c := range errClasses {
 			parts = append(parts, fmt.Sprintf("%s=%d", c, r.errors[c]))
 		}
-		fmt.Fprintf(out, "errors: %s\n", strings.Join(parts, " "))
+		printf("errors: %s\n", strings.Join(parts, " "))
 		for _, c := range errClasses {
 			if err := r.firstErr[c]; err != nil {
-				fmt.Fprintf(out, "  %s: %v\n", c, err)
+				printf("  %s: %v\n", c, err)
 			}
 		}
 	}
@@ -423,10 +437,14 @@ func printReport(out io.Writer, r report) {
 		ds   []time.Duration
 	}{{"dns", r.dns}, {"connect", r.connect}, {"tls", r.tls}} {
 		if s := stats.Summary(ph.ds); s.N > 0 {
-			fmt.Fprintf(out, "%s: n=%d min=%v p50=%v max=%v\n", ph.name, s.N, round(s.Min), round(s.P50), round(s.Max))
+			printf("%s: n=%d min=%v p50=%v max=%v\n", ph.name, s.N, round(s.Min), round(s.P50), round(s.Max))
 		}
 	}
-	fmt.Fprintf(out, "total=%v\n", round(r.total))
+	printf("total=%v\n", round(r.total))
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+	return nil
 }
 
 // round до 10 мкс: точнее сетевой замер всё равно не значим, а читать легче.

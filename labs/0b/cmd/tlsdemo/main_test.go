@@ -157,8 +157,10 @@ func TestInspectResumesSecondSession(t *testing.T) {
 		t.Fatalf("ожидались две строки, получено:\n%s", out.String())
 	}
 	for i, want := range []string{"DidResume=false", "DidResume=true"} {
-		if !strings.Contains(lines[i], want) || !strings.Contains(lines[i], "версия=TLS 1.3") || !strings.Contains(lines[i], "статус=200") {
-			t.Errorf("строка %d: нет %q:\n%s", i+1, want, lines[i])
+		for _, part := range []string{want, "версия=TLS 1.3", " TCP=", " TLS=", "статус=200"} {
+			if !strings.Contains(lines[i], part) {
+				t.Errorf("строка %d: нет %q:\n%s", i+1, part, lines[i])
+			}
 		}
 	}
 }

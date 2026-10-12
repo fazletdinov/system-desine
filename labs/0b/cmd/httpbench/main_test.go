@@ -141,10 +141,38 @@ func TestBenchCountsConnections(t *testing.T) {
 			if len(rep.latencies) != tt.n {
 				t.Fatalf("latencies = %d, want %d", len(rep.latencies), tt.n)
 			}
-			if tt.c == 1 && len(rep.tls) != rep.newConns {
-				t.Fatalf("TLS-рукопожатий %d, новых соединений %d", len(rep.tls), rep.newConns)
+			// new_conns — нижняя граница: TCP-соединений установлено не меньше. TLS-рукопожатий
+			// бывает меньше, чем TCP: ненужный уже набор транспорт может бросить посреди TLS.
+			if len(rep.connect) < rep.newConns || len(rep.tls) > len(rep.connect) {
+				t.Fatalf("tcp_conns=%d tls=%d new_conns=%d", len(rep.connect), len(rep.tls), rep.newConns)
 			}
 		})
+	}
+}
+
+// Пул на одно соединение при 20 воркерах: вернувшиеся соединения не помещаются в пул
+// и закрываются, и соединений устанавливается заметно больше, чем воркеров и чем с пулом
+// на всех. Точных чисел тест не ждёт: даже с большим пулом бывают лишние наборы —
+// запрос иногда приходит раньше, чем его прошлое соединение вернулось в пул.
+// Пауза в обработчике разводит воркеров по фазе, чтобы пул успевал переполниться.
+func TestPoolLimitForcesRedials(t *testing.T) {
+	u, caPath := labServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(2 * time.Millisecond)
+		_, _ = fmt.Fprint(w, "ok") // тестовый сервер: ошибка записи проявится у клиента
+	}))
+	const workers = 20
+	dials := func(maxIdle int) int {
+		cfg := config{url: u, ca: caPath, serverName: testName, n: 400, c: workers, keepalive: true,
+			maxIdlePerHost: maxIdle, timeout: 5 * time.Second}
+		rep, err := bench(context.Background(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(rep.connect)
+	}
+	small, full := dials(1), dials(workers)
+	if small <= workers || small <= 2*full {
+		t.Fatalf("tcp_conns: пул на 1 — %d, пул на %d — %d; ожидалось больше %d и больше вдвое", small, workers, full, workers)
 	}
 }
 
@@ -231,10 +259,12 @@ func TestPrintReport(t *testing.T) {
 		total:     time.Second,
 	}
 	var b strings.Builder
-	printReport(&b, rep)
+	if err := printReport(&b, rep); err != nil {
+		t.Fatal(err)
+	}
 	got := b.String()
 	for _, want := range []string{
-		"requests=3 errors=1 new_conns=2 proto=HTTP/1.1\n",
+		"requests=3 errors=1 tcp_conns=1 new_conns=2 proto=HTTP/1.1\n",
 		"latency: n=2 min=40ms p50=40ms p99=41ms max=41ms\n",
 		"errors: timeout=1 refused=0 tls=0 status=0 other=0\n",
 		"  timeout: deadline\n",

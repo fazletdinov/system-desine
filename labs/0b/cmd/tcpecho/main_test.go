@@ -79,13 +79,15 @@ func TestHandleEchoesLinesUntilClientCloses(t *testing.T) {
 
 	r := bufio.NewReader(cli)
 	for _, msg := range []string{"a\n", "bb\n"} {
-		go cli.Write([]byte(msg))
+		go func() { _, _ = cli.Write([]byte(msg)) }() // сбой записи проявится в ReadString ниже
 		got, err := r.ReadString('\n')
 		if err != nil || got != msg {
 			t.Fatalf("echo = %q, %v; want %q", got, err, msg)
 		}
 	}
-	cli.Close()
+	if err := cli.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	res := <-done
 	// Закрытие конца net.Pipe даёт ErrClosedPipe, а не io.EOF как у TCP; важно, что цикл завершился.
@@ -96,7 +98,7 @@ func TestHandleEchoesLinesUntilClientCloses(t *testing.T) {
 
 func TestHandleClosesIdleConnection(t *testing.T) {
 	srv, cli := net.Pipe()
-	defer cli.Close()
+	defer func() { _ = cli.Close() }() // тестовое соединение; ошибка закрытия не важна
 	_, err := handle(srv, idleArm(20*time.Millisecond), time.Second)
 	if !errors.Is(err, os.ErrDeadlineExceeded) {
 		t.Fatalf("err = %v, want deadline exceeded", err)
@@ -105,8 +107,8 @@ func TestHandleClosesIdleConnection(t *testing.T) {
 
 func TestHandleDropsClientThatNeverReads(t *testing.T) {
 	srv, cli := net.Pipe()
-	defer cli.Close()
-	go cli.Write([]byte("hello\n")) // net.Pipe без буфера: эхо блокируется, пока клиент не читает
+	defer func() { _ = cli.Close() }()                  // тестовое соединение; ошибка закрытия не важна
+	go func() { _, _ = cli.Write([]byte("hello\n")) }() // net.Pipe без буфера: эхо блокируется, пока клиент не читает
 	_, err := handle(srv, idleArm(time.Second), 20*time.Millisecond)
 	if !errors.Is(err, os.ErrDeadlineExceeded) {
 		t.Fatalf("err = %v, want write deadline exceeded", err)
@@ -115,8 +117,8 @@ func TestHandleDropsClientThatNeverReads(t *testing.T) {
 
 func TestHandleRejectsOverlongLine(t *testing.T) {
 	srv, cli := net.Pipe()
-	defer cli.Close()
-	go cli.Write([]byte(strings.Repeat("x", maxLine+1)))
+	defer func() { _ = cli.Close() }()                                       // тестовое соединение; ошибка закрытия не важна
+	go func() { _, _ = cli.Write([]byte(strings.Repeat("x", maxLine+1))) }() // запись прервёт закрытие pipe
 	_, err := handle(srv, idleArm(time.Second), time.Second)
 	if err == nil || !strings.Contains(err.Error(), "длиннее") {
 		t.Fatalf("err = %v, want overlong line error", err)
@@ -137,12 +139,13 @@ func TestRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, cli := net.Pipe()
-			defer cli.Close()
+			defer func() { _ = cli.Close() }() // тестовое соединение; ошибка закрытия не важна
 			go func() {
-				defer srv.Close()
-				r := bufio.NewReader(srv)
-				r.ReadString('\n')
-				srv.Write([]byte(tt.reply))
+				defer func() { _ = srv.Close() }() // «сервер» теста; ошибка закрытия не важна
+				if _, err := bufio.NewReader(srv).ReadString('\n'); err != nil {
+					return // клиент увидит закрытый pipe как ошибку
+				}
+				_, _ = srv.Write([]byte(tt.reply)) // сбой записи клиент увидит как ошибку чтения
 			}()
 			_, err := roundTrip(context.Background(), cli, bufio.NewReader(cli), "h", "i\n", tt.writes, time.Second)
 			if (err != nil) != tt.wantErr {
@@ -173,7 +176,7 @@ func TestServeShutdownWakesIdleConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // тестовое соединение; ошибка закрытия не важна
 	// Убеждаемся, что соединение принято и обработчик ждёт строку.
 	if _, err := conn.Write([]byte("ping\n")); err != nil {
 		t.Fatal(err)
@@ -195,7 +198,9 @@ func TestServeShutdownWakesIdleConnection(t *testing.T) {
 	if took := time.Since(start); took > time.Second {
 		t.Fatalf("остановка заняла %v, ждали << idle и shutdown", took)
 	}
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Fatalf("клиент должен увидеть EOF, получил %v", err)
 	}
@@ -240,7 +245,7 @@ func TestServeShutdownLetsInFlightExchangeFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // тестовое соединение; ошибка закрытия не важна
 	if _, err := conn.Write([]byte("slow\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +259,9 @@ func TestServeShutdownLetsInFlightExchangeFinish(t *testing.T) {
 	}
 
 	close(ln.gate)
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	if got, err := bufio.NewReader(conn).ReadString('\n'); err != nil || got != "slow\n" {
 		t.Fatalf("эхо в полёте потеряно: %q, %v", got, err)
 	}
@@ -280,7 +287,7 @@ func TestServeForcesCloseAfterShutdownTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // тестовое соединение; ошибка закрытия не важна
 	if _, err := conn.Write([]byte("stuck\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +295,9 @@ func TestServeForcesCloseAfterShutdownTimeout(t *testing.T) {
 	cancel()
 
 	// Ворота закрыты: EOF клиент может увидеть только если сервер принудительно закрыл сокет.
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Fatalf("клиент должен увидеть EOF от принудительного закрытия, получил %v", err)
 	}

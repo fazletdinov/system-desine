@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,7 +115,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 	// Сертификат CA публичен: 0644 — чтобы клиенты в других контейнерах могли его прочитать.
-	if err := os.WriteFile(cfg.caOut, ca.PEM(), 0o644); err != nil {
+	if err := writeFileAtomic(cfg.caOut, ca.PEM(), 0o644); err != nil {
 		return fmt.Errorf("write CA: %w", err)
 	}
 	log.Info("сертификат CA записан", "path", cfg.caOut, "names", cfg.names)
@@ -144,6 +145,36 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 		log.Info("слушаю", "addr", ln.Addr().String(), "tls", l.tls != nil)
 	}
 	return serve(ctx, cfg.grace, log, eps...)
+}
+
+// writeFileAtomic пишет во временный файл рядом и переименовывает его: rename в пределах
+// одного каталога атомарен, поэтому клиент, читающий ca.pem, видит либо старый файл
+// целиком, либо новый целиком — но не наполовину записанный PEM.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			_ = f.Close()      // уже закрыт или запись провалилась — важна исходная ошибка
+			_ = os.Remove(tmp) // не оставляем мусор рядом с ca.pem
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := f.Chmod(perm); err != nil { // CreateTemp создаёт файл с правами 0600
+		return fmt.Errorf("chmod %s: %w", tmp, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("rename to %s: %w", path, err)
+	}
+	return nil
 }
 
 // #region server
@@ -186,9 +217,7 @@ func serve(ctx context.Context, grace time.Duration, log *slog.Logger, eps ...en
 	errs := make(chan error, len(eps))
 	var wg sync.WaitGroup
 	for _, ep := range eps {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			var err error
 			if ep.srv.TLSConfig != nil {
 				err = ep.srv.ServeTLS(ep.ln, "", "") // сертификат уже в TLSConfig
@@ -199,7 +228,7 @@ func serve(ctx context.Context, grace time.Duration, log *slog.Logger, eps ...en
 				errs <- fmt.Errorf("serve %s: %w", ep.ln.Addr(), err)
 				cancel() // упал один — останавливаем остальные
 			}
-		}()
+		})
 	}
 
 	<-ctx.Done()
@@ -223,9 +252,7 @@ func shutdown(grace time.Duration, log *slog.Logger, eps []endpoint) {
 	defer cancel()
 	var wg sync.WaitGroup
 	for _, ep := range eps {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			addr := ep.ln.Addr().String()
 			// Shutdown закрывает листенер и простаивающие соединения, ждёт активные.
 			err := ep.srv.Shutdown(ctx)
@@ -236,7 +263,7 @@ func shutdown(grace time.Duration, log *slog.Logger, eps []endpoint) {
 			if err := ep.srv.Close(); err != nil {
 				log.Warn("принудительное закрытие", "addr", addr, "err", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -330,7 +357,14 @@ func logRequests(next http.Handler, log *slog.Logger) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		log.Info("запрос", "method", r.Method, "path", r.URL.Path, "proto", r.Proto,
-			"status", rec.status, "duration", time.Since(start))
+		attrs := []any{"method", r.Method, "path", r.URL.Path, "proto", r.Proto,
+			"status", rec.status, "duration", time.Since(start)}
+		// Контекст запроса отменяется, когда клиент закрыл соединение (или сервер закрыл
+		// его принудительно). Ответ тогда никто не получил, и status=200 в журнале
+		// без этой пометки вводил бы в заблуждение.
+		if r.Context().Err() != nil {
+			attrs = append(attrs, "aborted", true)
+		}
+		log.Info("запрос", attrs...)
 	})
 }
