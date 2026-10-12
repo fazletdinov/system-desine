@@ -95,6 +95,9 @@ onBeforeUnmount(() => {
 .is-fullscreen .viz-frame-bar { margin-bottom: 0; }
 .is-fullscreen :deep(.viz-player), .is-fullscreen :deep(.latency), .is-fullscreen :deep(.calc), .is-fullscreen :deep(.mermaid-diagram) { margin: 0; }
 .is-fullscreen :deep(svg) { max-height: calc(100vh - 240px); }
+/* !important: Mermaid пишет на svg инлайновый max-width равный натуральной ширине схемы, иначе её не растянуть на весь экран. */
+.is-fullscreen :deep(.mermaid-host) { flex: 1; align-items: center; }
+.is-fullscreen :deep(.mermaid-host svg) { width: 100%; max-width: none !important; height: auto; max-height: calc(100vh - 140px); }
 .is-fullscreen :deep(.viz-caption) { font-size: 1.15rem; }
 .viz-rotate { display: flex; gap: 8px; align-items: center; margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--vp-c-brand-soft); font-size: 14px; }
 :global(html.viz-scroll-lock) { overflow: hidden; }
