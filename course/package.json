@@ -1,0 +1,24 @@
+{
+  "name": "system-design-course",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "gsap": "3.15.0",
+    "mermaid": "11.17.2",
+    "typescript": "5.9.3",
+    "vitepress": "1.6.4",
+    "vitepress-plugin-mermaid": "2.0.17",
+    "vitest": "3.2.7",
+    "vue": "3.5.43",
+    "vue-tsc": "3.3.12",
+    "yaml": "2.9.1"
+  }
+}
