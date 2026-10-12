@@ -12,6 +12,7 @@
 
 ```bash
 docker compose -f labs/0b/compose.yaml up -d --build
+alias lab='docker compose -f labs/0b/compose.yaml'   # псевдоним из уроков 0b.1 и 0b.2
 ```
 
 ## Задержки и потери (netem)
@@ -46,21 +47,21 @@ docker compose -f labs/0b/compose.yaml down
 
 ### Урок 0b.1 — слои, адреса, первая запись трафика
 
-Урок: `course/modules/00b-network/01-layers.md` (на сайте — «0b.1. Слои: от IP-пакета до HTTP»).
+Урок: [0b.1. Слои: от IP-пакета до HTTP](../../course/modules/00b-network/01-layers.md).
 
 ```bash
 labs/0b/netem.sh 40ms 0%
-docker compose -f labs/0b/compose.yaml exec -d server h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem
-docker compose -f labs/0b/compose.yaml exec client ip -br addr show eth0
-docker compose -f labs/0b/compose.yaml exec client ip route
-docker compose -f labs/0b/compose.yaml exec client ip route get 172.28.0.10
-docker compose -f labs/0b/compose.yaml exec server ss -tlnp
-docker compose -f labs/0b/compose.yaml exec -d client tcpdump -i eth0 -w /captures/first.pcap
-docker compose -f labs/0b/compose.yaml exec client curl -s http://172.28.0.10:8080/
-docker compose -f labs/0b/compose.yaml exec client ss -tan
-docker compose -f labs/0b/compose.yaml exec client pkill tcpdump
-docker compose -f labs/0b/compose.yaml exec client tcpdump -nn -r /captures/first.pcap
-docker compose -f labs/0b/compose.yaml exec client tcpdump -nn -e -v -r /captures/first.pcap
+lab exec -d server h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem
+lab exec client ip -br addr show eth0
+lab exec client ip route
+lab exec client ip route get 172.28.0.10
+lab exec server ss -tlnp
+lab exec -d client tcpdump -i eth0 -w /captures/first.pcap
+lab exec client curl -s http://172.28.0.10:8080/
+lab exec client ss -tan
+lab exec client pkill tcpdump
+lab exec client tcpdump -nn -r /captures/first.pcap
+lab exec client tcpdump -nn -e -v -r /captures/first.pcap
 ```
 
 Файл `labs/0b/captures/first.pcap` откройте в Wireshark. В записи клиента между `SYN` и `SYN-ACK`
@@ -68,19 +69,18 @@ docker compose -f labs/0b/compose.yaml exec client tcpdump -nn -e -v -r /capture
 
 ### Урок 0b.2 — TCP под задержкой и потерями
 
-Урок: `course/modules/00b-network/02-tcp.md` (на сайте — «0b.2. TCP изнутри»). Программа — `tcpecho` (ниже);
-`ss -ti` запускайте, пока клиент работает (`-n 30 -interval 200ms`).
+Урок: [0b.2. TCP изнутри](../../course/modules/00b-network/02-tcp.md). Программа — `tcpecho` (ниже).
 
 ```bash
-docker compose -f labs/0b/compose.yaml exec -d server tcpecho -serve -addr :7000
+lab exec -d server tcpecho -serve -addr :7000
 labs/0b/netem.sh 40ms 0%
-docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 10ms
+lab exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 10ms
 labs/0b/netem.sh 40ms 5%
-docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 50ms
-docker compose -f labs/0b/compose.yaml exec client ss -ti dst 172.28.0.10
+lab exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 50ms
+lab exec client ss -ti dst 172.28.0.10   # во втором терминале, пока идёт клиент (например, -n 30 -interval 200ms)
 labs/0b/netem.sh 40ms 10%
-docker compose -f labs/0b/compose.yaml exec client sh -c 'for i in $(seq 1 40); do tcpecho -addr 172.28.0.10:7000 -n 1 2>&1 | grep connect; done'
-docker compose -f labs/0b/compose.yaml exec client ss -tan dst 172.28.0.10
+lab exec client sh -c 'for i in $(seq 1 40); do tcpecho -addr 172.28.0.10:7000 -n 1 2>&1 | grep connect; done'
+lab exec client ss -tan dst 172.28.0.10
 ```
 
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): при 5% потерь p50 40,7 мс,
