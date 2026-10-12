@@ -32,4 +32,5 @@ const label = computed(() => PARTS[props.kind])
 .part-selfcheck { color: var(--part-selfcheck-fg); background: var(--part-selfcheck-bg); }
 .part-sources { color: var(--part-sources-fg); background: var(--part-sources-bg); }
 .part-deep { color: var(--part-deep-fg); background: var(--part-deep-bg); }
+.part-practice { color: var(--part-practice-fg); background: var(--part-practice-bg); }
 </style>

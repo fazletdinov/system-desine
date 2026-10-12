@@ -7,6 +7,7 @@
   --part-code-fg: #334155; --part-code-bg: #f1f5f9;
   --part-selfcheck-fg: #3f6212; --part-selfcheck-bg: #ecfccb;
   --part-sources-fg: #6d28d9; --part-sources-bg: #ede9fe;
+  --part-practice-fg: #a21caf; --part-practice-bg: #fae8ff;
   --part-deep-fg: #0369a1; --part-deep-bg: #f0f9ff;
 }
 
@@ -19,5 +20,23 @@
   --part-code-fg: #cbd5e1; --part-code-bg: #1e293b;
   --part-selfcheck-fg: #bef264; --part-selfcheck-bg: #1a2e0d;
   --part-sources-fg: #c4b5fd; --part-sources-bg: #2a1f3d;
+  --part-practice-fg: #f0abfc; --part-practice-bg: #3b0d3f;
   --part-deep-fg: #7dd3fc; --part-deep-bg: #0f1b2e;
 }
+
+/* Подраздел (###) в цвете своего раздела: класс sub-<kind> ставит плагин .vitepress/part-subheadings.ts. */
+.vp-doc h3[class*='sub-'] {
+  padding-left: 12px;
+  border-left: 4px solid var(--sub-color);
+  color: var(--sub-color);
+}
+.vp-doc h3.sub-problem { --sub-color: var(--part-problem-fg); }
+.vp-doc h3.sub-theory { --sub-color: var(--part-theory-fg); }
+.vp-doc h3.sub-viz { --sub-color: var(--part-viz-fg); }
+.vp-doc h3.sub-mistakes { --sub-color: var(--part-mistakes-fg); }
+.vp-doc h3.sub-tradeoff { --sub-color: var(--part-tradeoff-fg); }
+.vp-doc h3.sub-code { --sub-color: var(--part-code-fg); }
+.vp-doc h3.sub-selfcheck { --sub-color: var(--part-selfcheck-fg); }
+.vp-doc h3.sub-sources { --sub-color: var(--part-sources-fg); }
+.vp-doc h3.sub-deep { --sub-color: var(--part-deep-fg); }
+.vp-doc h3.sub-practice { --sub-color: var(--part-practice-fg); }
