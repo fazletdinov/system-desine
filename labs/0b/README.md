@@ -226,6 +226,7 @@ for v in --http1.1 --http2; do lab exec client curl $v -sS --cacert /captures/ca
 lab exec client curl --http2 -sv -o /dev/null --cacert /captures/ca.pem --resolve api.messenger.example:8443:172.28.0.10 https://api.messenger.example:8443/   # ALPN: h2
 lab exec client curl --http2-prior-knowledge -sS http://172.28.0.10:8080/                    # h2c не включён: ошибка
 lab exec client curl --http2 -sS -w 'http_version=%{http_version}\n' http://172.28.0.10:8080/   # Upgrade проигнорирован: 1.1
+lab exec client bash -c 'exec 3<>/dev/tcp/172.28.0.10/8080; printf "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" >&3; timeout 3 cat <&3'   # преамбула HTTP/2 → HTTP/1.1 400 Bad Request
 lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -http2=true -c 10 -n 100
 lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -http2=false -c 10 -n 100
 labs/0b/netem.sh 40ms 2%
