@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { withBase } from 'vitepress'
-import { data as glossary } from '../glossary/terms.data'
+import { data as glossary } from '../glossary/terms-short.data'
 
 const props = defineProps<{ id: string }>()
 const term = computed(() => glossary[props.id])
@@ -29,8 +29,14 @@ function onKeydown(event: KeyboardEvent): void {
   dismissed.value = true
 }
 
-function resetDismissed(): void {
-  dismissed.value = false
+// Esc закрывает подсказку до тех пор, пока пользователь не уйдёт с термина:
+// уход мыши не считается уходом, если фокус всё ещё внутри.
+function onMouseLeave(): void {
+  if (!root.value?.contains(document.activeElement)) dismissed.value = false
+}
+
+function onFocusOut(event: FocusEvent): void {
+  if (!root.value?.contains(event.relatedTarget as Node | null)) dismissed.value = false
 }
 
 function closeOnOutsideTap(event: Event): void {
@@ -47,8 +53,8 @@ onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideTap))
     class="term"
     :class="{ open, dismissed }"
     @keydown="onKeydown"
-    @mouseleave="resetDismissed"
-    @focusout="resetDismissed"
+    @mouseleave="onMouseLeave"
+    @focusout="onFocusOut"
   >
     <a class="term-link" :href="href" :aria-describedby="term ? tipId : undefined" @click="onLinkClick"><slot /></a>
     <span v-if="term" :id="tipId" role="tooltip" class="term-tip">
@@ -56,7 +62,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideTap))
         <strong>{{ term.term }}</strong>
         <span v-if="term.en" class="term-en"> ({{ term.en }})</span>
         <span class="term-short">{{ term.short }}</span>
-        <a class="term-more" :href="href" tabindex="-1">Подробнее в глоссарии →</a>
+        <span class="term-hint">Нажмите ещё раз — откроется глоссарий</span>
       </span>
     </span>
   </span>
@@ -96,7 +102,10 @@ onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideTap))
 }
 .term-en { color: var(--vp-c-text-2); }
 .term-short { display: block; margin-top: 4px; }
-.term-more { display: block; margin-top: 6px; font-size: 13px; }
+.term-hint { display: none; }
+@media (hover: none) {
+  .term-hint { display: block; margin-top: 6px; font-size: 13px; color: var(--vp-c-text-2); }
+}
 .term:not(.dismissed):hover .term-tip,
 .term:not(.dismissed):focus-within .term-tip,
 .term.open .term-tip { display: block; }

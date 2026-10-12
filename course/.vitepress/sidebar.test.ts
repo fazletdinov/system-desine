@@ -68,6 +68,12 @@ describe('buildSidebar', () => {
     expect(buildSidebar(root).map((m) => m.link)).toEqual(['/modules/00-foundation/', '/modules/01-go/'])
   })
 
+  it('битый frontmatter урока — ошибка с именем файла', () => {
+    const root = makeTree()
+    writeFileSync(join(root, '00-foundation', '03-broken.md'), '---\ntitle: [\n---\n')
+    expect(() => buildSidebar(root)).toThrow(/03-broken\.md/)
+  })
+
   it('возвращает пустой список, если папки нет', () => {
     expect(buildSidebar('/nonexistent/path/xyz')).toEqual([])
   })

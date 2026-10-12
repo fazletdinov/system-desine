@@ -30,6 +30,7 @@ export function initPlayer(total: number): PlayerState {
 }
 
 function clampIndex(index: number, total: number): number {
+  if (!Number.isFinite(index)) return 0
   return Math.min(Math.max(Math.trunc(index), 0), total - 1)
 }
 

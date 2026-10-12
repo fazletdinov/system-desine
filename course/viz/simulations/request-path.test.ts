@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { loadGlossaryFile } from '../../glossary/load'
+import { captionTermIds, captionText } from '../core/caption'
 import { CODE_LINE, LATENCY_MS, NODES, TOTAL_MS, requestPathScenario } from './request-path'
 
 const steps = requestPathScenario()
@@ -40,15 +43,22 @@ describe('requestPathScenario', () => {
 
   it('у каждого шага есть пояснение; строка кода — только на сервере приложения и в БД', () => {
     for (const step of steps) {
-      expect(step.caption.trim().length).toBeGreaterThan(20)
+      expect(captionText(step.caption).trim().length).toBeGreaterThan(20)
       const onServer = step.state.active === 'app' || step.state.active === 'db'
       if (!onServer) expect(step.codeLine).toBeUndefined()
     }
   })
 
   it('итоговое время упомянуто в последнем пояснении', () => {
-    expect(steps.at(-1)!.caption).toContain('144')
+    expect(captionText(steps.at(-1)!.caption)).toContain('144')
   })
+})
+
+it('все термины в подписях есть в глоссарии, и они есть хотя бы в пяти шагах', () => {
+  const known = new Set(Object.keys(loadGlossaryFile(fileURLToPath(new URL('../../glossary/terms.yaml', import.meta.url)))))
+  const ids = steps.flatMap((s) => captionTermIds(s.caption))
+  expect(ids.length).toBeGreaterThanOrEqual(5)
+  for (const id of ids) expect(known.has(id)).toBe(true)
 })
 
 describe('CODE_LINE и Go-код урока 0.3', () => {

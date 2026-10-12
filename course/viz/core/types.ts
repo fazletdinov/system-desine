@@ -1,8 +1,10 @@
+import type { Caption } from './caption'
+
 // Один кадр визуализации. state — полный снимок, а не дельта:
 // так переход назад и прыжок на любой шаг не требуют пересчёта.
 export interface Step<S> {
   state: S
-  caption: string
+  caption: Caption
   highlight?: readonly string[]
   codeLine?: number
 }
