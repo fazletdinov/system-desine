@@ -3,3 +3,4 @@ course/.vitepress/cache/
 course/.vitepress/dist/
 .DS_Store
 .playwright-mcp/
+.superpowers/
