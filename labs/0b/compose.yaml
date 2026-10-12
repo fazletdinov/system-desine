@@ -1,0 +1,36 @@
+name: lab0b
+
+x-node: &node
+  build:
+    context: ..
+    dockerfile: 0b/Dockerfile
+  image: lab0b-node:local
+  cap_add: [NET_ADMIN, NET_RAW]
+  volumes:
+    - ./captures:/captures
+  dns: [172.28.0.53]
+
+services:
+  server:
+    <<: *node
+    hostname: server
+    networks:
+      labnet: { ipv4_address: 172.28.0.10 }
+  client:
+    <<: *node
+    hostname: client
+    networks:
+      labnet: { ipv4_address: 172.28.0.20 }
+  dns:
+    image: coredns/coredns:1.14.7
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./dns:/etc/coredns:ro
+    networks:
+      labnet: { ipv4_address: 172.28.0.53 }
+
+networks:
+  labnet:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

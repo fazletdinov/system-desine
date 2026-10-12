@@ -1,0 +1,9 @@
+$ORIGIN messenger.example.
+$TTL 30
+@       IN SOA ns.messenger.example. admin.messenger.example. 2026101201 3600 600 86400 30
+@       IN NS  ns.messenger.example.
+ns      IN A   172.28.0.53
+api     IN A   172.28.0.10
+www     IN CNAME api.messenger.example.
+_api._tcp IN SRV 10 5 8443 api.messenger.example.
+@       IN TXT "lab=0b"

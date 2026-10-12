@@ -4,3 +4,4 @@ course/.vitepress/dist/
 .DS_Store
 .playwright-mcp/
 .superpowers/
+labs/0b/captures/*.pcap
