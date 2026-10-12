@@ -286,9 +286,9 @@ ESTAB 0      0        172.28.0.20:34020  172.28.0.10:bbs
 Запишите тот же прогон и найдите в записи сегмент, который ушёл дважды:
 
 ```bash
-lab exec -d client tcpdump -i eth0 -w /captures/loss.pcap tcp port 7000
+lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/loss.pcap tcp port 7000
 lab exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 50ms
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/loss.pcap
 ```
 

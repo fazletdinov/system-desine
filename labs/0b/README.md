@@ -25,11 +25,12 @@ labs/0b/netem.sh off       # снять
 ## Запись трафика
 
 ```bash
-docker compose -f labs/0b/compose.yaml exec client tcpdump -i eth0 -w /captures/x.pcap
+docker compose -f labs/0b/compose.yaml exec client tcpdump --immediate-mode -i eth0 -w /captures/x.pcap
 ```
 
-Останавливайте запись не сразу после нагрузки, а через секунду (`sleep 1; … pkill tcpdump`): `tcpdump` получает пакеты
-от ядра пачками примерно раз в секунду, и по сигналу последнюю пачку не дописывает — файл выйдет пустым или обрезанным.
+`--immediate-mode` обязателен, если запись останавливают сразу после нагрузки (`pkill tcpdump`): без него libpcap
+получает пакеты от ядра блоками примерно раз в секунду, и блок, который ядро ещё не отдало, в файл не попадёт — после
+быстрого `curl` файл выйдет пустым.
 
 Файлы `.pcap` появляются в `labs/0b/captures/` и не попадают в git. Их пишет root внутри контейнера, поэтому удалить с хоста может понадобиться через `sudo`.
 
@@ -59,10 +60,10 @@ lab exec client ip -br addr show eth0
 lab exec client ip route
 lab exec client ip route get 172.28.0.10
 lab exec server ss -tlnp
-lab exec -d client tcpdump -i eth0 -w /captures/first.pcap
+lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/first.pcap
 lab exec client curl -s http://172.28.0.10:8080/
 lab exec client ss -tan
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/first.pcap
 lab exec client tcpdump -nn -e -v -r /captures/first.pcap
 ```
@@ -104,15 +105,15 @@ labs/0b/netem.sh 40ms 5%
 lab exec client udpping -addr 172.28.0.10:7001 -n 200
 lab exec client udpping -addr 172.28.0.10:7001 -n 5000 -interval 2ms   # точнее: выборка больше
 labs/0b/netem.sh 40ms 0%
-lab exec -d client tcpdump -i eth0 -w /captures/udp.pcap udp port 7001
+lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/udp.pcap udp port 7001
 lab exec client udpping -addr 172.28.0.10:7001 -n 3 -interval 100ms
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 lab exec client tcpdump -nn -X -c1 -r /captures/udp.pcap   # заголовок UDP побайтно
 lab exec client udpping -addr 172.28.0.10:7999 -n 5 -interval 100ms   # порт не слушают: refused=5
 ```
 
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): RTT p99 ≈ 41 мс при любых потерях
-(у TCP при 5% — 294 мс); потери пингов при n=5000 — 3,8% при 2% и 10,3% при 5% на каждом конце
+(у TCP при 5% — обычно 290–530 мс); потери пингов при n=5000 — 3,8% при 2% и 10,3% при 5% на каждом конце
 (расчёт 1 − (1 − p)²: 3,96% и 9,75%). При n=200 разброс между прогонами — пара процентных пунктов.
 
 ### Урок 0b.4 — DNS
@@ -243,9 +244,9 @@ labs/0b/netem.sh 40ms 2%
 
 Результат на нашем стенде (у вас числа будут другими, порядок — такой): без потерь маленькие запросы — p50 41,5 мс
 по HTTP/2 против 41,3 мс по HTTP/1.1, у HTTP/2 `new_conns=1`, но `tcp_conns=10` (лишние наборы при одновременном старте);
-при 2% потерь, маленькие ответы, шесть прогонов — p99 167–171 мс у HTTP/2 против 135–379 мс у HTTP/1.1 (в другой день — 167–370 мс против 285–464 мс): одиночный сегмент
+при 2% потерь, маленькие ответы, шесть прогонов (другой день — девять) — p99 167–171 мс у HTTP/2 против 135–379 мс у HTTP/1.1 (в другой день — 167–370 мс против 285–464 мс): одиночный сегмент
 HTTP/1.1 ждёт RTO, а блокировку начала очереди HTTP/2 эта нагрузка не показывает; ответы по 200 КБ — без потерь весь прогон
-0,88–1,08 с у HTTP/2 против 0,67–0,70 с, при 2% потерь 45–52 с против 3,2–5,3 с (в 9–16 раз): у HTTP/2 одно окно перегрузки на все потоки.
+0,88–1,08 с у HTTP/2 против 0,67–0,70 с, при 2% потерь 45–52 с против 3,2–5,3 с (в 8–16 раз): у HTTP/2 одно окно перегрузки на все потоки.
 `GOAWAY`: запустите `curl --http2 -sv … '/slow?ms=3000'` и через секунду `lab exec server pkill -TERM h2server` —
 `curl` покажет `received GOAWAY, error=0, last_stream=1`, а ответ придёт полностью.
 
@@ -258,9 +259,9 @@ HTTP/1.1 ждёт RTO, а блокировку начала очереди HTTP/
 lab exec client curl -V                                                              # ищите HTTP3 в Features
 lab exec client curl -sI https://cloudflare.com                                      # alt-svc: h3=":443"; ma=86400
 lab exec client curl --http3 -sI https://cloudflare.com -o /dev/null -w '%{http_version}\n'   # 3 или 2 (откат на TCP)
-lab exec -d client tcpdump -i eth0 -w /captures/quic.pcap udp port 443
+lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/quic.pcap udp port 443
 lab exec client bash -c 'time curl --http3-only -sS -I --max-time 10 https://cloudflare.com'
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/quic.pcap                                   # Initial-датаграммы по 1200 байт
 ```
 
@@ -391,7 +392,7 @@ docker compose -f labs/0b/compose.yaml exec client httpbench -url https://172.28
 
 С пулом на 2 соединения ответы приходят пачками: первые два вернувшихся соединения занимают пул,
 третье и следующие находят его полным и закрываются (`tryPutIdleConn` → `errTooManyIdleHost`).
-Кто-то из воркеров находит список простаивающих пустым и начинает набор нового, но раньше, чем
+Кто-то из воркеров находит, что простаивающих соединений нет — соседи уже забрали оба, — и начинает набор нового, но раньше, чем
 набор закончится (TCP + TLS — два RTT), ему достаётся соединение, которое вернул сосед. Фоновый
 набор транспорт не отменяет: готовое соединение уходит в пул, а если пул полон — закрывается, так
 и не обслужив ни одного запроса. Итог: обычно 140–250 TCP-соединений на 500 запросов вместо 50, хотя

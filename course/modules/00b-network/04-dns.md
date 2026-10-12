@@ -580,11 +580,11 @@ dns: n=1 min=21.13ms p50=21.13ms max=21.13ms
 ```bash
 lab exec client cp /etc/resolv.conf /tmp/resolv.conf.orig
 lab exec client sh -c 'printf "nameserver 127.0.0.11\nsearch default.svc.cluster.local svc.cluster.local cluster.local\noptions ndots:5\n" > /etc/resolv.conf'
-lab exec -d client tcpdump -i eth0 -w /captures/ndots.pcap udp port 53
+lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/ndots.pcap udp port 53
 lab exec client httpbench -url https://api.github.com/ -c 1 -n 1
 lab exec client httpbench -url https://api.github.com/ -c 1 -n 1
 lab exec client httpbench -url https://api.github.com./ -c 1 -n 1
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/ndots.pcap
 ```
 

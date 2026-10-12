@@ -262,13 +262,13 @@ lab exec server ss -tlnp
 Запустите запись в фоне, сделайте запрос и остановите запись:
 
 ```bash
-lab exec -d client tcpdump -i eth0 -w /captures/first.pcap
+lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/first.pcap
 lab exec client curl -s http://172.28.0.10:8080/
 lab exec client ss -tan
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 ```
 
-`sleep 1` перед `pkill` — не перестраховка. `tcpdump` забирает пакеты у ядра не по одному, а пачками, примерно раз в секунду, и, остановленный сигналом, недоставленную пачку не дописывает. Без паузы файл, скорее всего, окажется пустым: мы так и получили, вставив команды разом.
+Флаг `--immediate-mode` — не перестраховка. Без него `tcpdump` (точнее, библиотека libpcap) получает пакеты от ядра не по одному, а блоками: ядро отдаёт блок, когда тот заполнится или пройдёт около секунды. Если остановить запись раньше, блок, который ядро ещё не отдало, в файл не попадает — и после быстрого `curl` файл выходит пустым. Мы так и получили, вставив команды разом. В режиме `--immediate-mode` каждый пакет отдаётся сразу.
 
 `tcpdump` пишет пакеты в файл формата <T id="pcap">pcap</T>. Каталог `/captures` в контейнере — это `labs/0b/captures/` на вашей машине. HTTP здесь без TLS: так содержимое видно глазами. Сервер ответил, с какого адреса и порта к нему пришли:
 
@@ -359,9 +359,9 @@ Wireshark, как и `tcpdump`, показывает номера относит
 Повторите запись на всех интерфейсах (`-i any`) для запроса по имени и с TLS:
 
 ```bash
-lab exec -d client tcpdump -i any -w /captures/tls.pcap
+lab exec -d client tcpdump --immediate-mode -i any -w /captures/tls.pcap
 lab exec client curl -s --cacert /captures/ca.pem https://api.messenger.example:8443/
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/tls.pcap
 ```
 

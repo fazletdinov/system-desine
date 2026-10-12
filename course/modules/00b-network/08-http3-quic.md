@@ -202,9 +202,9 @@ lab exec client curl --http3 -sI https://cloudflare.com -o /dev/null -w '%{http_
 Флаг `--http3-only` запрещает откат. Заодно запишем, что уходит по UDP:
 
 ```bash
-lab exec -d client tcpdump -i eth0 -w /captures/quic.pcap udp port 443
+lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/quic.pcap udp port 443
 lab exec client bash -c 'time curl --http3-only -sS -I --max-time 10 https://cloudflare.com'
-sleep 1; lab exec client pkill tcpdump
+lab exec client pkill tcpdump
 lab exec client tcpdump -nn -r /captures/quic.pcap
 ```
 
