@@ -1,6 +1,8 @@
 <script setup lang="ts" generic="S">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Step } from '../core/types'
+import T from '../../components/T.vue'
+import { captionSegments } from '../core/caption'
 import { SPEEDS, initPlayer, keyToAction, playerReducer, stepDelayMs, type PlayerAction } from '../core/player'
 
 const props = defineProps<{ steps: readonly Step<S>[]; label: string }>()
@@ -50,7 +52,7 @@ function onSpeed(event: Event): void {
     </div>
     <figcaption class="viz-caption" aria-live="polite">
       <span class="viz-step-no">Шаг {{ state.index + 1 }} из {{ state.total }}</span>
-      {{ step.caption }}
+      <template v-for="(seg, i) in captionSegments(step.caption)" :key="i"><T v-if="seg.termId" :id="seg.termId">{{ seg.text }}</T><template v-else>{{ seg.text }}</template></template>
     </figcaption>
     <div class="viz-controls" role="group" aria-label="Управление визуализацией">
       <button type="button" :disabled="isFirst" aria-label="В начало" @click="dispatch({ type: 'first' })">⏮</button>

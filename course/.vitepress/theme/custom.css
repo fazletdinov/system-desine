@@ -1,3 +1,41 @@
+:root {
+  --vp-font-family-base: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  --vp-c-brand-1: #0369a1;
+  --vp-c-brand-2: #075985;
+  --vp-c-brand-3: #0369a1;
+  --vp-c-brand-soft: rgba(2, 132, 199, 0.14);
+  --vp-c-text-3: #5b6778;
+  --course-accent: #3f6212;
+  --course-accent-soft: rgba(63, 98, 18, 0.12);
+  --course-num-fg: #92400e;
+  --course-num-bg: #fef3c7;
+  --course-deep-bg: #f0f9ff;
+}
+
+.dark {
+  --vp-c-bg: #0b1220;
+  --vp-c-bg-alt: #080e1a;
+  --vp-c-bg-soft: #0f172a;
+  --vp-c-bg-elv: #111b2e;
+  --vp-c-divider: #1e293b;
+  --vp-c-gutter: #080e1a;
+  --vp-c-brand-1: #38bdf8;
+  --vp-c-brand-2: #7dd3fc;
+  --vp-c-brand-3: #38bdf8;
+  --vp-c-brand-soft: rgba(56, 189, 248, 0.16);
+  --vp-c-text-3: #8b9bb0;
+  /* Тёмный текст на голубой кнопке: белый на #38bdf8 не проходит 4,5:1. */
+  --vp-button-brand-text: #0b1220;
+  --vp-button-brand-hover-text: #0b1220;
+  --vp-button-brand-active-text: #0b1220;
+  --course-accent: #a3e635;
+  --course-accent-soft: rgba(163, 230, 53, 0.14);
+  --course-num-fg: #fcd34d;
+  --course-num-bg: #3a2a0a;
+  --course-deep-bg: #0f1b2e;
+}
+
 /* На узком экране колонки таблицы не сжимаются до одного символа:
    таблица прокручивается внутри себя, а последняя (обычно самая текстовая) колонка остаётся читаемой. */
 @media (max-width: 640px) {

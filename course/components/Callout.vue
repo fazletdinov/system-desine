@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-type Kind = 'idea' | 'mistake' | 'tradeoff' | 'source'
+type Kind = 'idea' | 'mistake' | 'tradeoff' | 'source' | 'simplified'
 
 const KINDS: Record<Kind, { icon: string; title: string }> = {
   idea: { icon: '💡', title: 'Ключевая идея' },
   mistake: { icon: '⚠️', title: 'Типичная ошибка' },
   tradeoff: { icon: '⚖️', title: 'Компромисс' },
   source: { icon: '📚', title: 'Источник' },
+  simplified: { icon: '⚠️', title: 'Упрощено' },
 }
 
 const props = defineProps<{ type: Kind; title?: string }>()
@@ -29,4 +30,5 @@ const meta = computed(() => KINDS[props.type])
 .callout-mistake { border-color: var(--vp-c-danger-1); background: var(--vp-c-danger-soft); }
 .callout-tradeoff { border-color: var(--vp-c-warning-1); background: var(--vp-c-warning-soft); }
 .callout-source { border-color: var(--vp-c-gray-1); background: var(--vp-c-gray-soft); }
+.callout-simplified { border-color: var(--vp-c-warning-1); background: var(--vp-c-warning-soft); }
 </style>

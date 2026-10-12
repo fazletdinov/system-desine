@@ -85,3 +85,28 @@ const collator = new Intl.Collator('ru', { sensitivity: 'base' })
 export function sortTerms<T extends Term>(terms: readonly T[]): T[] {
   return [...terms].sort((a, b) => collator.compare(a.term, b.term))
 }
+
+export interface ShortTerm {
+  term: string
+  en?: string
+  short: string
+}
+
+export function toShortTerms(glossary: Glossary): Record<string, ShortTerm> {
+  const result: Record<string, ShortTerm> = {}
+  for (const [id, t] of Object.entries(glossary)) {
+    result[id] = t.en === undefined ? { term: t.term, short: t.short } : { term: t.term, en: t.en, short: t.short }
+  }
+  return result
+}
+
+export function groupByLetter<T extends Term>(terms: readonly T[]): { letter: string; terms: T[] }[] {
+  const groups: { letter: string; terms: T[] }[] = []
+  for (const t of sortTerms(terms)) {
+    const letter = t.term.charAt(0).toLocaleUpperCase('ru')
+    const last = groups.at(-1)
+    if (last !== undefined && last.letter === letter) last.terms.push(t)
+    else groups.push({ letter, terms: [t] })
+  }
+  return groups
+}

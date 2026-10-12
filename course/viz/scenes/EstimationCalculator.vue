@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import VizFrame from '../components/VizFrame.vue'
 import { computed, reactive } from 'vue'
 import { DAU_SLIDER, PRESETS, dauToSlider, estimate, formatStepValue, sanitizeInput, sliderToDau, type EstimationInput, type PresetId } from '../simulations/estimation'
 import { formatNumber } from '../core/format'
@@ -28,34 +29,36 @@ function reset(): void {
 </script>
 
 <template>
-  <section class="calc" aria-label="Калькулятор оценки нагрузки">
-    <div class="inputs">
-      <label class="field">
-        <span class="name">Активных пользователей в день (DAU): <strong>{{ formatNumber(input.dau) }}</strong></span>
-        <input v-model.number="dauPosition" type="range" :min="DAU_SLIDER.min" :max="DAU_SLIDER.max" :step="DAU_SLIDER.step" />
-        <span class="hint">Шкала логарифмическая: от тысячи до миллиарда.</span>
-      </label>
-      <label v-for="f in FIELDS" :key="f.key" class="field">
-        <span class="name">{{ f.label }}: <strong>{{ formatNumber(effective[f.key], 1) }}</strong></span>
-        <span class="pair">
-          <input v-model.number="input[f.key]" type="range" :min="f.min" :max="f.max" :step="f.step" />
-          <input v-model.number="input[f.key]" type="number" :min="f.min" :max="f.max" :step="f.step" :aria-label="f.label" />
-        </span>
-        <span class="hint">{{ f.hint }}</span>
-      </label>
-      <button type="button" class="reset" @click="reset">Вернуть исходные значения</button>
-    </div>
-    <ol class="steps">
-      <li v-for="(s, i) in steps" :key="s.id">
-        <span class="no">{{ i + 1 }}</span>
-        <div>
-          <p class="label">{{ s.label }}: <strong>{{ formatStepValue(s) }}</strong></p>
-          <p class="formula">{{ s.formula }}</p>
-          <p class="expr">{{ s.expression }}</p>
-        </div>
-      </li>
-    </ol>
-  </section>
+  <VizFrame label="Калькулятор оценки нагрузки">
+    <section class="calc" aria-label="Калькулятор оценки нагрузки">
+      <div class="inputs">
+        <label class="field">
+          <span class="name">Активных пользователей в день (DAU): <strong>{{ formatNumber(input.dau) }}</strong></span>
+          <input v-model.number="dauPosition" type="range" :min="DAU_SLIDER.min" :max="DAU_SLIDER.max" :step="DAU_SLIDER.step" />
+          <span class="hint">Шкала логарифмическая: от тысячи до миллиарда.</span>
+        </label>
+        <label v-for="f in FIELDS" :key="f.key" class="field">
+          <span class="name">{{ f.label }}: <strong>{{ formatNumber(effective[f.key], 1) }}</strong></span>
+          <span class="pair">
+            <input v-model.number="input[f.key]" type="range" :min="f.min" :max="f.max" :step="f.step" />
+            <input v-model.number="input[f.key]" type="number" :min="f.min" :max="f.max" :step="f.step" :aria-label="f.label" />
+          </span>
+          <span class="hint">{{ f.hint }}</span>
+        </label>
+        <button type="button" class="reset" @click="reset">Вернуть исходные значения</button>
+      </div>
+      <ol class="steps">
+        <li v-for="(s, i) in steps" :key="s.id">
+          <span class="no">{{ i + 1 }}</span>
+          <div>
+            <p class="label">{{ s.label }}: <strong>{{ formatStepValue(s) }}</strong></p>
+            <p class="formula">{{ s.formula }}</p>
+            <p class="expr">{{ s.expression }}</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+  </VizFrame>
 </template>
 
 <style scoped>

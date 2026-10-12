@@ -1,0 +1,23 @@
+:root {
+  --part-problem-fg: #be123c; --part-problem-bg: #ffe4e6;
+  --part-theory-fg: #0369a1; --part-theory-bg: #e0f2fe;
+  --part-viz-fg: #0f766e; --part-viz-bg: #ccfbf1;
+  --part-mistakes-fg: #9a3412; --part-mistakes-bg: #ffedd5;
+  --part-tradeoff-fg: #92400e; --part-tradeoff-bg: #fef3c7;
+  --part-code-fg: #334155; --part-code-bg: #f1f5f9;
+  --part-selfcheck-fg: #3f6212; --part-selfcheck-bg: #ecfccb;
+  --part-sources-fg: #6d28d9; --part-sources-bg: #ede9fe;
+  --part-deep-fg: #0369a1; --part-deep-bg: #f0f9ff;
+}
+
+.dark {
+  --part-problem-fg: #fda4af; --part-problem-bg: #3f1d2b;
+  --part-theory-fg: #7dd3fc; --part-theory-bg: #0c2a43;
+  --part-viz-fg: #5eead4; --part-viz-bg: #0d3330;
+  --part-mistakes-fg: #fdba74; --part-mistakes-bg: #3b200d;
+  --part-tradeoff-fg: #fcd34d; --part-tradeoff-bg: #3a2a0a;
+  --part-code-fg: #cbd5e1; --part-code-bg: #1e293b;
+  --part-selfcheck-fg: #bef264; --part-selfcheck-bg: #1a2e0d;
+  --part-sources-fg: #c4b5fd; --part-sources-bg: #2a1f3d;
+  --part-deep-fg: #7dd3fc; --part-deep-bg: #0f1b2e;
+}

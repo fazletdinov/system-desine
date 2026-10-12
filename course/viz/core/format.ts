@@ -1,11 +1,11 @@
-const NBSP = ' '
+const NBSP = '\u00A0'
 
 // ICU в разных версиях Node использует для разрядов то U+00A0, то U+202F.
 // Приводим к одному символу, чтобы вывод был стабильным.
 export function formatNumber(value: number, fractionDigits = 0): string {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: fractionDigits })
     .format(value)
-    .replace(/[  ]/g, NBSP)
+    .replace(/[\u00A0\u202F]/g, NBSP)
 }
 
 // Один знак после запятой для значений меньше 10: «2,5 с» информативнее «3 с»,

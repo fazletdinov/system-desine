@@ -6,6 +6,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "jsx": "preserve",
     "resolveJsonModule": true,
     "skipLibCheck": true,
@@ -16,6 +17,7 @@
     "glossary/**/*.ts",
     "viz/**/*.ts",
     "viz/**/*.vue",
-    "components/**/*.vue"
+    "components/**/*.vue",
+    "scripts/**/*.ts"
   ]
 }

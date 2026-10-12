@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { loadGlossaryFile } from './load'
-import { GlossaryError, parseGlossary, sortTerms } from './schema'
+import { GlossaryError, groupByLetter, parseGlossary, sortTerms, toShortTerms } from './schema'
 
 const valid = {
   wal: {
@@ -50,5 +50,31 @@ describe('terms.yaml', () => {
   it('реальный глоссарий проходит валидацию', () => {
     const path = fileURLToPath(new URL('./terms.yaml', import.meta.url))
     expect(Object.keys(loadGlossaryFile(path)).length).toBeGreaterThan(0)
+  })
+})
+
+describe('toShortTerms', () => {
+  it('оставляет только term, en и short', () => {
+    const g = parseGlossary({ wal: { term: 'WAL', en: 'Write-Ahead Log', short: 'Журнал.', long: 'Подробно.', links: [{ title: 'x' }] } })
+    expect(toShortTerms(g)).toEqual({ wal: { term: 'WAL', en: 'Write-Ahead Log', short: 'Журнал.' } })
+  })
+})
+
+describe('groupByLetter', () => {
+  it('группирует по первой букве: сначала кириллица, потом латиница', () => {
+    const g = parseGlossary({
+      dns: { term: 'DNS', short: '.' },
+      lat: { term: 'Задержка', short: '.' },
+      aud: { term: 'Аудит', short: '.' },
+      bal: { term: 'балансировщик', short: '.' },
+      fs: { term: 'fsync', short: '.' },
+    })
+    expect(groupByLetter(Object.values(g)).map((x) => [x.letter, x.terms.map((t) => t.id)])).toEqual([
+      ['А', ['aud']],
+      ['Б', ['bal']],
+      ['З', ['lat']],
+      ['D', ['dns']],
+      ['F', ['fs']],
+    ])
   })
 })

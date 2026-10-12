@@ -23,6 +23,8 @@ describe('playerReducer', () => {
     ['seek внутрь', at(0), { type: 'seek', index: 3 }, { index: 3 }],
     ['seek за границу зажимается', at(0), { type: 'seek', index: 99 }, { index: 4 }],
     ['seek отрицательный зажимается', at(2), { type: 'seek', index: -5 }, { index: 0 }],
+    ['seek NaN → начало', at(2), { type: 'seek', index: Number.NaN }, { index: 0 }],
+    ['seek Infinity → начало', at(2), { type: 'seek', index: Number.POSITIVE_INFINITY }, { index: 0 }],
     ['ручной шаг ставит паузу', at(1, true), { type: 'next' }, { index: 2, playing: false }],
     ['play', at(1), { type: 'play' }, { index: 1, playing: true }],
     ['play на последнем шаге начинает сначала', at(4), { type: 'play' }, { index: 0, playing: true }],

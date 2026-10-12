@@ -1,22 +1,57 @@
 # Бэклог после модуля 0
 
-Отложенные замечания ревью ветки feat/course-platform-module-0 (для подпроекта «Полировка модуля 0» и до старта модуля 0b).
+Отложенные замечания ревью веток feat/course-platform-module-0 и feat/polish-module-0.
 
-## Запросы пользователя (полировка)
-- Цвет со смыслом: фирменный акцент, цветные метки частей урока, Mermaid в палитре --viz-*, подсветка чисел; тёмная тема.
-- Углубление теории: блоки «🔬 Под капотом», курс самодостаточен, источники — «читать дальше».
-- Код уровня прода: фрагменты из реального кода мессенджера; упрощённые явно помечены.
-- Полноэкранный режим для визуализаций (⛶, Esc; CSS-оверлей на iPhone).
+## Выполнено в подпроекте «Полировка модуля 0» (2026-10-12)
+- Запросы на полировку: цветной акцент и метки частей, Mermaid в палитре, подсветка чисел, тёмная тема, углубление теории (`<Deep>`), прод-код с `check:go`, полноэкранный режим визуализаций.
+- Подписи шагов с терминами (`{text, termId}`) и всплывающие определения; легенда визуализаций.
+- Мелочи: NBSP-символы заменены на `\u`-escape, `seek(NaN)`, подсказка про YAML-ошибку, `role=tooltip`, Esc при уходе мыши, ленивый Mermaid-чанк, мелкая карта курса — через полноэкранный режим, тяжёлый T.
+- Из финальной проверки: `aria-label` якорей без разметки `<Part>`; класс `viz-scroll-lock` снимается только рамкой с открытым оверлеем.
 
-## До модуля 0b
-- Подписи шагов визуализации с терминами: формат сегментов {text, termId?} + тест на id из terms.yaml.
+## Открытые пункты
 
-## Отложенные мелочи
-- Task 1: minor (deferred): dev-chain npm audit 2 critical/1 high (not in prod build); esbuild postinstall skipped by npm allowScripts; tsconfig globs empty until later tasks
-- Task 2: minor (deferred): YAML parse error in frontmatter lacks file path; module dirs not filtered by ^\d{2}-; temp dirs not cleaned in test; module without index.md yields dead link; sidebar computed once (dev restart needed for new lessons)
-- Task 3: minor (deferred): terms-check regex misses single-quoted/bound ids; KNOWN_TERMS read once (dev restart); no test on real terms.yaml; ru collator puts Latin after Cyrillic; T.vue inlines whole glossary per page; GlossaryList key by link.title
-- Task 3: minor (deferred): Esc-dismiss resets on mouseleave while focus inside; T_TAG case-sensitive, misses <T/>; role=tooltip containing a link
-- Task 4: minor (deferred): stage-level arrows imply skipping through deepening nodes; elaboration ch.4 citation unverified; mermaid >500kB chunk warning; subgraph order comment; course map tiny at 375px (wrap Mermaid in scroll container)
-- Task 5: minor (deferred): literal invisible NBSP chars in format.ts/test (use \u escapes); compact picks digits before rounding (999999ns→"1 000 мкс"); seek(NaN) → NaN index; format fns untested for NaN/negative
-- Task 6: minor (deferred): lesson 0.3 heading still says "код работает 1 мс"; "Балансировщик" tight in narrow node
-- Task 7: minor (deferred): viz/README legend lacks latency kind colours (cpu→service, memory→cache… inconsistent with "Кэш (Redis)"); times() 12–14 branch untested; Dean "с которого началась таблица" attribution (Norvig 2001 earlier); "≈474" exact
+### Сборка, зависимости, окружение
+- dev-цепочка: `npm audit` 2 critical / 1 high (в прод-сборку не попадают); postinstall esbuild пропущен (`allowScripts`); пустые globs в tsconfig до появления файлов.
+- Нет поля `engines` для Node; `go.mod` toolchain скачивается на старых Go.
+- Mermaid-чанки > 500 КБ (порог предупреждения поднят до 1000 КБ).
+- Список терминов и меню считаются один раз при старте (после добавления урока/термина нужен рестарт dev); `titleOf`/`orderOf` в `sidebar.ts` дублируют try/catch.
+
+### Сайдбар и конфиг
+- Папки модулей не фильтруются по `^\d{2}-`; модуль без `index.md` даёт битую ссылку; временные каталоги тестов не чистятся.
+
+### Глоссарий и термины
+- `terms-check`: regex не ловит id в одинарных кавычках и привязанные (`:id`); `T_TAG` чувствителен к регистру и не видит `<T/>`; нет теста на реальный `terms.yaml`.
+- `groupByLetter`: Ё/Е и цифры; ключ `GlossaryList` по `link.title`.
+- `<T>` внутри `aria-live` подписи.
+
+### Доступность и интерфейс
+- Оверлей `role=dialog` без ловушки фокуса и возврата фокуса; `aria-label` на обычном `div`. Ловушку и возврат фокуса сделать в самом начале следующего подпроекта.
+- Старый SVG остаётся рядом с текстом ошибки после неудачной перерисовки Mermaid; `mermaid.initialize` вызывается на каждый рендер; `withPaletteClasses` пропускает `%%{init}%%`, frontmatter и однострочные flowchart.
+- Карта курса на 375 px в обычном (не полноэкранном) виде мелкая — обернуть в контейнер со скроллом; «Балансировщик» тесно в узком узле. (В полноэкранном режиме схемы масштабируются — выполнено; в альбомной ориентации полноэкранная карта ограничена по высоте (~235 px).)
+- Иконка ⚠️ общая у простых и «упрощённых» Callout, цвета тоже общие.
+- Стрелки уровней в карте курса подразумевают пропуск углубляющих узлов; ссылка на гл. 4 в elaboration не проверена.
+
+### Тесты
+- `parts.test` считает вхождения, но не проверяет размещение в `:root` и `.dark`.
+- Тест терминов в подписях лежит вне `describe` (`request-path.test.ts`).
+- Нет комментария о порядке subgraph в Mermaid-схеме урока 0.1.
+- Нет тестов поведения компонента Mermaid; тесты палитры не проверяют конкретные цвета.
+- Функции формата не покрыты для NaN/отрицательных; ветка 12–14 в `times()` не тестируется.
+
+### Go-проверка и production-обработчик
+- `UserID`: ошибка всегда 401 (сбой авторизации должен быть 5xx — переедет в middleware модуля 1).
+- Лишние данные после лимита тела дают 400, а не 413.
+- Отступ в размеченном блоке сохраняется (gofmt пометил бы); ` ```golang ` не определяется.
+- `RequestPath`: отступы и порядок импортов.
+
+### Контент и числа
+- Формат: `compact` берёт разряды до округления (999999 нс → «1 000 мкс»).
+- Строки 0.1 (~45/~124) — плоские утверждения при осторожном основном тексте.
+- Go-резолвер дополнительно читает `/etc/hosts`; поток абзацев в Deep про DNS.
+- Цвета видов latency в легенде: cpu→service и memory→cache расходятся по смыслу с легендой («Кэш (Redis)»); атрибуция Dean «с которого началась таблица» (Norvig 2001 раньше); «≈474» выглядит точным.
+- Deep про WebSocket: 487–507 слов в зависимости от способа подсчёта (граница 500).
+
+## Остатки итогового ревью полировки (2026-10-12)
+- Урок 0.4: повторная обёртка `<T id="ram">` (~стр. 57) — снять.
+- Урок 0.3: «HTTP (HyperText Transfer Protocol)-адаптере» — переформулировать («в адаптере HTTP (…)»).
+- VizFrame: доступное имя кнопки выхода не содержит видимого текста «Выйти (Esc)» (WCAG 2.5.3).

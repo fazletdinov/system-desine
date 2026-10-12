@@ -25,6 +25,14 @@ export function readOrder(markdown: string, fallback: number): number {
   return typeof order === 'number' ? order : fallback
 }
 
+function titleOf(path: string, fallback: string): string {
+  try {
+    return readTitle(readFileSync(path, 'utf8'), fallback)
+  } catch (e) {
+    throw new Error(`${path}: не удалось разобрать frontmatter`, { cause: e })
+  }
+}
+
 export function buildSidebar(modulesDir: string, base = '/modules'): DefaultTheme.SidebarItem[] {
   if (!existsSync(modulesDir)) return []
   return readdirSync(modulesDir, { withFileTypes: true })
@@ -34,19 +42,27 @@ export function buildSidebar(modulesDir: string, base = '/modules'): DefaultThem
     .map(({ dir }) => buildModule(join(modulesDir, dir), `${base}/${dir}`, dir))
 }
 
+function orderOf(path: string, fallback: number): number {
+  try {
+    return readOrder(readFileSync(path, 'utf8'), fallback)
+  } catch (e) {
+    throw new Error(`${path}: не удалось разобрать frontmatter`, { cause: e })
+  }
+}
+
 function moduleOrder(indexPath: string, dirName: string): number {
   const fromName = Number(dirName.slice(0, 2))
-  return existsSync(indexPath) ? readOrder(readFileSync(indexPath, 'utf8'), fromName) : fromName
+  return existsSync(indexPath) ? orderOf(indexPath, fromName) : fromName
 }
 
 function buildModule(dirPath: string, link: string, dirName: string): DefaultTheme.SidebarItem {
   const indexPath = join(dirPath, 'index.md')
-  const text = existsSync(indexPath) ? readTitle(readFileSync(indexPath, 'utf8'), dirName) : dirName
+  const text = existsSync(indexPath) ? titleOf(indexPath, dirName) : dirName
   const items = readdirSync(dirPath)
     .filter((file) => LESSON_FILE.test(file))
     .sort()
     .map((file) => ({
-      text: readTitle(readFileSync(join(dirPath, file), 'utf8'), file),
+      text: titleOf(join(dirPath, file), file),
       link: `${link}/${file.replace(/\.md$/, '')}`,
     }))
   return { text, link: `${link}/`, collapsed: true, items }

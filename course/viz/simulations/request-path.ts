@@ -1,3 +1,4 @@
+import type { Caption, CaptionSegment } from '../core/caption'
 import type { Step } from '../core/types'
 import { formatMs } from '../core/format'
 
@@ -31,33 +32,34 @@ export const LATENCY_MS = { dnsLookup: 20, rtt: 40, internalHop: 0.5, diskFsync:
 export const TOTAL_MS = LATENCY_MS.dnsLookup + 3 * LATENCY_MS.rtt + 4 * LATENCY_MS.internalHop + LATENCY_MS.diskFsync
 
 // Номера строк в Go-обработчике из урока 0.3.
-export const CODE_LINE = { entry: 1, auth: 2, execute: 12, respond: 17 } as const
+export const CODE_LINE = { entry: 6, auth: 7, execute: 38, respond: 55 } as const
 
 interface Segment {
   active: NodeId
   packet: Packet | null
   costMs: number
-  caption: string
+  caption: Caption
   codeLine?: number
 }
 
 const req = (from: NodeId, to: NodeId): Packet => ({ from, to, kind: 'request' })
 const res = (from: NodeId, to: NodeId): Packet => ({ from, to, kind: 'response' })
+const term = (text: string, termId: string): CaptionSegment => ({ text, termId })
 const half = LATENCY_MS.rtt / 2
 
 const SEGMENTS: readonly Segment[] = [
   { active: 'client', packet: null, costMs: 0, caption: 'Вы нажали «Отправить». Чтобы доставить сообщение, телефону нужен IP-адрес сервера, а он знает только имя api.messenger.example.' },
-  { active: 'dns', packet: req('client', 'dns'), costMs: LATENCY_MS.dnsLookup / 2, caption: 'DNS-запрос: «какой IP-адрес у api.messenger.example?». Если адрес уже лежит в кэше телефона, этого шага не будет.' },
+  { active: 'dns', packet: req('client', 'dns'), costMs: LATENCY_MS.dnsLookup / 2, caption: [term('DNS', 'dns'), { text: '-запрос: «какой IP-адрес у api.messenger.example?». Если адрес уже лежит в кэше телефона, этого шага не будет.' }] },
   { active: 'client', packet: res('dns', 'client'), costMs: LATENCY_MS.dnsLookup / 2, caption: 'DNS вернул IP-адрес балансировщика. Около 20 мс ушло только на то, чтобы узнать, куда стучаться.' },
-  { active: 'lb', packet: req('client', 'lb'), costMs: half, caption: 'TCP-рукопожатие, часть 1: телефон отправляет SYN — «хочу установить соединение».' },
-  { active: 'client', packet: res('lb', 'client'), costMs: half, caption: 'TCP, часть 2: балансировщик отвечает SYN-ACK. Прошёл один полный RTT, а полезных данных ещё не отправлено ни байта.' },
-  { active: 'lb', packet: req('client', 'lb'), costMs: half, caption: 'TLS 1.3: телефон отправляет ACK и сразу ClientHello — поддерживаемые шифры и свою часть ключа.' },
+  { active: 'lb', packet: req('client', 'lb'), costMs: half, caption: [term('TCP', 'tcp'), { text: '-рукопожатие, часть 1: телефон отправляет SYN — «хочу установить соединение».' }] },
+  { active: 'client', packet: res('lb', 'client'), costMs: half, caption: [{ text: 'TCP, часть 2: балансировщик отвечает SYN-ACK. Прошёл один полный ' }, term('RTT', 'rtt'), { text: ', а полезных данных ещё не отправлено ни байта.' }] },
+  { active: 'lb', packet: req('client', 'lb'), costMs: half, caption: [term('TLS', 'tls'), { text: ' 1.3: телефон отправляет ACK и сразу ClientHello — поддерживаемые шифры и свою часть ключа.' }] },
   { active: 'client', packet: res('lb', 'client'), costMs: half, caption: 'Балансировщик отвечает ServerHello и сертификатом. Ещё один RTT — канал зашифрован. Позади два RTT подготовки.' },
   { active: 'lb', packet: req('client', 'lb'), costMs: half, caption: 'Наконец сам запрос: зашифрованный POST /messages с текстом сообщения.' },
-  { active: 'app', packet: req('lb', 'app'), costMs: LATENCY_MS.internalHop, codeLine: CODE_LINE.entry, caption: 'Балансировщик расшифровал запрос (TLS-терминация) и передал его одному из Go-сервисов. Внутри дата-центра это доли миллисекунды.' },
+  { active: 'app', packet: req('lb', 'app'), costMs: LATENCY_MS.internalHop, codeLine: CODE_LINE.entry, caption: [{ text: 'Балансировщик расшифровал запрос (' }, term('TLS-терминация', 'tls-termination'), { text: ') и передал его одному из Go-сервисов. Внутри дата-центра это доли миллисекунды.' }] },
   { active: 'app', packet: null, costMs: 0, codeLine: CODE_LINE.auth, caption: 'Go-сервис проверяет токен и разбирает JSON. Это микросекунды работы процессора — на фоне сети почти ноль.' },
   { active: 'db', packet: req('app', 'db'), costMs: LATENCY_MS.internalHop, codeLine: CODE_LINE.execute, caption: 'Сервис отправляет INSERT в PostgreSQL.' },
-  { active: 'db', packet: null, costMs: LATENCY_MS.diskFsync, codeLine: CODE_LINE.execute, caption: 'PostgreSQL записывает изменение на диск (fsync) и только потом подтверждает. Так подтверждённое сообщение переживёт сбой питания.' },
+  { active: 'db', packet: null, costMs: LATENCY_MS.diskFsync, codeLine: CODE_LINE.execute, caption: [{ text: 'PostgreSQL записывает изменение на диск (' }, term('fsync', 'fsync'), { text: ') и только потом подтверждает. Так подтверждённое сообщение переживёт сбой питания.' }] },
   { active: 'app', packet: res('db', 'app'), costMs: LATENCY_MS.internalHop, codeLine: CODE_LINE.respond, caption: 'База подтвердила запись. Сервис формирует ответ 201 Created.' },
   { active: 'lb', packet: res('app', 'lb'), costMs: LATENCY_MS.internalHop, caption: 'Ответ 201 Created возвращается на балансировщик, тот шифрует его для телефона.' },
 ]
