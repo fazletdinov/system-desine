@@ -5,3 +5,4 @@ course/.vitepress/dist/
 .playwright-mcp/
 .superpowers/
 labs/0b/captures/*.pcap
+labs/0b/captures/*.pcapng

@@ -27,7 +27,14 @@ labs/0b/netem.sh off       # снять
 docker compose -f labs/0b/compose.yaml exec client tcpdump -i eth0 -w /captures/x.pcap
 ```
 
-Файлы `.pcap` появляются в `labs/0b/captures/` и не попадают в git.
+Файлы `.pcap` появляются в `labs/0b/captures/` и не попадают в git. Их пишет root внутри контейнера, поэтому удалить с хоста может понадобиться через `sudo`.
+
+## DNS
+
+Внутри контейнеров в `/etc/resolv.conf` виден `127.0.0.11` — это встроенный DNS Docker,
+он пересылает запросы на 172.28.0.53. После правки файла зоны увеличьте серийный номер SOA:
+CoreDNS (`file`) перечитывает зону только при его смене. Либо перезапустите сервис:
+`docker compose -f labs/0b/compose.yaml restart dns`.
 
 ## Остановка
 
