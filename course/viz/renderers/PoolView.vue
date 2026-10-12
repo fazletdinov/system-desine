@@ -26,6 +26,12 @@ const svgEl = ref<SVGSVGElement>()
 const narrow = useNarrow(svgEl, NARROW_PX)
 const L = computed(() => (narrow.value ? NARROW : WIDE))
 
+function connectionsWord(n: number): string {
+  if (n % 10 === 1 && n % 100 !== 11) return 'соединение'
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return 'соединения'
+  return 'соединений'
+}
+
 const rows = computed(() => Math.min(props.result.connections, MAX_ROWS))
 const hidden = computed(() => Math.max(0, props.result.connections - MAX_ROWS))
 const plotW = computed(() => L.value.width - L.value.labelW - 8)
@@ -85,7 +91,7 @@ const handshakes = computed(() => (tlsCount.value > 0 ? `${tcpCount.value} TCP +
         <text v-if="b.label" :x="b.x + b.w / 2" :y="b.y + L.barH / 2" class="bar-text" :font-size="L.font - 2" text-anchor="middle" dominant-baseline="central">{{ b.label }}</text>
       </g>
     </svg>
-    <p v-if="hidden > 0" class="more">и ещё {{ hidden }} {{ hidden % 10 === 1 && hidden % 100 !== 11 ? 'соединение' : [2, 3, 4].includes(hidden % 10) && ![12, 13, 14].includes(hidden % 100) ? 'соединения' : 'соединений' }}</p>
+    <p v-if="hidden > 0" class="more">и ещё {{ hidden }} {{ connectionsWord(hidden) }}</p>
     <ul class="legend" aria-label="Обозначения">
       <li><span class="sw tcp" aria-hidden="true">TCP</span> установка соединения</li>
       <li><span class="sw tls" aria-hidden="true">TLS</span> рукопожатие TLS</li>

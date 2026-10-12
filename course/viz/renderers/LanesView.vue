@@ -18,7 +18,8 @@ const emit = defineEmits<{ pick: [stream: number, index: number] }>()
 
 const NARROW_PX = 520
 const STREAM_VARS = ['--viz-client', '--viz-cache', '--viz-db'] as const
-const hatchId = `hatch-${useId()}`
+const uid = useId()
+const hatchId = (lane: Lane): string => `hatch-${uid}-${lane.proto}`
 
 interface Layout {
   width: number
@@ -81,7 +82,7 @@ const delta = (lane: Lane, s: number): string => {
       <h4 class="lane-title">{{ lane.title }}</h4>
       <svg :ref="(el) => { if (lane.proto === lanes[0]?.proto) svgEl = el as SVGSVGElement }" class="lane-svg" :viewBox="`0 0 ${L.width} ${heightOf(lane)}`" role="img" :aria-label="`${lane.title}: дорожка из ${lane.result.packets.length} пакетов по слотам времени`">
         <defs>
-          <pattern :id="hatchId" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <pattern :id="hatchId(lane)" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1="0" y1="0" x2="0" y2="6" class="hatch-line" />
           </pattern>
         </defs>
@@ -92,7 +93,7 @@ const delta = (lane: Lane, s: number): string => {
         <text v-for="c in rowsOf(lane)" :key="`l${c}`" :x="L.labelW - 6" :y="L.axisH + (c - 1) * L.rowH + 4 + box / 2" class="row-label" :font-size="L.font" text-anchor="end" dominant-baseline="central">{{ rowLabel(lane, c - 1) }}</text>
         <g v-for="p in lane.result.packets" :key="p.id" class="pkt" @click="emit('pick', p.stream, p.index)">
           <rect :x="x(p.sentAt)" :y="boxY(p)" :width="box" :height="box" rx="4" class="box" :style="{ '--c': streamColor(p.stream) }" />
-          <rect v-if="waits(p)" :x="x(p.sentAt)" :y="boxY(p)" :width="box" :height="box" rx="4" :fill="`url(#${hatchId})`" class="hatch" />
+          <rect v-if="waits(p)" :x="x(p.sentAt)" :y="boxY(p)" :width="box" :height="box" rx="4" :fill="`url(#${hatchId(lane)})`" class="hatch" />
           <text :x="x(p.sentAt) + box / 2" :y="boxY(p) + box / 2" class="pkt-n" :font-size="L.font" text-anchor="middle" dominant-baseline="central">{{ p.stream + 1 }}</text>
           <g v-if="p.lost" class="cross">
             <line :x1="x(p.sentAt) + 3" :y1="boxY(p) + 3" :x2="x(p.sentAt) + box - 3" :y2="boxY(p) + box - 3" />

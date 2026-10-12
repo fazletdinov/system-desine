@@ -66,7 +66,7 @@ const streamsList = Array.from({ length: STREAMS }, (_, i) => i)
 <template>
   <VizFrame label="Песочница: HTTP/1.1, HTTP/2 и QUIC при потере пакета">
     <p class="intro">
-      Учебная модель: {{ STREAMS }} потока по {{ PACKETS_PER_STREAM }} пакета, пакет в слот, задержка в одну сторону — половина RTT. Потерянный пакет обнаруживается через RTT. Управления перегрузкой нет.
+      Учебная модель: {{ STREAMS }} потока по {{ PACKETS_PER_STREAM }} пакета, пакет в слот, задержка в одну сторону — половина RTT. Потерянный пакет обнаруживается через RTT. Управления перегрузкой нет. HTTP/1.1 с k соединениями шлёт k пакетов за слот (полосы больше), а один и тот же пакет в разных протоколах уходит в разные слоты — поэтому сравнивайте каждый протокол с его собственным запуском без потери (число «+N» у потока).
       Нажмите на квадрат или кнопку, чтобы потерять пакет; повторное нажатие снимает потерю. Потеря одного из первых пакетов при малом RTT может «рассосаться» к концу — потеряйте пакет из последних, и эффект станет заметнее.
     </p>
     <div class="panel" role="group" aria-label="Настройки песочницы">
@@ -80,7 +80,7 @@ const streamsList = Array.from({ length: STREAMS }, (_, i) => i)
       </div>
       <div v-if="shown.includes('h1')" class="row">
         <label class="row-label" for="lanes-h1">Соединений HTTP/1.1: {{ h1Connections }}</label>
-        <input id="lanes-h1" v-model.number="h1Connections" type="range" min="1" max="6" step="1" />
+        <input id="lanes-h1" v-model.number="h1Connections" type="range" min="1" :max="STREAMS" step="1" />
       </div>
     </div>
     <LanesView :lanes="lanes" :streams="STREAMS" @pick="pick" />

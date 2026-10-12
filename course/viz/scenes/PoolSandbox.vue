@@ -14,7 +14,7 @@ const FIELDS: readonly { key: NumericField; id: string; label: string; unit: str
   { key: 'rttMs', id: 'pool-rtt', label: 'RTT', unit: ' мс', min: 5, max: 200 },
   { key: 'requests', id: 'pool-req', label: 'Запросов', unit: '', min: 1, max: 200 },
   { key: 'concurrency', id: 'pool-conc', label: 'Параллельность (воркеров)', unit: '', min: 1, max: 50 },
-  { key: 'maxIdlePerHost', id: 'pool-idle', label: 'MaxIdleConnsPerHost', unit: '', min: 0, max: 50, hint: 'в Go по умолчанию — 2' },
+  { key: 'maxIdlePerHost', id: 'pool-idle', label: 'Простаивающих соединений на хост (MaxIdleConnsPerHost)', unit: '', min: 1, max: 50, hint: 'в Go по умолчанию — 2. 0 в Go тоже означает 2; отключить пул можно отрицательным значением или DisableKeepAlives' },
 ]
 
 function reset(): void {
@@ -38,7 +38,10 @@ function reset(): void {
       </div>
     </div>
     <PoolView :result="result" />
-    <p class="caveat">Модель упрощена: в настоящем net/http пул ещё и «перехватывает» освободившиеся соединения, а лишние фоновые подключения закрываются — см. лабораторную урока 0b.6.</p>
+    <p class="caveat">
+      Модель упрощена. Это HTTP/1.1: на соединении один запрос за раз (настоящий Go по TLS обычно договаривается о HTTP/2 и пускает запросы по одному соединению параллельно). TLS — один RTT (TLS 1.3). Простаивающие соединения берутся по очереди (FIFO), а Go берёт самое недавнее.
+      В настоящем net/http ждущий запрос забирает то соединение, которое освободилось раньше, а его собственный фоновый дозвон продолжается, и лишнее соединение закрывается, когда простаивающих становится слишком много. Поэтому в реальных прогонах новых соединений под запросы меньше, чем в модели, а фоновых подключений больше — см. лабораторную урока 0b.6.
+    </p>
   </VizFrame>
 </template>
 

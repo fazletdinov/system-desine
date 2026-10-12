@@ -34,9 +34,11 @@ describe('poolTimeline', () => {
 })
 
 describe('POOL_PRESETS', () => {
-  it('go-default: пул 2 при 10 воркерах дает заметно больше 10 соединений', () => {
+  it('go-default: пул 2 при 10 воркерах — 62 соединения и 960 мс', () => {
     expect(POOL_PRESETS['go-default']).toMatchObject({ requests: 100, concurrency: 10, maxIdlePerHost: 2, tls: true, keepAlive: true })
-    expect(poolTimeline(POOL_PRESETS['go-default']).connections).toBeGreaterThan(10)
+    const r = poolTimeline(POOL_PRESETS['go-default'])
+    expect(r.connections).toBe(62)
+    expect(r.totalMs).toBe(960)
   })
 })
 

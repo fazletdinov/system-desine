@@ -44,4 +44,19 @@ describe('lanesTimeline', () => {
       }
     }
   })
+
+  it('HTTP/1.1 с двумя соединениями: потеря в одном не задерживает поток другого', () => {
+    // Потоки 0 и 2 — на соединении 0, поток 1 — на соединении 1; пакет 1 — первый пакет потока 1.
+    const clean = done({ proto: 'h1', h1Connections: 2 })
+    const lossy = done({ proto: 'h1', h1Connections: 2, lostPacket: 1 })
+    expect(lossy[1]).toBeGreaterThan(clean[1]!)
+    expect(lossy[0]).toBe(clean[0])
+    expect(lossy[2]).toBe(clean[2])
+  })
+
+  it('номер потерянного пакета вне диапазона ничего не меняет', () => {
+    const clean = done({ proto: 'h2' })
+    expect(done({ proto: 'h2', lostPacket: 99 })).toEqual(clean)
+    expect(done({ proto: 'h2', lostPacket: -1 })).toEqual(clean)
+  })
 })
