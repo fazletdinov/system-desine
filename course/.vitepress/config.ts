@@ -11,6 +11,7 @@ const KNOWN_TERMS: ReadonlySet<string> = new Set(Object.keys(loadGlossaryFile(GL
 
 export default withMermaid(defineConfig({
   lang: 'ru-RU',
+  appearance: 'dark',
   title: 'System Design на практике',
   description: 'Курс по проектированию высоконагруженных систем на Go: пошаговые визуализации и сквозной проект-мессенджер',
   cleanUrls: true,
