@@ -46,29 +46,72 @@ flowchart LR
 
 <RequestPath>
 
+<!-- go-check: harness=send-message -->
+
 ```go
+const (
+	maxBodyBytes   = 64 << 10 // 64 КБ: текст сообщения и метаданные с большим запасом
+	executeTimeout = 2 * time.Second
+)
+
 func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.auth.UserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
 	var req SendMessageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	msg, err := h.send.Execute(r.Context(), userID, req.ChatID, req.Text)
-	if err != nil {
-		h.writeError(w, err)
+	if err := req.Validate(); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), executeTimeout)
+	defer cancel()
+
+	msg, err := h.send.Execute(ctx, userID, req.ChatID, req.Text)
+	switch {
+	case errors.Is(err, chat.ErrNotMember):
+		writeError(w, http.StatusForbidden, "not a chat member")
+		return
+	case errors.Is(err, context.DeadlineExceeded):
+		writeError(w, http.StatusGatewayTimeout, "timeout")
+		return
+	case err != nil:
+		h.log.ErrorContext(ctx, "send message", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toResponse(msg))
+	if err := json.NewEncoder(w).Encode(toResponse(msg)); err != nil {
+		h.log.WarnContext(ctx, "encode response", "err", err)
+	}
 }
 ```
 
 </RequestPath>
+
+<Callout type="simplified">
+
+Код выше — обработчик, каким он бывает в живом сервисе, но кое-что в настоящем проекте устроено иначе:
+
+- **Аутентификация** — это middleware: он проверяет токен и кладёт пользователя в `context`, а обработчик берёт его оттуда (модуль 1).
+- **Логирование запросов, метрики и трассировка** — тоже middleware (модуль 12), в обработчике их нет.
+- **`Validate` и DTO** (data transfer object — структура для обмена данными) живут в HTTP-адаптере, отдельно от доменной модели (модуль 1).
+- **Сопоставление доменных ошибок со статусами** — одна функция в адаптере, а не `switch` в каждом обработчике.
+- **Таймаут** приходит из конфигурации, а не зашит константой.
+
+</Callout>
 
 Проверьте свою ставку из начала урока. Из 144 мс на сервер и базу пришлось 4 мс — меньше 3%. Остальное — сеть между телефоном и дата-центром. Разберём, почему так.
 
@@ -130,9 +173,13 @@ Content-Type: application/json
 
 ### Обработчик на Go
 
-Запрос попадает в обработчик (строка 1 в панели кода). Он проверяет токен (строка 2) и разбирает JSON. Это работа процессора, микросекунды. На фоне сети — почти ноль.
+Запрос попадает в обработчик (строка 6 в панели кода). Он проверяет токен (строка 7) и разбирает JSON. Это работа процессора, микросекунды. На фоне сети — почти ноль.
 
-Затем строка 12: `h.send.Execute(...)`. Обработчик не пишет в базу сам, а передаёт работу отдельному объекту — сценарию «отправить сообщение». Зачем так делить код и почему HTTP-слой не должен знать про SQL, подробно разберём в модуле 1. Пока достаточно знать, что где-то внутри `Execute` выполняется `INSERT` в PostgreSQL. Соединение с базой тоже берётся уже открытое, из пула `sql.DB` — того самого, который в уроке 0.2 исчерпал лимит `max_connections`.
+Разбор устроен так, чтобы плохой запрос не стоил сервису дорого. `http.MaxBytesReader` обрезает тело на 64 КБ: без этого клиент мог бы прислать гигабайт и занять память. `DisallowUnknownFields` отвергает JSON с неизвестными полями — опечатка в имени поля не пройдёт молча. `Validate` проверяет текст сообщения, и невалидный запрос получает `422`, не дойдя до базы.
+
+Затем строка 29: `h.send.Execute(...)`. Обработчик не пишет в базу сам, а передаёт работу отдельному объекту — сценарию «отправить сообщение». Зачем так делить код и почему HTTP-слой не должен знать про SQL, подробно разберём в модуле 1. Пока достаточно знать, что где-то внутри `Execute` выполняется `INSERT` в PostgreSQL. Соединение с базой тоже берётся уже открытое, из пула `sql.DB` — того самого, который в уроке 0.2 исчерпал лимит `max_connections`.
+
+Вызов идёт с контекстом, у которого есть таймаут в 2 секунды: если база зависла, клиент получит `504`, а не вечное ожидание. Ошибки сценария разбирает `errors.Is`: «не участник чата» превращается в `403`, истёкший таймаут — в `504`, всё остальное — в `500`, причём подробности уходят в лог, а не клиенту. Ответ пишется последним, и ошибку `Encode` обработчик тоже проверяет: клиент мог оборвать соединение, и об этом стоит знать.
 
 ### Запись в базу и fsync
 
@@ -144,7 +191,7 @@ PostgreSQL получает `INSERT`. Как думаете, когда база
 
 ### Ответ
 
-База подтвердила запись, обработчик отвечает `201 Created` (строка 17). Ответ идёт обратно: сервис → балансировщик (шифрует ответ) → телефон. Последний участок — ещё полпути RTT, и вот галочка «отправлено». Итого ≈ 144 мс.
+База подтвердила запись, обработчик отвечает `201 Created` (строка 44). Ответ идёт обратно: сервис → балансировщик (шифрует ответ) → телефон. Последний участок — ещё полпути RTT, и вот галочка «отправлено». Итого ≈ 144 мс.
 
 ## Допущения модели
 

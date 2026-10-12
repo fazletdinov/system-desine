@@ -32,7 +32,7 @@ export const LATENCY_MS = { dnsLookup: 20, rtt: 40, internalHop: 0.5, diskFsync:
 export const TOTAL_MS = LATENCY_MS.dnsLookup + 3 * LATENCY_MS.rtt + 4 * LATENCY_MS.internalHop + LATENCY_MS.diskFsync
 
 // Номера строк в Go-обработчике из урока 0.3.
-export const CODE_LINE = { entry: 1, auth: 2, execute: 12, respond: 17 } as const
+export const CODE_LINE = { entry: 6, auth: 7, execute: 29, respond: 44 } as const
 
 interface Segment {
   active: NodeId

@@ -1,0 +1,66 @@
+package snippet
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"time"
+	"unicode/utf8"
+)
+
+// Обвязка для проверки фрагмента урока 0.3: минимальные типы, без которых он не компилируется.
+
+type chatErrors struct{ ErrNotMember error }
+
+// chat имитирует доменный пакет chat с его ошибками.
+var chat = chatErrors{ErrNotMember: errors.New("not a chat member")}
+
+type Message struct{ ID int64 }
+
+type MessageResponse struct {
+	ID int64 `json:"id"`
+}
+
+func toResponse(m Message) MessageResponse { return MessageResponse{ID: m.ID} }
+
+const maxTextRunes = 4096
+
+type SendMessageRequest struct {
+	ChatID int64  `json:"chat_id"`
+	Text   string `json:"text"`
+}
+
+func (r SendMessageRequest) Validate() error {
+	if n := utf8.RuneCountInString(r.Text); n == 0 || n > maxTextRunes {
+		return errors.New("text must be 1..4096 characters")
+	}
+	return nil
+}
+
+type authenticator interface {
+	UserID(r *http.Request) (int64, error)
+}
+
+type messageSender interface {
+	Execute(ctx context.Context, userID, chatID int64, text string) (Message, error)
+}
+
+type Handler struct {
+	auth authenticator
+	send messageSender
+	log  *slog.Logger
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		slog.Warn("encode error response", "err", err)
+	}
+}
+
+var _ = time.Second
+
+// SNIPPET

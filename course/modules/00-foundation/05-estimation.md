@@ -89,6 +89,8 @@ import EstimationCalculator from '../../viz/scenes/EstimationCalculator.vue'
 
 Тот же расчёт на Go — удобно держать под рукой и подставлять свои числа:
 
+<!-- go-check -->
+
 ```go
 package main
 
