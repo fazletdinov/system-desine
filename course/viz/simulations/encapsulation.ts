@@ -47,7 +47,7 @@ export const PAYLOAD_SHARE_PERCENT = payloadSharePercent([HTTP, TLS, TCP, IP, ET
 
 const CAPTIONS: readonly Caption[] = [
   [{ text: 'Всё начинается с полезных данных: ' }, term('HTTP', 'http'), { text: `-запрос «Отправить сообщение» (заголовки и тело) занимает ${PAYLOAD_BYTES} байт. Пока это просто текст.` }],
-  [term('TLS', 'tls'), { text: ` шифрует тело и добавляет к нему служебные байты: заголовок записи, тег проверки целостности и тип содержимого — всего ${HEADER_BYTES.tls}. Итого ${PAYLOAD_BYTES + HEADER_BYTES.tls} байт.` }],
+  [term('TLS', 'tls'), { text: ` шифрует весь HTTP-запрос — и заголовки, и тело — и добавляет служебные байты: заголовок записи, тег проверки целостности и тип содержимого — всего ${HEADER_BYTES.tls}. Итого ${PAYLOAD_BYTES + HEADER_BYTES.tls} байт.` }],
   [term('TCP', 'tcp'), { text: ` кладёт данные в сегмент: порты, номера байтов и окно занимают ${HEADER_BYTES.tcp} байта вместе с опциями. Итого ${PAYLOAD_BYTES + HEADER_BYTES.tls + HEADER_BYTES.tcp} байт.` }],
   [{ text: 'Сегмент становится IP-пакетом: ' }, term('IP-адреса', 'ip-address'), { text: ` отправителя и получателя, ещё ${HEADER_BYTES.ip} байт. Итого ${PAYLOAD_BYTES + HEADER_BYTES.tls + HEADER_BYTES.tcp + HEADER_BYTES.ip} байт.` }],
   `Последний конверт — кадр Ethernet: MAC-адреса соседних устройств и контрольная сумма (FCS), ещё ${HEADER_BYTES.eth} байт. FCS добавляет к исходящему кадру сетевая карта, а у входящего проверяет и срезает — в Wireshark его не видно, там будет ${TOTAL_BYTES - 4} байта. Кадр готов уходить в провод (по Wi-Fi кадр другой — 802.11, но идея та же).`,

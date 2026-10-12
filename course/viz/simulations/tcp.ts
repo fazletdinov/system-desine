@@ -184,7 +184,7 @@ function caption(f: TcpFrame): CaptionSegment[] {
   if (f.events.includes('deliver')) {
     const buffered = f.received.filter((n) => n > f.expected)
     parts.push({ text: `Получатель ждёт сегмент ${f.expected} и отвечает ACK ${f.expected}. ` })
-    if (buffered.length > 0) parts.push({ text: `Сегменты ${buffered.join(', ')} пришли не по порядку и лежат в буфере. ` })
+    if (buffered.length > 0) parts.push({ text: `${plural(buffered.length, 'Сегмент', 'Сегменты', 'Сегменты')} ${buffered.join(', ')} ${plural(buffered.length, 'пришёл', 'пришли', 'пришли')} не по порядку и ${plural(buffered.length, 'лежит', 'лежат', 'лежат')} в буфере. ` })
   }
   for (const p of f.sent.filter((x) => x.lost)) {
     parts.push({ text: p.kind === 'segment' ? `Сегмент ${p.n} потерян в сети. ` : `ACK ${p.n} потерян в сети. ` })

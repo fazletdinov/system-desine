@@ -224,7 +224,7 @@ func proto(ctx context.Context, c *http.Client, url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // тело уже дочитано
 	if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)); err != nil {
 		return "", fmt.Errorf("read body of %s: %w", url, err)
 	}

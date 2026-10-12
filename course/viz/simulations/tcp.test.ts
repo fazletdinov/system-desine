@@ -84,6 +84,13 @@ describe('подписи', () => {
     expect(all.some((t) => t.includes('отправитель ждёт') && t.includes('До таймера осталось'))).toBe(true)
   })
 
+  it('согласует число при буфере вне порядка: один сегмент и несколько', () => {
+    const one = captions(state({ config: { ...DEFAULT_TCP, window: 2 }, dropSegments: [0] }))
+    expect(one.some((t) => t.includes('Сегмент 1 пришёл не по порядку и лежит в буфере'))).toBe(true)
+    const many = captions(state({ dropSegments: [1] }))
+    expect(many.some((t) => t.includes('Сегменты 2, 3 пришли не по порядку и лежат в буфере'))).toBe(true)
+  })
+
   it('потерянный ACK назван в подписи', () => {
     expect(captions(state({ dropAcks: [2] })).some((t) => t.includes('ACK 2 потерян в сети'))).toBe(true)
   })

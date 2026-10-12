@@ -68,7 +68,7 @@ labs/
 ### 3.2 Окружение
 
 **Образ (`Dockerfile`):**
-- основа `golang:1.26-bookworm` с закреплённым тегом;
+- основа `golang:1.26.9-trixie` с закреплённым тегом;
 - `apt` ставит `tcpdump`, `iproute2`, `curl`, `dnsutils`, `openssl`, `procps`;
 - лабораторные собираются внутри образа.
 
