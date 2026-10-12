@@ -20,7 +20,7 @@ import (
 	"labs/0b/internal/udpstat"
 )
 
-// packetSize: 4 байта seq (big endian) + 8 байт времени отправки (UnixNano).
+// packetSize: 4 байта seq (big endian) + 8 байт метки времени отправки (наносекунды от старта клиента).
 const packetSize = 12
 
 type config struct {
@@ -42,7 +42,27 @@ func parseFlags(args []string) (config, error) {
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
+	if err := c.validate(); err != nil {
+		return config{}, err
+	}
 	return c, nil
+}
+
+func (c config) validate() error {
+	if c.serve {
+		return nil
+	}
+	var errs []error
+	if c.n <= 0 {
+		errs = append(errs, fmt.Errorf("-n должен быть больше нуля, получено %d", c.n))
+	}
+	if c.interval <= 0 {
+		errs = append(errs, fmt.Errorf("-interval должен быть больше нуля, получено %v", c.interval))
+	}
+	if c.wait <= 0 {
+		errs = append(errs, fmt.Errorf("-wait должен быть больше нуля, получено %v", c.wait))
+	}
+	return errors.Join(errs...)
 }
 
 func main() {
@@ -52,6 +72,7 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
+		log.Error("флаги", "err", err)
 		os.Exit(2)
 	}
 
@@ -87,7 +108,9 @@ func serve(ctx context.Context, pc net.PacketConn, log *slog.Logger) error {
 	go func() {
 		defer wg.Done()
 		<-ctx.Done()
-		pc.Close()
+		if err := pc.Close(); err != nil {
+			log.Warn("закрытие сокета", "err", err)
+		}
 	}()
 	defer wg.Wait()
 
@@ -110,20 +133,22 @@ func serve(ctx context.Context, pc net.PacketConn, log *slog.Logger) error {
 	}
 }
 
-func encode(seq uint32, sent time.Time) [packetSize]byte {
+// encode кладёт в пакет номер и метку: время от старта клиента по монотонным часам.
+// Настенные часы (UnixNano) могут скакнуть из-за NTP и дать отрицательный или огромный RTT.
+func encode(seq uint32, stamp time.Duration) [packetSize]byte {
 	var b [packetSize]byte
 	binary.BigEndian.PutUint32(b[0:4], seq)
-	binary.BigEndian.PutUint64(b[4:12], uint64(sent.UnixNano()))
+	binary.BigEndian.PutUint64(b[4:12], uint64(stamp))
 	return b
 }
 
-func decode(b []byte) (seq uint32, sent time.Time, err error) {
+func decode(b []byte) (seq uint32, stamp time.Duration, err error) {
 	if len(b) != packetSize {
-		return 0, time.Time{}, fmt.Errorf("длина датаграммы %d, ожидалось %d", len(b), packetSize)
+		return 0, 0, fmt.Errorf("длина датаграммы %d, ожидалось %d", len(b), packetSize)
 	}
 	seq = binary.BigEndian.Uint32(b[0:4])
-	sent = time.Unix(0, int64(binary.BigEndian.Uint64(b[4:12])))
-	return seq, sent, nil
+	stamp = time.Duration(binary.BigEndian.Uint64(b[4:12]))
+	return seq, stamp, nil
 }
 
 func runClient(ctx context.Context, cfg config, out io.Writer) error {
@@ -132,47 +157,65 @@ func runClient(ctx context.Context, cfg config, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", cfg.addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // ping уже вернул результат, ошибка закрытия ничего не меняет
 
-	res, err := ping(ctx, conn, cfg)
+	rep, err := ping(ctx, conn, cfg)
 	if err != nil {
 		return err
 	}
-	printReport(out, res)
+	printReport(out, rep)
 	return nil
 }
 
+// report — результат анализа плюс то, что не вписывается в потери и дубликаты.
+type report struct {
+	udpstat.Result
+	Malformed int // датаграммы неверной длины
+	Refused   int // ICMP "port unreachable" на подключённом UDP-сокете
+}
+
 // ping владеет двумя горутинами — отправителем и получателем — и дожидается обеих.
-// Получатель останавливается дедлайном чтения, который выставляется через wait после
-// последней отправки (или сразу при отмене ctx).
-func ping(ctx context.Context, conn net.Conn, cfg config) (udpstat.Result, error) {
+// Получатель останавливается дедлайном чтения, который отправитель выставляет через wait
+// после последней отправки (или сразу при отмене ctx).
+func ping(ctx context.Context, conn net.Conn, cfg config) (report, error) {
 	var (
 		wg      sync.WaitGroup
 		replies []udpstat.Reply // пишет только получатель; читаем после wg.Wait
+		rep     report          // Malformed/Refused пишет только получатель
 		sent    int
 		sendErr error
+		recvErr error
 	)
+	base := time.Now() // time.Since использует монотонные часы
 
 	// #region client
 
 	wg.Add(1)
 	go func() { // отправитель
 		defer wg.Done()
+		// Будим получателя при любом выходе; если не вышло — закрываем сокет, иначе wg.Wait зависнет.
 		defer func() {
-			select {
-			case <-ctx.Done():
-				conn.SetReadDeadline(time.Now())
-			case <-time.After(cfg.wait):
-				conn.SetReadDeadline(time.Now())
+			if sendErr == nil {
+				select {
+				case <-ctx.Done():
+				case <-time.After(cfg.wait):
+				}
+			}
+			if err := conn.SetReadDeadline(time.Now()); err != nil {
+				sendErr = errors.Join(sendErr, fmt.Errorf("set read deadline: %w", err))
+				_ = conn.Close() // Read получателя вернёт ошибку, горутина выйдет
 			}
 		}()
 		for i := range cfg.n {
-			pkt := encode(uint32(i), time.Now())
+			pkt := encode(uint32(i), time.Since(base))
 			if _, err := conn.Write(pkt[:]); err != nil {
 				sendErr = fmt.Errorf("send seq %d: %w", i, err)
 				return
 			}
 			sent++
+			if i == cfg.n-1 {
+				return // после последнего пакета пауза не нужна: ждём ровно -wait
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -187,34 +230,46 @@ func ping(ctx context.Context, conn net.Conn, cfg config) (udpstat.Result, error
 		buf := make([]byte, 64)
 		for {
 			n, err := conn.Read(buf)
-			if err != nil {
-				return // дедлайн — штатное завершение, остальное увидим по потерям
+			switch {
+			case errors.Is(err, os.ErrDeadlineExceeded):
+				return // штатное завершение
+			case errors.Is(err, syscall.ECONNREFUSED):
+				rep.Refused++ // сервер не слушает: ICMP вернулся, ждём дальше
+				continue
+			case err != nil:
+				recvErr = fmt.Errorf("recv: %w", err)
+				return
 			}
-			seq, sentAt, err := decode(buf[:n])
+			seq, stamp, err := decode(buf[:n])
 			if err != nil {
+				rep.Malformed++
 				continue
 			}
-			replies = append(replies, udpstat.Reply{Seq: seq, RTT: time.Since(sentAt)})
+			replies = append(replies, udpstat.Reply{Seq: seq, RTT: time.Since(base) - stamp})
 		}
 	}()
 
 	wg.Wait()
+	rep.Result = udpstat.Analyze(sent, replies)
 
 	// #endregion client
 
-	if sendErr != nil {
-		return udpstat.Result{}, sendErr
+	if err := errors.Join(sendErr, recvErr); err != nil {
+		return report{}, err
 	}
-	return udpstat.Analyze(sent, replies), nil
+	return rep, nil
 }
 
-func printReport(out io.Writer, r udpstat.Result) {
+func printReport(out io.Writer, r report) {
 	var pct float64
 	if r.Sent > 0 {
 		pct = float64(r.Lost) / float64(r.Sent) * 100
 	}
 	fmt.Fprintf(out, "sent=%d received=%d lost=%d (%.1f%%) dup=%d reordered=%d\n",
 		r.Sent, r.Received, r.Lost, pct, r.Duplicates, r.Reordered)
+	if r.Malformed > 0 || r.Refused > 0 {
+		fmt.Fprintf(out, "unexpected: malformed=%d refused=%d\n", r.Malformed, r.Refused)
+	}
 	if s := stats.Summary(r.RTTs); s.N > 0 {
 		fmt.Fprintf(out, "rtt: n=%d min=%v p50=%v p99=%v max=%v\n", s.N, s.Min, s.P50, s.P99, s.Max)
 	}

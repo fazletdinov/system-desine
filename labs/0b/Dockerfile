@@ -7,7 +7,7 @@ RUN apt-get update \
 WORKDIR /src
 COPY go.mod ./
 COPY 0b ./0b
-# Собираем все программы лабораторной; пока cmd/ пуст, шаг ничего не делает.
+# Собираем все программы лабораторной.
 RUN set -e; for d in 0b/cmd/*/; do [ -d "$d" ] || continue; go build -o /usr/local/bin/$(basename "$d") ./"$d"; done
 
 WORKDIR /lab

@@ -17,6 +17,7 @@ func Percentile(sorted []time.Duration, p float64) time.Duration {
 	return sorted[rank-1]
 }
 
+// Result — сводка серии измерений: число измерений, минимум, медиана, p99 и максимум.
 type Result struct {
 	N                  int
 	Min, P50, P99, Max time.Duration

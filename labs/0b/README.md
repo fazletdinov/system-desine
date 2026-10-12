@@ -50,13 +50,37 @@ docker compose -f labs/0b/compose.yaml down
 
 ```bash
 labs/0b/netem.sh 40ms 0%
-docker compose -f labs/0b/compose.yaml exec -d server echo -serve -addr :7000
-docker compose -f labs/0b/compose.yaml exec client echo -addr 172.28.0.10:7000 -n 20
+docker compose -f labs/0b/compose.yaml exec -d server tcpecho -serve -addr :7000
+docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 20
 ```
 
-Флаги клиента: `-n`, `-interval`, `-size`, `-dial`, `-timeout`, `-nodelay=false` (включить алгоритм Нейгла).
-Флаги сервера: `-idle` (закрыть молчащее соединение), `-shutdown` (сколько ждать при остановке по SIGINT/SIGTERM).
+Флаги клиента: `-n`, `-interval`, `-size`, `-dial`, `-timeout`, `-nodelay`, `-writes 1|2`.
+Флаги сервера: `-idle` (закрыть молчащее или не читающее соединение), `-shutdown` (сколько ждать при остановке по SIGINT/SIGTERM).
 Инспекция сокета во время работы клиента: `docker compose -f labs/0b/compose.yaml exec client ss -ti dst 172.28.0.10`.
+
+#### Алгоритм Нейгла
+
+Нейгл задерживает маленький сегмент, пока не подтверждён предыдущий. Заметно это в шаблоне
+write-write-read: `-writes 2` отправляет строку двумя вызовами `Write`, потом ждёт эхо.
+
+```bash
+labs/0b/netem.sh 40ms 0%
+docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 10ms -writes 2 -nodelay=false
+docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 200 -interval 10ms -writes 2 -nodelay=true
+```
+
+Результат на нашем стенде (RTT 40 мс; у вас числа будут другими, порядок — такой):
+
+| режим | p50 | min |
+|---|---|---|
+| `-writes 1` (по умолчанию) | 40,2 мс | 40,1 мс |
+| `-writes 1 -nodelay=false` (контроль) | 40,2 мс | 40,1 мс |
+| `-writes 2 -nodelay=false` | 120,8 мс | 80,3 мс |
+| `-writes 2 -nodelay=true` | 40,3 мс | 40,2 мс |
+
+Один `Write` на строку Нейгл не задерживает: нечего ждать. Минимум 80 мс при `-writes 2 -nodelay=false`
+показывает, что первые обмены проходят быстрее: ядро Linux в начале соединения подтверждает сегменты
+сразу (quickack), а позже начинает откладывать ACK.
 
 ### udpping — UDP-пинг
 
@@ -69,4 +93,4 @@ docker compose -f labs/0b/compose.yaml exec client udpping -addr 172.28.0.10:700
 ```
 
 Потери netem действуют на каждом конце, поэтому при 5% теряется около 1 − 0,95² ≈ 10% round trip'ов.
-Флаги клиента: `-n`, `-interval`, `-wait`.
+Флаги клиента: `-n`, `-interval`, `-wait`. Метка времени в пакете — от монотонных часов клиента, поэтому скачок системных часов RTT не портит.

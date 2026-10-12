@@ -76,7 +76,7 @@ course/
 labs/
 ├── go.mod
 └── 0b/ compose.yaml, Dockerfile, netem.sh, dns/, captures/, README.md,
-        internal/stats/, internal/udpstat/, cmd/echo, cmd/udpping, cmd/httpbench, cmd/h2server, cmd/tlsdemo
+        internal/stats/, internal/udpstat/, cmd/tcpecho, cmd/udpping, cmd/httpbench, cmd/h2server, cmd/tlsdemo
 ```
 
 ---
@@ -263,7 +263,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces:
   - сервисы Compose `server` (IP `172.28.0.10`), `client` (`172.28.0.20`), `dns` (`172.28.0.53`) в сети `labnet` 172.28.0.0/24;
   - `./netem.sh <rtt> <loss>` и `./netem.sh off`;
-  - бинарники лабораторных в образе: `/usr/local/bin/{echo,udpping,httpbench,h2server,tlsdemo}` (появятся по мере задач 3–4; Dockerfile собирает `./0b/cmd/...`);
+  - бинарники лабораторных в образе: `/usr/local/bin/{tcpecho,udpping,httpbench,h2server,tlsdemo}` (появятся по мере задач 3–4; Dockerfile собирает `./0b/cmd/...`);
   - `npm run check:labs`.
 
 - [ ] **Step 1: `labs/go.mod`**
@@ -477,7 +477,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 3: Go-лабораторные: статистика, эхо, UDP-пинг
 
 **Files:**
-- Create: `labs/0b/internal/stats/stats.go`, `labs/0b/internal/stats/stats_test.go`, `labs/0b/internal/udpstat/udpstat.go`, `labs/0b/internal/udpstat/udpstat_test.go`, `labs/0b/cmd/echo/main.go`, `labs/0b/cmd/udpping/main.go`
+- Create: `labs/0b/internal/stats/stats.go`, `labs/0b/internal/stats/stats_test.go`, `labs/0b/internal/udpstat/udpstat.go`, `labs/0b/internal/udpstat/udpstat_test.go`, `labs/0b/cmd/tcpecho/main.go`, `labs/0b/cmd/udpping/main.go`
 - Remove: `labs/0b/internal/stats/doc.go`
 - Modify: `labs/0b/README.md`
 
@@ -487,8 +487,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `stats.Percentile(sorted []time.Duration, p float64) time.Duration`;
   - `stats.Summary(ds []time.Duration) Summary{N int; Min, P50, P99, Max time.Duration}`;
   - `udpstat.Analyze(sent int, replies []Reply) Result`;
-  - бинарники `echo`, `udpping`;
-  - регионы для уроков: `echo/main.go#server`, `echo/main.go#client`, `udpping/main.go#client`.
+  - бинарники `tcpecho`, `udpping`;
+  - регионы для уроков: `tcpecho/main.go#server`, `tcpecho/main.go#client`, `udpping/main.go#client`.
 
 - [ ] **Step 1: Написать падающие тесты `stats_test.go`**
 
@@ -694,9 +694,9 @@ func Analyze(sent int, replies []Reply) Result {
 Run: `go test -race ./...`
 Expected: PASS.
 
-- [ ] **Step 5: `cmd/echo/main.go` — контракт**
+- [ ] **Step 5: `cmd/tcpecho/main.go` — контракт**
 
-**Режимы:** `echo -serve -addr :7000` и `echo -addr server:7000 -n 20 -interval 200ms -size 32`.
+**Режимы:** `tcpecho -serve -addr :7000` и `tcpecho -addr server:7000 -n 20 -interval 200ms -size 32`.
 
 **Сервер:**
 - `net.ListenConfig.Listen(ctx, "tcp", addr)`;
@@ -734,8 +734,8 @@ Expected: PASS.
 ```bash
 docker compose -f labs/0b/compose.yaml up -d --build
 labs/0b/netem.sh 40ms 0%
-docker compose -f labs/0b/compose.yaml exec -d server echo -serve -addr :7000
-docker compose -f labs/0b/compose.yaml exec client echo -addr 172.28.0.10:7000 -n 20
+docker compose -f labs/0b/compose.yaml exec -d server tcpecho -serve -addr :7000
+docker compose -f labs/0b/compose.yaml exec client tcpecho -addr 172.28.0.10:7000 -n 20
 labs/0b/netem.sh 40ms 5%
 docker compose -f labs/0b/compose.yaml exec -d server udpping -serve -addr :7001
 docker compose -f labs/0b/compose.yaml exec client udpping -addr 172.28.0.10:7001 -n 200
@@ -744,14 +744,14 @@ labs/0b/netem.sh off && docker compose -f labs/0b/compose.yaml down
 ```
 
 Expected:
-- `echo`: p50 около 40 мс;
+- `tcpecho`: p50 около 40 мс;
 - `udpping` при 5% потерь на каждом конце: `lost` примерно 10% (≈ 1 − 0,95²); точное число будет другим.
 
 Вывод сохранить в отчёт: он пойдёт в уроки.
 
 - [ ] **Step 8: README и проверки**
 
-В `labs/0b/README.md` добавить разделы «echo» и «udpping» с командами из шага 7.
+В `labs/0b/README.md` добавить разделы «tcpecho» и «udpping» с командами из шага 7.
 
 Run:
 - `cd course && npm run check:labs` — успех;

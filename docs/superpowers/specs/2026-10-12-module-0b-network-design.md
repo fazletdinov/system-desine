@@ -32,7 +32,7 @@
 | Урок | Файл | Основное содержание | Визуализация | Лабораторная |
 |---|---|---|---|---|
 | 0b.1 | `01-layers.md` | IP-адрес и маршрут, порт, сокет как пара (адрес, порт) с обеих сторон, четвёрка соединения, инкапсуляция, MTU и фрагментация, что видит каждый уровень | Плеер `encapsulation`: HTTP → TLS → TCP → IP → Ethernet; на каждом шаге — что добавлено и сколько байт | `ss -tan`, `ip addr`, `ip route`, первая запись `tcpdump` и её чтение в Wireshark |
-| 0b.2 | `02-tcp.md` | Рукопожатие, ISN, ACK, окно получателя, повтор по таймеру и быстрый повтор (3 dup ACK), slow start и cwnd, закрытие (FIN), TIME_WAIT, `SO_REUSEADDR`, Nagle и `TCP_NODELAY` в Go | Песочница `tcp`: отправитель, получатель, окно; у каждого сегмента и ACK кнопка «потерять» | `cmd/echo` под netem 40 мс и 1–5% потерь, наблюдение через `ss -ti` (rtt, cwnd, retrans) и `tcpdump` |
+| 0b.2 | `02-tcp.md` | Рукопожатие, ISN, ACK, окно получателя, повтор по таймеру и быстрый повтор (3 dup ACK), slow start и cwnd, закрытие (FIN), TIME_WAIT, `SO_REUSEADDR`, Nagle и `TCP_NODELAY` в Go | Песочница `tcp`: отправитель, получатель, окно; у каждого сегмента и ACK кнопка «потерять» | `cmd/tcpecho` под netem 40 мс и 1–5% потерь, наблюдение через `ss -ti` (rtt, cwnd, retrans) и `tcpdump` |
 | 0b.3 | `03-udp.md` | Датаграммы, отсутствие соединения, порядка и повторов; где это плюс (DNS, игры, медиа, QUIC); размер датаграммы и фрагментация | Сравнение TCP и UDP при потерях: плеер с двумя дорожками | `cmd/udpping`: отправка и подсчёт потерь и переупорядочивания под netem |
 | 0b.4 | `04-dns.md` | Записи A, AAAA, CNAME, NS, MX, TXT, SRV; TTL и отрицательный кэш; рекурсивный и авторитетный сервер; резолвер Go (`netdns`, отсутствие кэша); `ndots` и `search` в `/etc/resolv.conf` и почему это важно в Kubernetes; как DNS влияет на балансировку и отказоустойчивость | Плеер `dns`: полный проход с кэшами, второй запрос из кэша | CoreDNS с зоной `messenger.example` в Compose: `dig +trace`, `dig` с TTL, изменение записи и наблюдение за кэшем |
 | 0b.5 | `05-tls.md` | Сертификат, цепочка до корневого CA, проверка имени (SAN), SNI, ALPN, возобновление сессии и стоимость рукопожатия, `tls.Config` в Go (`MinVersion`, `RootCAs`), что такое mTLS (подробно — модуль 6.7) | Плеер `cert-chain`: проверка цепочки шаг за шагом, с ошибкой «неизвестный CA» | `cmd/tlsdemo`: свой CA, сервер и клиент с проверкой, намеренно неверное имя, `openssl s_client -connect … -servername …` |
@@ -60,7 +60,7 @@ labs/
 │   ├── Dockerfile
 │   ├── netem.sh
 │   ├── dns/Corefile, dns/messenger.example.db
-│   ├── cmd/echo/, cmd/udpping/, cmd/httpbench/, cmd/h2server/, cmd/tlsdemo/
+│   ├── cmd/tcpecho/, cmd/udpping/, cmd/httpbench/, cmd/h2server/, cmd/tlsdemo/
 │   ├── captures/          # *.pcap — в .gitignore
 │   └── README.md
 ```
