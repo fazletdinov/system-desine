@@ -30,21 +30,20 @@ async function toggle(): Promise<void> {
   focusContent()
 }
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]'
+
+function focusableInside(el: HTMLElement): HTMLElement[] {
+  return [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => n.getClientRects().length > 0)
+}
+
 // Клавиши визуализации должны работать сразу после входа.
 function focusContent(): void {
   const el = frame.value
   if (el === undefined) return
   // Собственные кнопки рамки пропускаем: иначе фокус всегда останется на «Выйти».
-  const target = [...el.querySelectorAll<HTMLElement>('[tabindex="0"], button, input, select')].find((n) => n.closest('.viz-frame-bar, .viz-rotate') === null)
+  const target = focusableInside(el).find((n) => n.closest('.viz-frame-bar, .viz-rotate') === null)
   // Без фокусируемого содержимого фокус всё равно должен остаться внутри рамки.
-  const focusTarget = target ?? el
-  focusTarget.focus()
-}
-
-const FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, [tabindex="0"]'
-
-function focusableInside(el: HTMLElement): HTMLElement[] {
-  return [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => n.getClientRects().length > 0)
+  ;(target ?? el).focus()
 }
 
 function trapTab(event: KeyboardEvent, el: HTMLElement): void {
