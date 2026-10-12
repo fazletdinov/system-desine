@@ -215,6 +215,55 @@ lab exec client bash -c 'exec 3<>/dev/tcp/172.28.0.10/8080; printf "GET / HTTP/1
 `Client.Timeout exceeded while awaiting headers`, `total=1.00068s`; неполные заголовки —
 сервер молча закрывает соединение через 5,045 с.
 
+### Урок 0b.7 — HTTP/1.1 против HTTP/2
+
+Урок: [0b.7. HTTP/2: много запросов в одном соединении](../../course/modules/00b-network/07-http2.md). Программы — `h2server` и `httpbench` (ниже).
+
+```bash
+labs/0b/netem.sh 40ms 0%
+lab exec -d server sh -c 'h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem 2>/captures/h2server.log'
+for v in --http1.1 --http2; do lab exec client curl $v -sS --cacert /captures/ca.pem --resolve api.messenger.example:8443:172.28.0.10 -w 'http_version=%{http_version}\n' https://api.messenger.example:8443/; done
+lab exec client curl --http2 -sv -o /dev/null --cacert /captures/ca.pem --resolve api.messenger.example:8443:172.28.0.10 https://api.messenger.example:8443/   # ALPN: h2
+lab exec client curl --http2-prior-knowledge -sS http://172.28.0.10:8080/                    # h2c не включён: ошибка
+lab exec client curl --http2 -sS -w 'http_version=%{http_version}\n' http://172.28.0.10:8080/   # Upgrade проигнорирован: 1.1
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -http2=true -c 10 -n 100
+lab exec client httpbench -url https://172.28.0.10:8443/ -ca /captures/ca.pem -server-name api.messenger.example -http2=false -c 10 -n 100
+labs/0b/netem.sh 40ms 2%
+# те же две команды httpbench (шесть прогонов каждой)
+labs/0b/netem.sh 40ms 0%
+lab exec client httpbench -url 'https://172.28.0.10:8443/bytes?n=200000' -ca /captures/ca.pem -server-name api.messenger.example -http2=true -c 10 -n 100 -max-idle-per-host 10 -timeout 30s
+lab exec client httpbench -url 'https://172.28.0.10:8443/bytes?n=200000' -ca /captures/ca.pem -server-name api.messenger.example -http2=false -c 10 -n 100 -max-idle-per-host 10 -timeout 30s
+labs/0b/netem.sh 40ms 2%
+# те же две команды с /bytes?n=200000 (HTTP/2 при 2% потерь идёт около 50 с)
+```
+
+Результат на нашем стенде (у вас числа будут другими, порядок — такой): без потерь маленькие запросы — p50 41,5 мс
+по HTTP/2 против 41,3 мс по HTTP/1.1, у HTTP/2 `new_conns=1`, но `tcp_conns=10` (лишние наборы при одновременном старте);
+при 2% потерь, маленькие ответы, шесть прогонов — p99 167–171 мс у HTTP/2 против 135–379 мс у HTTP/1.1: одиночный сегмент
+HTTP/1.1 ждёт RTO, а блокировку начала очереди HTTP/2 эта нагрузка не показывает; ответы по 200 КБ — без потерь весь прогон
+0,88–1,08 с у HTTP/2 против 0,67–0,70 с, при 2% потерь 49,8–52,1 с против 3,2–4,7 с: у HTTP/2 одно окно перегрузки на все потоки.
+`GOAWAY`: запустите `curl --http2 -sv … '/slow?ms=3000'` и через секунду `lab exec server pkill -TERM h2server` —
+`curl` покажет `received GOAWAY, error=0, last_stream=1`, а ответ придёт полностью.
+
+### Урок 0b.8 — HTTP/3 через curl
+
+Урок: [0b.8. HTTP/3 и QUIC](../../course/modules/00b-network/08-http3-quic.md). Go-лабораторной нет: в стандартной библиотеке Go 1.26
+нет QUIC и HTTP/3. `curl` в образе собран с HTTP/3 (`Features: … HTTP3`, nghttp3 и OpenSSL 3.5). Нужен интернет, netem не нужен.
+
+```bash
+lab exec client curl -V                                                              # ищите HTTP3 в Features
+lab exec client curl -sI https://cloudflare.com                                      # alt-svc: h3=":443"; ma=86400
+lab exec client curl --http3 -sI https://cloudflare.com -o /dev/null -w '%{http_version}\n'   # 3 или 2 (откат на TCP)
+lab exec -d client tcpdump -i eth0 -w /captures/quic.pcap udp port 443
+lab exec client bash -c 'time curl --http3-only -sS -I --max-time 10 https://cloudflare.com'
+lab exec client pkill tcpdump
+lab exec client tcpdump -nn -r /captures/quic.pcap                                   # Initial-датаграммы по 1200 байт
+```
+
+Результат на нашем стенде: в нашей сети UDP 443 не проходит — `--http3` откатился на HTTP/2 (`2`), `--http3-only` сдался
+через 10 с, а `tcpdump` показал датаграммы по 1200 байт, повторённые через 1 и 2 с, без единого ответа. В сети, где UDP проходит,
+будет `HTTP/3 301` и `%{http_version}` = `3`.
+
 ### tcpecho — TCP-эхо
 
 Сервер возвращает каждую строку; клиент меряет время рукопожатия и RTT каждой строки.
