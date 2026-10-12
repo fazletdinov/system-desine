@@ -17,3 +17,8 @@ export function captionText(caption: Caption): string {
 export function captionTermIds(caption: Caption): string[] {
   return captionSegments(caption).flatMap((s) => (s.termId === undefined ? [] : [s.termId]))
 }
+
+// Сегмент-термин: в плеере превращается в подсказку из глоссария.
+export function term(text: string, termId: string): CaptionSegment {
+  return { text, termId }
+}
