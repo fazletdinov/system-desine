@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextFocusIndex } from '../core/focus'
 import { enterFullscreen, exitFullscreen, type FullscreenApi, type FullscreenMode } from '../core/fullscreen'
 
 const props = defineProps<{ label: string }>()
 const frame = ref<HTMLElement>()
+const toggleBtn = ref<HTMLButtonElement>()
 const mode = ref<FullscreenMode>('off')
 const rotateHint = ref(false)
 
@@ -34,7 +36,23 @@ function focusContent(): void {
   if (el === undefined) return
   // Собственные кнопки рамки пропускаем: иначе фокус всегда останется на «Выйти».
   const target = [...el.querySelectorAll<HTMLElement>('[tabindex="0"], button, input, select')].find((n) => n.closest('.viz-frame-bar, .viz-rotate') === null)
-  target?.focus()
+  // Без фокусируемого содержимого фокус всё равно должен остаться внутри рамки.
+  const focusTarget = target ?? el
+  focusTarget.focus()
+}
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, [tabindex="0"]'
+
+function focusableInside(el: HTMLElement): HTMLElement[] {
+  return [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => n.getClientRects().length > 0)
+}
+
+function trapTab(event: KeyboardEvent, el: HTMLElement): void {
+  const items = focusableInside(el)
+  const next = nextFocusIndex(items.indexOf(document.activeElement as HTMLElement), items.length, event.shiftKey)
+  event.preventDefault()
+  if (next >= 0) items[next]?.focus()
+  else el.focus()
 }
 
 function onFullscreenChange(): void {
@@ -44,10 +62,16 @@ function onFullscreenChange(): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
+  if (mode.value === 'off') return
   if (event.key === 'Escape' && mode.value === 'overlay') mode.value = 'off'
+  else if (event.key === 'Tab' && frame.value !== undefined) trapTab(event, frame.value)
 }
 
-watch(mode, (m) => document.documentElement.classList.toggle('viz-scroll-lock', m === 'overlay'))
+watch(mode, (m) => {
+  document.documentElement.classList.toggle('viz-scroll-lock', m === 'overlay')
+  // Фокус возвращается на кнопку при любом выходе: кнопкой, Esc или выходом браузера из fullscreen.
+  if (m === 'off') void nextTick(() => toggleBtn.value?.focus())
+})
 
 onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -64,6 +88,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="frame"
+    tabindex="-1"
     class="viz-frame"
     :class="{ 'is-fullscreen': mode !== 'off', 'is-overlay': mode === 'overlay' }"
     :role="mode === 'overlay' ? 'dialog' : undefined"
@@ -72,6 +97,7 @@ onBeforeUnmount(() => {
   >
     <div class="viz-frame-bar">
       <button
+        ref="toggleBtn"
         type="button"
         class="viz-fs-btn"
         :aria-label="mode === 'off' ? `На весь экран: ${props.label}` : `Выйти из полноэкранного режима: ${props.label}`"
