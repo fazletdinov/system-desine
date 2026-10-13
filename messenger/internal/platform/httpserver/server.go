@@ -60,6 +60,11 @@ func Run(ctx context.Context, srv *http.Server, shutdownTimeout time.Duration) e
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
+		// Не дождались: оставшиеся запросы обрываем сами. Иначе зависшее соединение
+		// пережило бы Run и держало процесс до SIGKILL.
+		if cerr := srv.Close(); cerr != nil {
+			err = errors.Join(err, cerr)
+		}
 		return fmt.Errorf("httpserver: остановка: %w", err)
 	}
 	// После Shutdown ListenAndServe возвращает http.ErrServerClosed — это не ошибка.

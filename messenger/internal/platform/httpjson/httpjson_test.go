@@ -115,3 +115,54 @@ func TestWriteError(t *testing.T) {
 		})
 	}
 }
+
+// richPayload — DTO с полями разных типов: сообщения об ошибке типа должны говорить
+// на языке JSON, а не Go.
+type richPayload struct {
+	Text      string   `json:"text"`
+	Seq       int64    `json:"seq"`
+	MemberIDs []string `json:"member_ids"`
+}
+
+// TestDecodeMessages проверяет, что клиент получает наш текст: без имён Go-типов,
+// без имени DTO и без префикса «json:» из encoding/json.
+func TestDecodeMessages(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantMsg   string
+		wantField string
+	}{
+		{name: "пустое тело", body: "", wantMsg: "пустое тело"},
+		{name: "оборванный JSON", body: `{"text":"a"`, wantMsg: "JSON оборван на середине"},
+		{name: "синтаксис", body: `{"text":}`, wantMsg: "некорректный JSON: ошибка синтаксиса около байта 9"},
+		{name: "число вместо строки", body: `{"text":42}`, wantMsg: "поле text: ожидается строка", wantField: "text"},
+		{name: "строка вместо числа", body: `{"seq":"1"}`, wantMsg: "поле seq: ожидается число", wantField: "seq"},
+		{name: "объект вместо массива", body: `{"member_ids":{}}`, wantMsg: "поле member_ids: ожидается массив", wantField: "member_ids"},
+		{name: "число вместо строки в массиве", body: `{"member_ids":[1]}`, wantMsg: "поле member_ids: ожидается строка", wantField: "member_ids"},
+		{name: "массив вместо объекта", body: `[]`, wantMsg: "тело должно быть JSON-объектом"},
+		{name: "неизвестное поле", body: `{"text":"a","author_id":"x"}`, wantMsg: `неизвестное поле "author_id"`, wantField: "author_id"},
+		{name: "второй объект", body: `{"text":"a"}{"text":"b"}`, wantMsg: "в теле должен быть ровно один JSON-объект"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(tt.body))
+			r.Header.Set("Content-Type", "application/json")
+			var dst richPayload
+			err := httpjson.Decode(httptest.NewRecorder(), r, &dst)
+
+			var de *httpjson.DecodeError
+			if !errors.As(err, &de) {
+				t.Fatalf("Decode: %v (%T), want *DecodeError", err, err)
+			}
+			if de.Msg != tt.wantMsg || de.Field != tt.wantField {
+				t.Errorf("Msg %q Field %q, want %q %q", de.Msg, de.Field, tt.wantMsg, tt.wantField)
+			}
+			for _, leak := range []string{"Go", "struct", "richPayload", "json:", "int64", "[]string"} {
+				if strings.Contains(de.Msg, leak) {
+					t.Errorf("Msg %q раскрывает внутреннее: %q", de.Msg, leak)
+				}
+			}
+		})
+	}
+}

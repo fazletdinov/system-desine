@@ -503,3 +503,25 @@ func TestNewNilDependencies(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeErrorsHideInternals: ошибка разбора говорит на языке JSON — без имени
+// нашего DTO и типов Go, которые encoding/json кладёт в свой текст ошибки.
+func TestDecodeErrorsHideInternals(t *testing.T) {
+	bodies := []string{`{"text":42}`, `{"text":"a","author_id":"x"}`, `{"text":}`, `{"text":"a"`, `[]`}
+	for _, body := range bodies {
+		t.Run(body, func(t *testing.T) {
+			mux, _ := server(t, fakes{})
+
+			w := do(t, mux, request{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: body, userID: aliceID})
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
+			}
+			for _, leak := range []string{"Go", "struct", "sendMessageRequest", "json:"} {
+				if strings.Contains(w.Body.String(), leak) {
+					t.Errorf("ответ раскрывает внутреннее (%q): %s", leak, w.Body)
+				}
+			}
+		})
+	}
+}

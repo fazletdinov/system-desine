@@ -7,6 +7,9 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"reflect"
+	"strconv"
+	"strings"
 )
 
 // MaxBodyBytes — лимит тела запроса. Сообщение — до 4096 символов (≤ 16 КиБ в UTF-8),
@@ -18,6 +21,7 @@ type DecodeError struct {
 	Status int
 	Code   string
 	Msg    string
+	Field  string // поле JSON, к которому относится ошибка; пусто, если ко всему телу
 }
 
 func (e *DecodeError) Error() string { return e.Msg }
@@ -47,20 +51,66 @@ func Decode(w http.ResponseWriter, r *http.Request, dst any) error {
 		if errors.As(err, &tooLarge) {
 			return decodeError(err)
 		}
-		return &DecodeError{Status: http.StatusBadRequest, Code: "bad_json", Msg: "в теле должен быть ровно один JSON-объект"}
+		return badJSON("в теле должен быть ровно один JSON-объект", "")
 	}
 	return nil
 }
 
+// decodeError переводит ошибку encoding/json в наш текст. Сырой err.Error() клиенту
+// не отдаём: в нём имена Go-типов и нашего DTO («Go struct field sendMessageRequest.text
+// of type string») — это детали устройства сервера, а не подсказка клиенту.
 func decodeError(err error) *DecodeError {
-	var tooLarge *http.MaxBytesError
-	if errors.As(err, &tooLarge) {
+	var (
+		tooLarge  *http.MaxBytesError
+		syntax    *json.SyntaxError
+		wrongType *json.UnmarshalTypeError
+	)
+	switch {
+	case errors.As(err, &tooLarge):
 		return &DecodeError{Status: http.StatusRequestEntityTooLarge, Code: "body_too_large", Msg: fmt.Sprintf("тело больше %d байт", MaxBodyBytes)}
+	case errors.Is(err, io.EOF):
+		return badJSON("пустое тело", "")
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		return badJSON("JSON оборван на середине", "")
+	case errors.As(err, &syntax):
+		return badJSON(fmt.Sprintf("некорректный JSON: ошибка синтаксиса около байта %d", syntax.Offset), "")
+	case errors.As(err, &wrongType):
+		if wrongType.Field == "" {
+			return badJSON("тело должно быть JSON-объектом", "")
+		}
+		return badJSON(fmt.Sprintf("поле %s: ожидается %s", wrongType.Field, jsonKind(wrongType.Type.Kind())), wrongType.Field)
 	}
-	if errors.Is(err, io.EOF) {
-		return &DecodeError{Status: http.StatusBadRequest, Code: "bad_json", Msg: "пустое тело"}
+	// Для неизвестного поля у encoding/json нет своего типа ошибки — только текст
+	// вида `json: unknown field "x"`; имя поля из него клиенту знать полезно.
+	if name, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+		field, _ := strconv.Unquote(name)
+		return badJSON("неизвестное поле "+name, field)
 	}
-	return &DecodeError{Status: http.StatusBadRequest, Code: "bad_json", Msg: "некорректный JSON: " + err.Error()}
+	return badJSON("некорректный JSON", "")
+}
+
+func badJSON(msg, field string) *DecodeError {
+	return &DecodeError{Status: http.StatusBadRequest, Code: "bad_json", Msg: msg, Field: field}
+}
+
+// jsonKind называет ожидаемый тип словами JSON, а не Go: клиенту не важно, int64 там или int.
+func jsonKind(k reflect.Kind) string {
+	switch k {
+	case reflect.String:
+		return "строка"
+	case reflect.Bool:
+		return "true или false"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "число"
+	case reflect.Slice, reflect.Array:
+		return "массив"
+	case reflect.Struct, reflect.Map:
+		return "объект"
+	default:
+		return "значение другого типа"
+	}
 }
 
 // #endregion decode

@@ -25,7 +25,9 @@ import (
 )
 
 const (
-	defaultAddr = ":8080"
+	// Только loopback: сборка с X-User-ID вместо аутентификации не должна быть видна
+	// из сети (ADR-0002). Слушать все интерфейсы — явное решение: MESSENGER_ADDR=:8080.
+	defaultAddr = "127.0.0.1:8080"
 	// shutdownTimeout меньше 30 с, которые Kubernetes по умолчанию ждёт после SIGTERM
 	// до SIGKILL: сервер должен успеть закончить сам, а не быть убитым посреди ответа.
 	shutdownTimeout = 10 * time.Second
