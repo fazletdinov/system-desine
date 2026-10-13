@@ -1,16 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { findSnippetRefs, hasRegion } from './snippet-regions'
+import { hasRegion, scanSnippetRefs } from './snippet-regions'
 
-describe('findSnippetRefs', () => {
+const refs = (md: string) => scanSnippetRefs(md).refs
+
+describe('scanSnippetRefs', () => {
   it('находит путь и регион, номер строки с 1', () => {
     const md = 'текст\n\n<<< @/../messenger/internal/chat/domain/chat.go#post{go}\n'
-    expect(findSnippetRefs(md)).toEqual([{ path: '../messenger/internal/chat/domain/chat.go', region: 'post', line: 3 }])
+    expect(refs(md)).toEqual([{ path: '../messenger/internal/chat/domain/chat.go', region: 'post', line: 3 }])
   })
   it('ссылка без региона и без языка', () => {
-    expect(findSnippetRefs('<<< @/../labs/0b/netem.sh')).toEqual([{ path: '../labs/0b/netem.sh', region: null, line: 1 }])
+    expect(refs('<<< @/../labs/0b/netem.sh')).toEqual([{ path: '../labs/0b/netem.sh', region: null, line: 1 }])
   })
   it('не трогает строки внутри блока кода', () => {
-    expect(findSnippetRefs('```md\n<<< @/../x.go#a\n```')).toEqual([])
+    expect(scanSnippetRefs('```md\n<<< @/../x.go#a\n<<< кривая\n```')).toEqual({ refs: [], unparseable: [] })
+  })
+  it('блок в ~~~ тоже блок кода', () => {
+    expect(refs('~~~md\n<<< @/../x.go#a\n~~~\n<<< @/../y.go')).toEqual([{ path: '../y.go', region: null, line: 4 }])
+  })
+  it('``` внутри ```` не закрывает внешний блок', () => {
+    const md = '````md\n```go\n```\n<<< @/../x.go#a\n````\n<<< @/../y.go'
+    expect(refs(md)).toEqual([{ path: '../y.go', region: null, line: 6 }])
+  })
+  it('``` внутри ~~~ не закрывает внешний блок', () => {
+    expect(refs('~~~\n```\n<<< @/../x.go\n~~~')).toEqual([])
+  })
+  it.each([
+    ['<<<'],
+    ['<<< ../x.go#a{go}'],
+    ['<<<@/../x.go'],
+    ['<<< @/../x.go#a{go} лишнее'],
+  ])('строку с <<<, которую не разобрать, возвращает как unparseable: %j', (line) => {
+    expect(scanSnippetRefs(`текст\n${line}\n`)).toEqual({ refs: [], unparseable: [{ text: line, line: 2 }] })
   })
 })
 

@@ -580,3 +580,5 @@ func ExportHistory(ctx context.Context, pages []Page, w PageWriter) error {
 - Cox-Buday K., «Concurrency in Go» (рус. «Конкурентность в Go»), гл. 4, раздел «The context Package» — отмена через дерево контекстов, `Done` как широковещательный сигнал, что класть в `Value`.
 
 </Callout>
+
+Дальше — урок [1.6](./06-tests): тесты — что проверять на каждом уровне, фейки и моки, контрактные тесты хранилищ.

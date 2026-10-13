@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,10 +60,13 @@ func freeAddr(t *testing.T) string {
 }
 
 // startInFlight запускает Run с обработчиком, который ждёт release, и отправляет
-// запрос; возвращает, когда обработчик уже работает.
-func startInFlight(t *testing.T, shutdownTimeout time.Duration) (cancel context.CancelFunc, release chan struct{}, runErr, reqErr <-chan error) {
+// запрос; возвращает, когда обработчик уже работает. Если тест упадёт раньше, чем
+// вызовет cancel и release, их вызовет t.Cleanup — горутины сервера не утекут.
+func startInFlight(t *testing.T, shutdownTimeout time.Duration) (cancel context.CancelFunc, release func(), runErr, reqErr <-chan error) {
 	t.Helper()
 	entered, rel := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	release = func() { once.Do(func() { close(rel) }) }
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		close(entered)
 		<-rel
@@ -71,6 +75,9 @@ func startInFlight(t *testing.T, shutdownTimeout time.Duration) (cancel context.
 	addr := freeAddr(t)
 	srv := httpserver.New(addr, h, slog.New(slog.DiscardHandler))
 	ctx, cancelRun := context.WithCancel(context.Background())
+	// Cleanup идёт в обратном порядке: сначала отпускаем обработчик, потом останавливаем Run.
+	t.Cleanup(cancelRun)
+	t.Cleanup(release)
 	runc, reqc := make(chan error, 1), make(chan error, 1)
 	go func() { runc <- httpserver.Run(ctx, srv, shutdownTimeout) }()
 	go func() { reqc <- getUntilServed(t.Context(), "http://"+addr+"/") }()
@@ -79,7 +86,7 @@ func startInFlight(t *testing.T, shutdownTimeout time.Duration) (cancel context.
 	case <-time.After(5 * time.Second):
 		t.Fatal("запрос не дошёл до обработчика")
 	}
-	return cancelRun, rel, runc, reqc
+	return cancelRun, release, runc, reqc
 }
 
 // getUntilServed повторяет запрос, пока сервер не начнёт слушать порт.
@@ -114,7 +121,7 @@ func TestRunWaitsForInFlightRequest(t *testing.T) {
 		t.Fatalf("Run вернулся (%v), не дождавшись запроса", err)
 	case <-time.After(100 * time.Millisecond):
 	}
-	close(release)
+	release()
 
 	if err := <-reqErr; err != nil {
 		t.Errorf("запрос оборвался: %v", err)
@@ -125,8 +132,7 @@ func TestRunWaitsForInFlightRequest(t *testing.T) {
 }
 
 func TestRunForceClosesAfterShutdownTimeout(t *testing.T) {
-	cancel, release, runErr, reqErr := startInFlight(t, 50*time.Millisecond)
-	defer close(release)
+	cancel, _, runErr, reqErr := startInFlight(t, 50*time.Millisecond)
 
 	cancel()
 

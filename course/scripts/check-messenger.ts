@@ -3,13 +3,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findSnippetRefs, hasRegion } from './snippet-regions.ts'
+import { hasRegion, scanSnippetRefs } from './snippet-regions.ts'
 
 const COURSE_DIR = fileURLToPath(new URL('..', import.meta.url))
 const MESSENGER = fileURLToPath(new URL('../../messenger', import.meta.url))
 const MODULES_DIR = join(COURSE_DIR, 'modules')
 // golangci-lint ставится через `go install` и лежит в ~/go/bin, которого может не быть в PATH.
-const ENV = { ...process.env, PATH: `${process.env.PATH ?? ''}:${join(homedir(), 'go', 'bin')}` }
+// Каталог идёт первым, чтобы старая версия из системного PATH не заслонила установленную.
+const ENV = { ...process.env, PATH: `${join(homedir(), 'go', 'bin')}:${process.env.PATH ?? ''}` }
 
 function run(cmd: string, args: string[], timeout = 60_000): string {
   try {
@@ -42,7 +43,9 @@ function checkSnippetRefs(): number {
   const problems: string[] = []
   let total = 0
   for (const file of markdownFiles(MODULES_DIR)) {
-    for (const ref of findSnippetRefs(readFileSync(file, 'utf8'))) {
+    const scan = scanSnippetRefs(readFileSync(file, 'utf8'))
+    for (const bad of scan.unparseable) problems.push(`${relative(COURSE_DIR, file)}:${bad.line}: unparseable ref «${bad.text}»`)
+    for (const ref of scan.refs) {
       total++
       const target = resolve(COURSE_DIR, ref.path)
       const where = `${relative(COURSE_DIR, file)}:${ref.line} → ${ref.path}${ref.region === null ? '' : `#${ref.region}`}`

@@ -537,3 +537,5 @@ func (m *mockStore) Verify(want ...string) {
 - Harsanyi T., «100 Go Mistakes and How to Avoid Them» (рус. «100 ошибок Go и как их избежать»), гл. 11 «Testing»: № 83 «Not enabling the -race flag»; № 84 «Not using test execution modes» — `t.Parallel` и `-shuffle`; № 85 «Not using table-driven tests»; № 86 «Sleeping in unit tests» — чем заменить `time.Sleep`.
 
 </Callout>
+
+Дальше — урок [1.7](./07-http-adapter): тонкий HTTP-адаптер и сборка приложения — мессенджер, который можно потрогать через `curl`.

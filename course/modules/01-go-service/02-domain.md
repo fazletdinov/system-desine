@@ -499,3 +499,5 @@ func (ChatService) Post(c *Chat, author, text string) (Message, error) {
 - Unicode, [UAX #29 «Unicode Text Segmentation»](https://www.unicode.org/reports/tr29/) — кластеры графем: почему «один символ на экране» не равен одной руне.
 
 </Callout>
+
+Дальше — урок [1.3](./03-errors): ошибки в Go — сигнальные значения, обёртки с контекстом и то, как ошибка проходит через слои до границы.

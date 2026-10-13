@@ -83,11 +83,15 @@ function arrowHead(x2: number, y2: number, angle: number): string {
 function route(a: Box, b: Box): { d: string; head: string } {
   const sameColumn = a.x === b.x
   if (sameColumn) {
-    const x1 = a.x + a.w
+    const bulge = 36
+    // Дуга выгибается вправо, но у правой колонки справа нет места — дуга ушла бы за
+    // край viewBox и стала невидимой; тогда она выгибается влево, в промежуток между колонками.
+    const right = a.x + a.w + bulge <= WIDTH
+    const x1 = right ? a.x + a.w : a.x
+    const cx = right ? x1 + bulge : x1 - bulge
     const y1 = a.y + a.h / 2
     const y2 = b.y + b.h / 2
-    const bulge = 36
-    return { d: `M${x1},${y1} C${x1 + bulge},${y1} ${x1 + bulge},${y2} ${x1},${y2}`, head: arrowHead(x1, y2, Math.PI) }
+    return { d: `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x1},${y2}`, head: arrowHead(x1, y2, right ? Math.PI : 0) }
   }
   const forward = b.x > a.x
   const x1 = forward ? a.x + a.w : a.x
