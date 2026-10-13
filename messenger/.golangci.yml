@@ -10,9 +10,14 @@ linters:
   settings:
     depguard:
       rules:
+        #region domain-rule
+        # Домен — только стандартная библиотека: strict пропускает лишь то, что в allow.
+        # deny сужает allow и даёт понятное сообщение для самых частых ошибок.
         domain:
-          list-mode: lax
+          list-mode: strict
           files: ["**/internal/*/domain/**", "!$test"]
+          allow:
+            - $gostd
           deny:
             - pkg: messenger/internal
               desc: "домен не зависит от других пакетов проекта (урок 1.1, правило зависимостей)"
@@ -26,9 +31,19 @@ linters:
               desc: "домен не логирует: он возвращает ошибки"
             - pkg: github.com/google/uuid
               desc: "домен не знает, как генерируются id: порт IDGenerator"
+        #endregion domain-rule
+        # Use case — стандартная библиотека, домен и свои же пакеты (тесты хранилищ в
+        # подпакетах usecase). Что use case берёт домен только своего контекста,
+        # проверяют правила chat-context и user-context ниже.
         usecase:
-          list-mode: lax
+          list-mode: strict
           files: ["**/internal/*/usecase/**", "!$test"]
+          allow:
+            - $gostd
+            - messenger/internal/user/domain
+            - messenger/internal/user/usecase
+            - messenger/internal/chat/domain
+            - messenger/internal/chat/usecase
           deny:
             - pkg: messenger/internal/user/adapters
               desc: "use case зависит от порта, а не от адаптера"
@@ -50,12 +65,14 @@ linters:
               desc: "адаптеры не знают друг о друге: связь — через use case"
             - pkg: messenger/internal/chat/adapters
               desc: "адаптеры не знают друг о друге: связь — через use case"
+        #region chat-context-rule
         chat-context:
           list-mode: lax
           files: ["**/internal/chat/**", "!**/internal/chat/adapters/userchecker/**"]
           deny:
             - pkg: messenger/internal/user
               desc: "контекст chat не зависит от user: порт UserChecker и адаптер userchecker"
+        #endregion chat-context-rule
         user-context:
           list-mode: lax
           files: ["**/internal/user/**"]

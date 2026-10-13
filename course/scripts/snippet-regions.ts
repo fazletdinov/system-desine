@@ -24,12 +24,27 @@ export function findSnippetRefs(markdown: string): SnippetRef[] {
   return refs
 }
 
-const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// Те же форматы меток, что понимает VitePress 1.6 (findRegion в snippet-плагине).
+// Регион, которого VitePress не узнает, он молча заменит всем файлом, поэтому
+// проверка обязана видеть регионы ровно так же, как он.
+const REGION_MARKERS: readonly RegExp[] = [
+  /^\/\/ ?#?((?:end)?region) ([\w*-]+)$/, // Go, JS, TS
+  /^\/\* ?#((?:end)?region) ([\w*-]+) ?\*\/$/, // CSS
+  /^<!-- #?((?:end)?region) ([\w*-]+) -->$/, // HTML, Markdown
+  /^# ?((?:end)?region) ([\w*-]+)$/, // YAML, shell, Python
+]
+
+function markerAt(line: string, re: RegExp, region: string, end: boolean): boolean {
+  const m = re.exec(line.trim())
+  return m !== null && m[2] === region && (end ? /^end ?region$/i : /^region$/i).test(m[1] ?? '')
+}
 
 export function hasRegion(source: string, region: string): boolean {
-  const name = escape(region)
-  const open = new RegExp(`^\\s*(?://|#|<!--)\\s*#region\\s+${name}\\s*(?:-->)?\\s*$`, 'm')
-  const close = new RegExp(`^\\s*(?://|#|<!--)\\s*#endregion(?:\\s+${name})?\\s*(?:-->)?\\s*$`, 'm')
-  const at = source.search(open)
-  return at !== -1 && close.test(source.slice(at))
+  const lines = source.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const re = REGION_MARKERS.find((r) => markerAt(lines[i] ?? '', r, region, false))
+    if (re === undefined) continue
+    return lines.slice(i + 1).some((l) => markerAt(l, re, region, true))
+  }
+  return false
 }

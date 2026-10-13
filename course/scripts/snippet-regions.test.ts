@@ -19,4 +19,15 @@ describe('hasRegion', () => {
   it('находит регион', () => expect(hasRegion(src, 'post')).toBe(true))
   it('не путает префикс', () => expect(hasRegion(src, 'pos')).toBe(false))
   it('требует закрывающую метку', () => expect(hasRegion('// #region a\n', 'a')).toBe(false))
+  // Проверка должна видеть регион ровно так же, как VitePress: иначе урок покажет весь файл вместо фрагмента.
+  it('закрывающая метка без имени не годится — VitePress её не узнаёт', () =>
+    expect(hasRegion('// #region a\nx\n// #endregion\n', 'a')).toBe(false))
+  it('YAML и shell: # #region не видит VitePress', () =>
+    expect(hasRegion('# #region a\nx: 1\n# #endregion a\n', 'a')).toBe(false))
+  it.each([
+    ['#region a\nx: 1\n#endregion a\n'],
+    ['  # region a\n  x: 1\n  # endregion a\n'],
+    ['<!-- #region a -->\nx\n<!-- #endregion a -->\n'],
+    ['//#region a\nx\n//#endregion a\n'],
+  ])('находит регион в формате VitePress: %j', (src) => expect(hasRegion(src, 'a')).toBe(true))
 })
