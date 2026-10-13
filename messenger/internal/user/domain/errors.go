@@ -1,8 +1,38 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
-// invalid — единая точка создания ошибок валидации. В уроке 1.3 она станет *ValidationError.
-func invalid(field, reason string) error {
-	return errors.New(field + ": " + reason)
+// #region sentinels
+// Сигнальные ошибки — то, что вызывающий код различает через errors.Is.
+// Текст — для людей и логов; полагаться на него в коде нельзя.
+var (
+	ErrInvalid       = errors.New("некорректные данные")
+	ErrUserNotFound  = errors.New("пользователь не найден")
+	ErrUsernameTaken = errors.New("имя пользователя занято")
+)
+
+// #endregion sentinels
+
+// #region validation-error
+// ValidationError несёт поле и причину — их HTTP-адаптер отдаст клиенту.
+// Метод Is делает любую ValidationError равной ErrInvalid для errors.Is:
+// вызывающему, которому всё равно, какое поле, хватает одной проверки.
+type ValidationError struct {
+	Field  string
+	Reason string
 }
+
+func (e *ValidationError) Error() string { return fmt.Sprintf("%s: %s", e.Field, e.Reason) }
+
+func (e *ValidationError) Is(target error) bool { return target == ErrInvalid }
+
+// invalid — единая точка создания ошибок валидации: все конструкторы домена зовут её,
+// поэтому смена типа ошибки здесь меняет сразу все ошибки валидации пакета.
+func invalid(field, reason string) error {
+	return &ValidationError{Field: field, Reason: reason}
+}
+
+// #endregion validation-error
