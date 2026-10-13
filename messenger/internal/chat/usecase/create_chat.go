@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"messenger/internal/chat/domain"
@@ -53,7 +54,7 @@ func (uc *CreateChat) Execute(ctx context.Context, cmd CreateChatCommand) (Creat
 		}
 		others = append(others, id)
 	}
-	if err := uc.ensureUsersExist(ctx, append([]domain.UserID{creator}, others...)); err != nil {
+	if err := uc.ensureUsersExist(ctx, creator, others); err != nil {
 		return CreateChatResult{}, err
 	}
 	if kind == domain.KindDirect {
@@ -62,10 +63,15 @@ func (uc *CreateChat) Execute(ctx context.Context, cmd CreateChatCommand) (Creat
 	return uc.createGroup(ctx, creator, cmd.Title, others)
 }
 
-func (uc *CreateChat) ensureUsersExist(ctx context.Context, ids []domain.UserID) error {
-	missing, err := uc.users.MissingUsers(ctx, ids)
+// ensureUsersExist проверяет создателя и участников одним обращением к порту, но
+// отвечает раздельно: несуществующий создатель — это не ошибка в списке участников.
+func (uc *CreateChat) ensureUsersExist(ctx context.Context, creator domain.UserID, others []domain.UserID) error {
+	missing, err := uc.users.MissingUsers(ctx, append([]domain.UserID{creator}, others...))
 	if err != nil {
 		return fmt.Errorf("create chat: проверка участников: %w", err)
+	}
+	if slices.Contains(missing, creator) {
+		return &domain.ValidationError{Field: "creator_id", Reason: "нет такого пользователя"}
 	}
 	if len(missing) > 0 {
 		names := make([]string, len(missing))

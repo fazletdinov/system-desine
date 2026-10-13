@@ -125,7 +125,7 @@ Use case ходит во внешний мир через <T id="hexagonal-port"
 | `SendMessage` | `ChatFinder`, `MessageAppender`, `Clock`, `IDGenerator` |
 | `ListMessages` | `ChatFinder`, `MessageLister` |
 
-Одно и то же хранилище `memory.Store` реализует <N>5 портов</N>: `ChatCreator`, `ChatFinder`, `DirectChatFinder`, `MessageAppender`, `MessageLister`. В корне композиции его передают сразу в несколько аргументов: `usecase.NewSendMessage(store, store, clock, ids)`. Но `SendMessage` видит только два его метода. Что это даёт:
+Одно и то же хранилище `memory.Store` реализует пять портов: `ChatCreator`, `ChatFinder`, `DirectChatFinder`, `MessageAppender`, `MessageLister`. В корне композиции его передают сразу в несколько аргументов: `usecase.NewSendMessage(store, store, clock, ids)`. Но `SendMessage` видит только два его метода. Что это даёт:
 
 - **Честная сигнатура.** По конструктору видно, что отправка сообщения не создаёт чатов и не листает историю. Это документация, которую проверяет компилятор.
 - **Маленькая подмена в тестах.** Тесту `ListMessages` с отказом хранилища достаточно типа с одним методом `ListMessages`, а не заглушки на двадцать методов.
@@ -179,6 +179,8 @@ Use case ходит во внешний мир через <T id="hexagonal-port"
 
 <<< @/../messenger/internal/chat/usecase/create_chat.go#create-direct{go}
 
+Одновременный запуск двадцати таких запросов (`TestCreateDirectChatConcurrent`) проверяет, что чат один и `Created = true` ровно у одного вызова. Но попадёт ли хоть один запрос в ветку гонки, зависит от планировщика, поэтому её отдельно проверяет `TestCreateDirectChatLostRaceReturnsExisting`: подставной `DirectChatFinder` на первый вызов отвечает «не найден», хотя чат уже в хранилище, — и use case обязан вернуть существующий чат с `Created = false`.
+
 Первая проверка `FindDirectChat` — не защита от гонки, а быстрый путь для частого случая «чат уже есть». Защиту даёт только проверка внутри хранилища, под той же блокировкой, что и запись. Это общее правило: «проверил, потом сделал» в двух отдельных шагах гонку не закрывает, закрывает только атомарная операция.
 
 ## <Part kind="theory" /> Снимок агрегата: копия без взлома
@@ -216,7 +218,7 @@ Use case ходит во внешний мир через <T id="hexagonal-port"
 
 <<< @/../messenger/internal/chat/adapters/memory/store.go#store{go}
 
-Три карты: снимки чатов по id, id личного чата по ключу пары (тот самый `DirectKeyFor` из урока 1.2) и сообщения по чату. HTTP-сервер обрабатывает каждый запрос в своей горутине, поэтому к картам обращаются одновременно. Карта в Go не рассчитана на одновременную запись из разных горутин. Рантайм часто замечает такое обращение и аварийно завершает программу с «fatal error: concurrent map writes» (или «concurrent map read and map write»), но замечает не всегда — а незамеченная гонка тихо портит данные. Поэтому все карты защищает один мьютекс, объявленный прямо над ними. Подробно о мьютексах и модели памяти Go — модуль 1.5.
+Три карты: снимки чатов по id, id личного чата по ключу пары (тот самый `DirectKeyFor` из урока 1.2) и сообщения по чату. HTTP-сервер обрабатывает каждый запрос в своей горутине, поэтому к картам обращаются одновременно. Карта в Go не рассчитана на одновременную запись из разных горутин. Рантайм часто замечает такое обращение и аварийно завершает программу с «fatal error: concurrent map writes» (или «concurrent map read and map write»), но замечает не всегда — а незамеченная гонка тихо портит данные. Поэтому все карты защищает один мьютекс, объявленный прямо над ними. Подробно о мьютексах и модели памяти Go — модуль 1.5 «Конкурентность и рантайм Go» (не путать с уроком 1.5 этого модуля про `context`).
 
 Мьютекс — `sync.RWMutex`, «замок для читателей и писателя». Его можно взять двумя способами. `RLock` — на чтение: читателей одновременно может быть сколько угодно. `Lock` — на запись: писатель ждёт, пока выйдут все читатели, и пока он внутри, не входит никто. `FindChat`, `FindDirectChat` и `ListMessages` только читают и берут `RLock`, поэтому история одного чата может отдаваться многим клиентам параллельно. `CreateChat` и `AppendMessage` пишут и берут `Lock`. Чтобы поток читателей не заставил писателя ждать вечно, `RWMutex` после вызова `Lock` перестаёт пускать **новых** читателей, пока писатель не отработает.
 
@@ -278,7 +280,7 @@ go test -race -count=1 -run TestSendMessageConcurrent -v ./internal/chat/usecase
 === RUN   TestSendMessageConcurrent
 === PAUSE TestSendMessageConcurrent
 === CONT  TestSendMessageConcurrent
-    usecase_test.go:235: успешно 394, исчерпали 3 попытки: 6
+    usecase_test.go:283: успешно 400, исчерпали 3 попытки: 0
 --- PASS: TestSendMessageConcurrent (0.00s)
 PASS
 ok  	messenger/internal/chat/usecase	1.010s
@@ -287,11 +289,11 @@ ok  	messenger/internal/chat/usecase	1.010s
 Второй и третий запуски на той же машине (12 ядер):
 
 ```
-    usecase_test.go:235: успешно 384, исчерпали 3 попытки: 16
-    usecase_test.go:235: успешно 398, исчерпали 3 попытки: 2
+    usecase_test.go:283: успешно 399, исчерпали 3 попытки: 1
+    usecase_test.go:283: успешно 394, исчерпали 3 попытки: 6
 ```
 
-От <N>2</N> до <N>16</N> отправок из 400 проиграли гонку трижды подряд — разброс в восемь раз между одинаковыми запусками. Это нормально: планировщик Go каждый раз раскладывает горутины по ядрам по-своему. А вот тот же тест **без** `-race` на этой машине три раза подряд дал «успешно 400, исчерпали 3 попытки: 0». Почему? Окно для конфликта — время между `FindChat` и `AppendMessage`: разбор чата из снимка и `Post`. Без детектора гонок это доли микросекунды, и горутины почти не успевают в него попасть. <T id="race-detector">Детектор гонок</T> отслеживает каждое обращение к памяти, код замедляется в разы, окно растягивается — и конфликты становятся видны. Мы не стали подгонять тест, чтобы конфликты были всегда: тест проверяет, что **при любом** их числе история остаётся корректной.
+От <N>0</N> до <N>6</N> отправок из 400 проиграли гонку трижды подряд — и это между одинаковыми запусками одного теста. Это нормально: планировщик Go каждый раз раскладывает горутины по ядрам по-своему. А вот тот же тест **без** `-race` на этой машине три раза подряд дал «успешно 400, исчерпали 3 попытки: 0». Почему? Окно для конфликта — время между `FindChat` и `AppendMessage`: разбор чата из снимка и `Post`. Без детектора гонок это доли микросекунды, и горутины почти не успевают в него попасть. <T id="race-detector">Детектор гонок</T> отслеживает каждое обращение к памяти, код замедляется в разы, окно растягивается — и конфликты становятся видны. Мы не стали подгонять тест, чтобы конфликты были всегда: тест проверяет, что **при любом** их числе история остаётся корректной. Но раз конфликт в нём случается не всегда, это тест вероятностный: сломайте проверку версии — и он может пройти. Детерминированно проверку версии охраняет тест хранилища `TestAppendMessageStaleVersion`: он читает чат, сохраняет сообщение через другую копию и убеждается, что опоздавшая запись получила `ErrConcurrentUpdate`, а история не изменилась. Так же устроен `TestSendMessageRetryPolicy`: фейковое хранилище всегда отвечает конфликтом, и тест проверяет, что попыток ровно `MaxSendAttempts`, у всех один id сообщения, а на любую другую ошибку — ровно одна попытка.
 
 Обратите внимание, что тест use case'а импортирует `chat/adapters/memory` — адаптер. Правило `usecase` в `.golangci.yml` это разрешает: оно исключает тестовые файлы (`!$test`). Рабочий код use case'а про адаптеры по-прежнему не знает, а тесту настоящее хранилище в памяти полезнее самодельного фейка: проверяется и use case, и проверка версии в хранилище. Линтер с этим согласен:
 
@@ -356,32 +358,32 @@ git -c core.quotePath=false diff --stat m01-l03 m01-l04 -- messenger
  messenger/go.mod                                   |   2 +
  messenger/go.sum                                   |   2 +
  messenger/internal/chat/adapters/memory/doc.go     |   4 +-
- messenger/internal/chat/adapters/memory/store.go   |  95 ++++++
- .../internal/chat/adapters/memory/store_test.go    | 201 +++++++++++++
- messenger/internal/chat/domain/chat.go             |  33 +++
- messenger/internal/chat/domain/chat_test.go        |  29 ++
- messenger/internal/chat/usecase/create_chat.go     | 144 +++++++++
- messenger/internal/chat/usecase/fakes_test.go      |  55 ++++
- messenger/internal/chat/usecase/list_messages.go   |  61 ++++
- messenger/internal/chat/usecase/ports.go           |  55 ++++
- messenger/internal/chat/usecase/send_message.go    |  81 +++++
- messenger/internal/chat/usecase/usecase_test.go    | 329 +++++++++++++++++++++
+ messenger/internal/chat/adapters/memory/store.go   |  99 +++++
+ .../internal/chat/adapters/memory/store_test.go    | 241 ++++++++++++
+ messenger/internal/chat/domain/chat.go             |  33 ++
+ messenger/internal/chat/domain/chat_test.go        |  32 ++
+ messenger/internal/chat/usecase/create_chat.go     | 150 ++++++++
+ messenger/internal/chat/usecase/fakes_test.go      |  84 ++++
+ messenger/internal/chat/usecase/list_messages.go   |  61 +++
+ messenger/internal/chat/usecase/ports.go           |  56 +++
+ messenger/internal/chat/usecase/send_message.go    |  81 ++++
+ messenger/internal/chat/usecase/usecase_test.go    | 428 +++++++++++++++++++++
  messenger/internal/platform/clock/clock.go         |   8 +
  messenger/internal/platform/clock/doc.go           |   3 +-
  messenger/internal/platform/idgen/doc.go           |   3 +-
  messenger/internal/platform/idgen/idgen.go         |  11 +
  messenger/internal/platform/idgen/idgen_test.go    |  45 +++
  messenger/internal/user/adapters/memory/doc.go     |   3 +-
- messenger/internal/user/adapters/memory/store.go   |  50 ++++
- .../internal/user/adapters/memory/store_test.go    |  62 ++++
- messenger/internal/user/usecase/get.go             |  36 +++
+ messenger/internal/user/adapters/memory/store.go   |  50 +++
+ .../internal/user/adapters/memory/store_test.go    |  62 +++
+ messenger/internal/user/usecase/get.go             |  36 ++
  messenger/internal/user/usecase/ports.go           |  29 ++
  messenger/internal/user/usecase/register.go        |  49 +++
- messenger/internal/user/usecase/usecase_test.go    | 176 +++++++++++
- 25 files changed, 1562 insertions(+), 4 deletions(-)
+ messenger/internal/user/usecase/usecase_test.go    | 176 +++++++++
+ 25 files changed, 1744 insertions(+), 4 deletions(-)
 ```
 
-<N>25 файлов</N>, и почти половина строк — тесты. В домене добавились только снимок агрегата и его тест; ни одно правило домена не изменилось. Код урока целиком — `git checkout m01-l04`. Проверить (из `messenger/`): `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, `go test -race ./...`.
+<N>25 файлов</N>, и больше половины строк — тесты. В домене добавились только снимок агрегата и его тест; ни одно правило домена не изменилось. Код урока целиком — `git checkout m01-l04`. Проверить (из `messenger/`): `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, `go test -race ./...`.
 
 ## <Part kind="mistakes" /> Типичные ошибки
 
@@ -441,7 +443,7 @@ Use case должен зависеть только от того, чем пол
 
 <SelfCheck question="Тест TestSendMessageConcurrent без -race на 12 ядрах трижды показал 0 неудач. Значит ли это, что проверка версии не нужна?">
 
-Нет. Ноль неудач после трёх попыток не значит ноль конфликтов: окно между `FindChat` и `AppendMessage` без детектора гонок очень узкое, а конфликт на первой попытке тест не считает — его исправляет повтор. Под `-race` окно шире, и неудачи видны. В настоящем сервисе между чтением и записью будут сетевые походы в базу длиной в миллисекунды, и окно станет на порядки шире. Тест проверяет корректность при любом числе конфликтов, а не их отсутствие.
+Нет. Ноль неудач после трёх попыток не значит ноль конфликтов: окно между `FindChat` и `AppendMessage` без детектора гонок очень узкое, а конфликт на первой попытке тест не считает — его исправляет повтор. Под `-race` окно шире, и неудачи видны чаще. В настоящем сервисе между чтением и записью будут сетевые походы в базу длиной в миллисекунды, и окно станет на порядки шире. Тест проверяет корректность при любом числе конфликтов, а не их отсутствие.
 
 </SelfCheck>
 

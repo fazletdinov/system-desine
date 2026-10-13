@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"messenger/internal/chat/adapters/memory"
@@ -80,6 +81,7 @@ func TestCreateDirectChatConcurrent(t *testing.T) {
 	e := newEnv(t)
 	const n = 20
 	ids := make([]domain.ChatID, n)
+	var created atomic.Int64
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Go(func() {
@@ -87,6 +89,9 @@ func TestCreateDirectChatConcurrent(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 				return
+			}
+			if res.Created {
+				created.Add(1)
 			}
 			ids[i] = res.Chat.ID()
 		})
@@ -96,6 +101,49 @@ func TestCreateDirectChatConcurrent(t *testing.T) {
 		if id != ids[0] {
 			t.Fatalf("для одной пары создано несколько личных чатов: %s и %s", ids[0], id)
 		}
+	}
+	if created.Load() != 1 {
+		t.Fatalf("Created = true у %d вызовов, ждали ровно у одного", created.Load())
+	}
+}
+
+// Ветку гонки воспроизводим детерминированно: первый FindDirectChat «не видит» чат,
+// который уже лежит в хранилище, поэтому CreateChat вернёт ErrDirectChatExists.
+func TestCreateDirectChatLostRaceReturnsExisting(t *testing.T) {
+	t.Parallel()
+	store := memory.NewStore()
+	ids := &seqIDs{}
+	users := newKnownUsers(mustUser(t, alice), mustUser(t, bob))
+	first, err := usecase.NewCreateChat(store, store, users, fixedClock{}, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := first.Execute(context.Background(), usecase.CreateChatCommand{CreatorID: alice, Kind: "direct", MemberIDs: []string{bob}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	late, err := usecase.NewCreateChat(store, &missOnce{DirectChatFinder: store}, users, fixedClock{}, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := late.Execute(context.Background(), usecase.CreateChatCommand{CreatorID: bob, Kind: "direct", MemberIDs: []string{alice}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created || res.Chat.ID() != existing.Chat.ID() {
+		t.Fatalf("после проигранной гонки ждали существующий чат %s, получили %s (created=%v)", existing.Chat.ID(), res.Chat.ID(), res.Created)
+	}
+}
+
+func TestCreateChatUnknownCreator(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	_, err := e.create.Execute(context.Background(), usecase.CreateChatCommand{
+		CreatorID: "00000000-0000-7000-8000-000000000099", Kind: "direct", MemberIDs: []string{bob},
+	})
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "creator_id" {
+		t.Fatalf("ждали ValidationError по creator_id, получили %v", err)
 	}
 }
 
@@ -326,4 +374,55 @@ func TestChatConstructorsRejectNil(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSendMessageRetryPolicy(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		err       error
+		wantCalls int
+	}{
+		{name: "конфликт версий — повтор до предела", err: domain.ErrConcurrentUpdate, wantCalls: usecase.MaxSendAttempts},
+		{name: "другая ошибка — без повтора", err: errors.New("диск недоступен"), wantCalls: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := memory.NewStore()
+			chat, err := domain.NewDirectChat(mustChat(t, "00000000-0000-7000-9000-000000000001"), mustUser(t, alice), mustUser(t, bob), t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.CreateChat(context.Background(), chat); err != nil {
+				t.Fatal(err)
+			}
+			appender := &failingAppender{err: tt.err}
+			send, err := usecase.NewSendMessage(store, appender, fixedClock{}, &seqIDs{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: chat.ID().String(), AuthorID: alice, Text: "привет"})
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("ждали %v в цепочке, получили %v", tt.err, err)
+			}
+			if len(appender.ids) != tt.wantCalls {
+				t.Fatalf("попыток записи %d, ждали %d", len(appender.ids), tt.wantCalls)
+			}
+			for _, id := range appender.ids[1:] {
+				if id != appender.ids[0] {
+					t.Fatalf("повтор отправил другое сообщение: %s вместо %s", id, appender.ids[0])
+				}
+			}
+		})
+	}
+}
+
+func mustChat(t *testing.T, s string) domain.ChatID {
+	t.Helper()
+	id, err := domain.ParseChatID(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

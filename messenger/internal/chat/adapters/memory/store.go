@@ -85,6 +85,10 @@ func (s *Store) AppendMessage(_ context.Context, chat *domain.Chat, msg domain.M
 // #endregion append
 
 func (s *Store) ListMessages(_ context.Context, chatID domain.ChatID, afterSeq int64, limit int) ([]domain.Message, error) {
+	// Порт обещает limit ≥ 1; на нарушение отвечаем пустой страницей, а не паникой среза.
+	if limit < 1 {
+		return []domain.Message{}, nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	all := s.messages[chatID]

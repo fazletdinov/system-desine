@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"messenger/internal/chat/domain"
+	"messenger/internal/chat/usecase"
 )
 
 var t0 = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
@@ -53,3 +54,31 @@ func (k *knownUsers) MissingUsers(_ context.Context, ids []domain.UserID) ([]dom
 type garbageIDs struct{}
 
 func (garbageIDs) NewID() string { return "не-uuid" }
+
+// missOnce — DirectChatFinder, который на первом вызове «не видит» чат: так тест
+// попадает в ветку гонки CreateChat без расчёта на планировщик.
+type missOnce struct {
+	usecase.DirectChatFinder
+	missed atomic.Bool
+}
+
+func (m *missOnce) FindDirectChat(ctx context.Context, a, b domain.UserID) (*domain.Chat, error) {
+	if m.missed.CompareAndSwap(false, true) {
+		return nil, domain.ErrChatNotFound
+	}
+	return m.DirectChatFinder.FindDirectChat(ctx, a, b)
+}
+
+// failingAppender всегда отвечает заданной ошибкой и запоминает id каждого сообщения.
+type failingAppender struct {
+	err error
+	mu  sync.Mutex
+	ids []domain.MessageID
+}
+
+func (f *failingAppender) AppendMessage(_ context.Context, _ *domain.Chat, msg domain.Message, _ int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ids = append(f.ids, msg.ID())
+	return f.err
+}

@@ -304,4 +304,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	if !c.IsMember(uid(t, 1)) || c.IsMember(uid(t, 9)) {
 		t.Fatalf("снимок делит срез участников с чатом: %v", c.Members())
 	}
+	if !r.IsMember(uid(t, 1)) || r.IsMember(uid(t, 9)) {
+		t.Fatalf("RestoreChat делит срез участников со снимком: %v", r.Members())
+	}
 }

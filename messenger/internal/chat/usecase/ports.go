@@ -49,6 +49,7 @@ type MessageAppender interface {
 
 type MessageLister interface {
 	// ListMessages возвращает до limit сообщений с seq > afterSeq по возрастанию seq.
+	// Ожидает limit ≥ 1: границы лимита проверяет use case (domain.ListLimitMax).
 	ListMessages(ctx context.Context, chatID domain.ChatID, afterSeq int64, limit int) ([]domain.Message, error)
 }
 

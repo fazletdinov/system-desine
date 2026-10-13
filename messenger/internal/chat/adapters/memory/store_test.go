@@ -199,3 +199,43 @@ func TestListMessagesPages(t *testing.T) {
 		})
 	}
 }
+
+func TestListMessagesReturnsCopy(t *testing.T) {
+	t.Parallel()
+	s := memory.NewStore()
+	ctx := context.Background()
+	c := direct(t, 1, 1, 2)
+	if err := s.CreateChat(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	first := post(t, s, c, 1)
+	second := post(t, s, c, 2)
+	page, err := s.ListMessages(ctx, c.ID(), 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Запись в элемент и append в свободную ёмкость не должны дойти до хранилища.
+	page[0] = second
+	_ = append(page, first)
+	got, err := s.ListMessages(ctx, c.ID(), 0, 2)
+	if err != nil || len(got) != 2 || got[0].Seq() != 1 || got[1].Seq() != 2 {
+		t.Fatalf("история изменилась через возвращённую страницу: %v, %v", got, err)
+	}
+}
+
+func TestListMessagesNonPositiveLimit(t *testing.T) {
+	t.Parallel()
+	s := memory.NewStore()
+	ctx := context.Background()
+	c := direct(t, 1, 1, 2)
+	if err := s.CreateChat(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	post(t, s, c, 1)
+	for _, limit := range []int{0, -1} {
+		got, err := s.ListMessages(ctx, c.ID(), 0, limit)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("limit %d: ждали пустую страницу, получили %d сообщений, %v", limit, len(got), err)
+		}
+	}
+}
