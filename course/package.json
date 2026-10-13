@@ -9,7 +9,8 @@
     "test": "vitest run --passWithNoTests",
     "typecheck": "vue-tsc --noEmit",
     "check:go": "node scripts/check-go-snippets.ts",
-    "check:labs": "node scripts/check-labs.ts"
+    "check:labs": "node scripts/check-labs.ts",
+    "check:messenger": "node scripts/check-messenger.ts"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "5.3.0",
