@@ -24,9 +24,10 @@ export function findSnippetRefs(markdown: string): SnippetRef[] {
   return refs
 }
 
-// Те же форматы меток, что понимает VitePress 1.6 (findRegion в snippet-плагине).
-// Регион, которого VitePress не узнает, он молча заменит всем файлом, поэтому
-// проверка обязана видеть регионы ровно так же, как он.
+// Подмножество меток, которые понимает findRegion из snippet-плагина VitePress 1.6:
+// Go/JS, CSS, HTML/Markdown и комментарии на «#». Регион, которого VitePress не узнает,
+// он молча заменит всем файлом, поэтому для этих форматов проверка видит регионы так же,
+// как он; остальные его форматы (#pragma, VB, bat) в курсе не используются.
 const REGION_MARKERS: readonly RegExp[] = [
   /^\/\/ ?#?((?:end)?region) ([\w*-]+)$/, // Go, JS, TS
   /^\/\* ?#((?:end)?region) ([\w*-]+) ?\*\/$/, // CSS
