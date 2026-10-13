@@ -44,12 +44,14 @@ type DirectChatFinder interface {
 type MessageAppender interface {
 	// AppendMessage сохраняет сообщение и новое состояние чата, только если версия
 	// чата в хранилище всё ещё expectedVersion; иначе — domain.ErrConcurrentUpdate.
+	// Если чата нет — domain.ErrChatNotFound.
 	AppendMessage(ctx context.Context, chat *domain.Chat, msg domain.Message, expectedVersion int64) error
 }
 
 type MessageLister interface {
 	// ListMessages возвращает до limit сообщений с seq > afterSeq по возрастанию seq.
-	// Ожидает limit ≥ 1: границы лимита проверяет use case (domain.ListLimitMax).
+	// Границы лимита проверяет use case (domain.ListLimitMax); на limit < 1 хранилище
+	// отвечает пустой страницей, а не ошибкой.
 	ListMessages(ctx context.Context, chatID domain.ChatID, afterSeq int64, limit int) ([]domain.Message, error)
 }
 

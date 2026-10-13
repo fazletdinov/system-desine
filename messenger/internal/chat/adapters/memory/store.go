@@ -104,7 +104,7 @@ func (s *Store) ListMessages(ctx context.Context, chatID domain.ChatID, afterSeq
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("memory: %w", err)
 	}
-	// Порт обещает limit ≥ 1; на нарушение отвечаем пустой страницей, а не паникой среза.
+	// Порт обещает пустую страницу на limit < 1; при отрицательном limit срез all[from:to] без этой проверки запаниковал бы.
 	if limit < 1 {
 		return []domain.Message{}, nil
 	}
