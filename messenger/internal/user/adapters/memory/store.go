@@ -23,7 +23,10 @@ func NewStore() *Store {
 	}
 }
 
-func (s *Store) CreateUser(_ context.Context, user domain.User) error {
+func (s *Store) CreateUser(ctx context.Context, user domain.User) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Проверка и запись под одной блокировкой: два одновременных запроса с одним именем
@@ -39,7 +42,10 @@ func (s *Store) CreateUser(_ context.Context, user domain.User) error {
 	return nil
 }
 
-func (s *Store) FindUser(_ context.Context, id domain.UserID) (domain.User, error) {
+func (s *Store) FindUser(ctx context.Context, id domain.UserID) (domain.User, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.User{}, fmt.Errorf("memory: %w", err)
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	user, ok := s.byID[id]

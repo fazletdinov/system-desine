@@ -28,7 +28,10 @@ func NewStore() *Store {
 	}
 }
 
-func (s *Store) CreateChat(_ context.Context, chat *domain.Chat) error {
+func (s *Store) CreateChat(ctx context.Context, chat *domain.Chat) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.chats[chat.ID()]; ok {
@@ -45,7 +48,10 @@ func (s *Store) CreateChat(_ context.Context, chat *domain.Chat) error {
 	return nil
 }
 
-func (s *Store) FindChat(_ context.Context, id domain.ChatID) (*domain.Chat, error) {
+func (s *Store) FindChat(ctx context.Context, id domain.ChatID) (*domain.Chat, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("memory: %w", err)
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	snap, ok := s.chats[id]
@@ -55,7 +61,10 @@ func (s *Store) FindChat(_ context.Context, id domain.ChatID) (*domain.Chat, err
 	return domain.RestoreChat(snap), nil
 }
 
-func (s *Store) FindDirectChat(_ context.Context, a, b domain.UserID) (*domain.Chat, error) {
+func (s *Store) FindDirectChat(ctx context.Context, a, b domain.UserID) (*domain.Chat, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("memory: %w", err)
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	id, ok := s.direct[domain.DirectKeyFor(a, b)]
@@ -66,7 +75,14 @@ func (s *Store) FindDirectChat(_ context.Context, a, b domain.UserID) (*domain.C
 }
 
 // #region append
-func (s *Store) AppendMessage(_ context.Context, chat *domain.Chat, msg domain.Message, expectedVersion int64) error {
+func (s *Store) AppendMessage(ctx context.Context, chat *domain.Chat, msg domain.Message, expectedVersion int64) error {
+	// #region ctx-check
+	// Отменённый запрос не пишет: клиент ушёл, и ответ о записи некому прочитать.
+	// Проверка — только на входе: начатую под замком работу она не прерывает.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
+	// #endregion ctx-check
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stored, ok := s.chats[chat.ID()]
@@ -84,7 +100,10 @@ func (s *Store) AppendMessage(_ context.Context, chat *domain.Chat, msg domain.M
 
 // #endregion append
 
-func (s *Store) ListMessages(_ context.Context, chatID domain.ChatID, afterSeq int64, limit int) ([]domain.Message, error) {
+func (s *Store) ListMessages(ctx context.Context, chatID domain.ChatID, afterSeq int64, limit int) ([]domain.Message, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("memory: %w", err)
+	}
 	// Порт обещает limit ≥ 1; на нарушение отвечаем пустой страницей, а не паникой среза.
 	if limit < 1 {
 		return []domain.Message{}, nil

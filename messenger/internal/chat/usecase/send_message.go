@@ -59,6 +59,13 @@ func (uc *SendMessage) Execute(ctx context.Context, cmd SendMessageCommand) (dom
 	// Каждая попытка заново читает чат и заново зовёт Post: правила агрегата
 	// проверяются на свежем состоянии, а не на том, что проиграло гонку.
 	for attempt := 1; ; attempt++ {
+		// Перед повтором: если клиент ушёл, пока проигрывали гонку, новая попытка
+		// — работа впустую. Первую попытку останавливает хранилище.
+		if attempt > 1 {
+			if err := ctx.Err(); err != nil {
+				return domain.Message{}, fmt.Errorf("send message: перед попыткой %d: %w", attempt, err)
+			}
+		}
 		chat, err := uc.chats.FindChat(ctx, chatID)
 		if err != nil {
 			return domain.Message{}, fmt.Errorf("send message: %w", err)

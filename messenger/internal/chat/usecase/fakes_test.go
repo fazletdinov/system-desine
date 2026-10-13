@@ -70,15 +70,29 @@ func (m *missOnce) FindDirectChat(ctx context.Context, a, b domain.UserID) (*dom
 }
 
 // failingAppender всегда отвечает заданной ошибкой и запоминает id каждого сообщения.
+// onCall, если задан, вызывается перед ответом: так тест вмешивается в середину
+// попытки, например отменяет контекст запроса.
 type failingAppender struct {
-	err error
-	mu  sync.Mutex
-	ids []domain.MessageID
+	err    error
+	onCall func()
+	mu     sync.Mutex
+	ids    []domain.MessageID
 }
 
 func (f *failingAppender) AppendMessage(_ context.Context, _ *domain.Chat, msg domain.Message, _ int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ids = append(f.ids, msg.ID())
+	if f.onCall != nil {
+		f.onCall()
+	}
 	return f.err
+}
+
+// deafFinder — ChatFinder, который не смотрит на контекст вызывающего. С ним тест
+// проверяет проверку отмены в самом use case'е, а не в хранилище.
+type deafFinder struct{ usecase.ChatFinder }
+
+func (d deafFinder) FindChat(_ context.Context, id domain.ChatID) (*domain.Chat, error) {
+	return d.ChatFinder.FindChat(context.Background(), id)
 }
