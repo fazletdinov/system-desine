@@ -74,7 +74,7 @@ const FRAMES: readonly Frame[] = [
       input: INPUTS.wrongType,
       gate: 'json',
       verdict: 'reject',
-      reason: 'некорректный JSON: json: cannot unmarshal number into Go struct field sendMessageRequest.text of type string → 400 bad_json',
+      reason: 'поле text: ожидается строка → 400 bad_json, field "text"',
     },
     caption: [
       { text: 'Прогон 3. Поле text — число, а в DTO sendMessageRequest оно объявлено строкой. encoding/json отказывает уже при разборе, httpjson.Decode возвращает 400 с кодом bad_json. До use case и домена этот запрос не доходит: проверять типы полей — работа границы, а не бизнес-правил.' },

@@ -359,11 +359,18 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 }
 
 func TestClientGoneWritesNothing(t *testing.T) {
-	mux, logs := server(t, fakes{send: fakeSend{fn: func(context.Context, usecase.SendMessageCommand) (domain.Message, error) {
-		return domain.Message{}, fmt.Errorf("send message: %w", context.Canceled)
+	// Use case, как и настоящий, возвращает ошибку своего ctx — контекста запроса.
+	mux, logs := server(t, fakes{send: fakeSend{fn: func(ctx context.Context, _ usecase.SendMessageCommand) (domain.Message, error) {
+		return domain.Message{}, fmt.Errorf("send message: %w", ctx.Err())
 	}}})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // клиент закрыл соединение
+	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/chats/"+chatID+"/messages", strings.NewReader(`{"text":"a"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set(httpapi.UserIDHeader, aliceID)
+	w := httptest.NewRecorder()
 
-	w := do(t, mux, request{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: `{"text":"a"}`, userID: aliceID})
+	mux.ServeHTTP(w, r)
 
 	if w.Body.Len() != 0 || w.Header().Get("Content-Type") != "" {
 		t.Errorf("ответ записан, хотя клиент ушёл: %d %s", w.Code, w.Body)

@@ -36,8 +36,11 @@ func Write(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error, 
 		return
 	}
 	switch {
-	case errors.Is(err, context.Canceled):
+	case errors.Is(err, context.Canceled) && r.Context().Err() != nil:
 		// Клиент закрыл соединение: отвечать некому. Это не сбой сервера — уровень Info.
+		// Проверяем именно контекст запроса: Canceled от чужого, внутреннего контекста
+		// при живом клиенте — сбой сервера, и молчать нельзя (иначе клиент получит
+		// пустой 200), поэтому такая ошибка идёт дальше, в 500.
 		log.Info("клиент ушёл, не дождавшись ответа", "method", r.Method, "path", r.URL.Path, "err", err)
 	case errors.Is(err, context.DeadlineExceeded):
 		respond(w, r, log, Problem{Status: http.StatusServiceUnavailable, Code: "timeout", Message: "сервер не успел ответить, повторите позже"})

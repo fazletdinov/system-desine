@@ -206,11 +206,17 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 }
 
 func TestClientGoneWritesNothing(t *testing.T) {
-	mux, logs := server(t, fakeRegister{fn: func(context.Context, usecase.RegisterUserCommand) (domain.User, error) {
-		return domain.User{}, fmt.Errorf("register user: %w", context.Canceled)
+	// Use case, как и настоящий, возвращает ошибку своего ctx — контекста запроса.
+	mux, logs := server(t, fakeRegister{fn: func(ctx context.Context, _ usecase.RegisterUserCommand) (domain.User, error) {
+		return domain.User{}, fmt.Errorf("register user: %w", ctx.Err())
 	}}, fakeGet{})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // клиент закрыл соединение
+	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/users", strings.NewReader(`{"username":"alice","display_name":"Алиса"}`))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
 
-	w := do(t, mux, http.MethodPost, "/users", `{"username":"alice","display_name":"Алиса"}`)
+	mux.ServeHTTP(w, r)
 
 	if w.Body.Len() != 0 || w.Header().Get("Content-Type") != "" {
 		t.Errorf("ответ записан, хотя клиент ушёл: %d %s", w.Code, w.Body)

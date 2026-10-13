@@ -21,7 +21,7 @@ export const PACKAGES: readonly { id: Pkg; layer: Layer }[] = [
 
 export type Edge = readonly [Pkg, Pkg]
 
-// Импорты настоящего мессенджера на теге m01-l07 (кроме stdlib, кроме net/http у httpapi).
+// Импорты настоящего мессенджера на теге m01-l07 (stdlib не показан, кроме net/http).
 export const BASE_IMPORTS: readonly Edge[] = [
   ['user/usecase', 'user/domain'], ['chat/usecase', 'chat/domain'],
   ['user/adapters/memory', 'user/domain'], ['user/adapters/httpapi', 'user/usecase'], ['user/adapters/httpapi', 'user/domain'],

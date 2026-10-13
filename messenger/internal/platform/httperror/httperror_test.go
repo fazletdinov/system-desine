@@ -42,12 +42,14 @@ func TestWrite(t *testing.T) {
 		wantCode   string
 		wantField  string
 		wantLevel  string // уровень записи в логе; пусто — лог пуст
+		clientGone bool   // контекст запроса отменён: клиент закрыл соединение
 	}{
 		{name: "ошибка разбора тела", err: &httpjson.DecodeError{Status: 413, Code: "body_too_large", Msg: "много"}, wantStatus: 413, wantCode: "body_too_large"},
 		{name: "ошибка разбора с полем", err: &httpjson.DecodeError{Status: 400, Code: "bad_json", Msg: "неизвестное поле", Field: "a"}, wantStatus: 400, wantCode: "bad_json", wantField: "a"},
 		{name: "таблица контекста", err: fmt.Errorf("обёртка: %w", errKnown), wantStatus: 409, wantCode: "known", wantField: "x"},
 		{name: "таблица контекста важнее контекста", err: fmt.Errorf("%w: %w", errKnown, context.Canceled), wantStatus: 409, wantCode: "known", wantField: "x"},
-		{name: "клиент ушёл", err: fmt.Errorf("x: %w", context.Canceled), wantLevel: "INFO"},
+		{name: "клиент ушёл", err: fmt.Errorf("x: %w", context.Canceled), clientGone: true, wantLevel: "INFO"},
+		{name: "Canceled, клиент на месте → 500", err: fmt.Errorf("x: %w", context.Canceled), wantStatus: 500, wantCode: "internal", wantLevel: "ERROR"},
 		{name: "дедлайн", err: fmt.Errorf("x: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
 		{name: "прочее", err: errors.New("секрет БД"), wantStatus: 500, wantCode: "internal", wantLevel: "ERROR"},
 	}
@@ -55,7 +57,12 @@ func TestWrite(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var logs bytes.Buffer
 			log := slog.New(slog.NewJSONHandler(&logs, nil))
-			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/chats/1/messages", nil)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tt.clientGone {
+				cancel()
+			}
+			r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/chats/1/messages", nil)
 			w := httptest.NewRecorder()
 
 			httperror.Write(w, r, log, tt.err, known)

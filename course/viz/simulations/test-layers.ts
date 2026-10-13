@@ -55,7 +55,7 @@ const FRAMES: readonly Frame[] = [
   },
   {
     state: { bug: 'ErrNotMember маппится в 500 вместо 403', caughtBy: 'http', cost: 'миллисекунды: httptest без сети' },
-    caption: 'В writeError забыли строку для ErrNotMember — она падает в «прочее» и уходит клиенту как 500 internal. Домен и use case тут ни при чём: ошибка в адаптере. Ловит тест обработчика: настоящий http.ServeMux, httptest.NewRecorder и фейковый use case, который возвращает ErrNotMember; ждём статус 403 и код not_member.',
+    caption: 'В problemFor (таблице контекста chat) забыли строку для ErrNotMember — она падает в «прочее» и уходит клиенту как 500 internal. Домен и use case тут ни при чём: ошибка в адаптере. Ловит тест обработчика: настоящий http.ServeMux, httptest.NewRecorder и фейковый use case, который возвращает ErrNotMember; ждём статус 403 и код not_member.',
   },
   {
     state: { bug: 'запись в map хранилища без мьютекса', caughtBy: 'race', cost: 'по документации Go: время × 2–20, память × 5–10' },

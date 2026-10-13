@@ -146,7 +146,7 @@ POST /chats/{id}/messages
 
 ## <Part kind="theory" /> Таблица ошибок: виноват клиент или сервер
 
-Use case возвращает ошибку. Какой статус отдать? Ответ — в одной функции `httperror.Write` из `platform/httperror`. Это **единственное место**, где ошибка становится HTTP: обработчики только зовут её. Часть таблицы общая для всех контекстов — ошибки разбора тела, уход клиента, истёкший <T id="deadline">срок</T>, «всё остальное»; её знает `httperror.Write`. Строки про валидацию и <T id="sentinel-error">сигнальные ошибки</T> знает только свой контекст — их адаптер передаёт функцией `problemFor`. В уроке [1.3](./03-errors) мы набросали эту таблицу; вот она целиком:
+Use case возвращает ошибку. Какой статус отдать? Ответ — в одной функции `httperror.Write` из `platform/httperror`. Это **единственное место**, где ошибка, которую вернул use case или разбор тела, становится HTTP-ответом: обработчики только зовут её. Часть таблицы общая для всех контекстов — ошибки разбора тела, уход клиента, истёкший <T id="deadline">срок</T>, «всё остальное»; её знает `httperror.Write`. Строки про валидацию и <T id="sentinel-error">сигнальные ошибки</T> знает только свой контекст — их адаптер передаёт функцией `problemFor`. В уроке [1.3](./03-errors) мы набросали эту таблицу; вот она целиком:
 
 | Ошибка | Статус | `code` |
 |---|---|---|
@@ -155,7 +155,7 @@ Use case возвращает ошибку. Какой статус отдать
 | `ErrNotMember` | 403 | `not_member` |
 | `ErrUsernameTaken` | 409 | `username_taken` |
 | `ErrConcurrentUpdate` | 409 | `conflict` |
-| `context.Canceled` | ответа нет, в лог на уровне Info | — |
+| `context.Canceled`, и отменён `r.Context()` | ответа нет, в лог на уровне Info | — |
 | `context.DeadlineExceeded` | 503 | `timeout` |
 | всё остальное | 500 | `internal`, общее сообщение; детали — только в лог |
 | ошибки разбора тела | 400 / 413 / 415 | `bad_json` / `body_too_large` / `unsupported_media_type` |
@@ -169,13 +169,13 @@ Use case возвращает ошибку. Какой статус отдать
 
 **Не раскрывать внутреннее.** На 500 клиент получает `"внутренняя ошибка сервера"`, а полная цепочка — `send message (попытка 1): pq: connection refused` — уходит в лог `slog.Error` с методом и путём запроса. Для отладки этого достаточно, а атакующему не достаётся ничего.
 
-**`context.Canceled` — отвечать некому.** Если клиент закрыл соединение, сервер отменяет `r.Context()`, хранилище прерывается и use case возвращает ошибку с `context.Canceled` в цепочке. Писать ответ бессмысленно: его никто не прочитает. Это и не сбой сервера, поэтому в лог — на уровне Info, а не Error: иначе каждый пользователь, закрывший приложение посреди запроса, будил бы дежурного.
+**`context.Canceled` — отвечать некому.** Если клиент закрыл соединение, сервер отменяет `r.Context()`, хранилище прерывается и use case возвращает ошибку с `context.Canceled` в цепочке. Писать ответ бессмысленно: его никто не прочитает. Это и не сбой сервера, поэтому в лог — на уровне Info, а не Error: иначе каждый пользователь, закрывший приложение посреди запроса, будил бы дежурного. Но молчим, только если отменён именно `r.Context()`: `context.Canceled` от какого-то внутреннего контекста при живом клиенте — наш сбой, и он идёт в строку «всё остальное», 500, — иначе клиент получил бы пустой ответ 200.
 
 **`context.DeadlineExceeded` — 503.** Срок обработки истёк: сервер не успел. Виноваты мы или перегрузка, а не клиент, поэтому 5xx. Из пятисотых выбран 503 Service Unavailable: он говорит «временно, повторите позже». Сейчас сроков в мессенджере нет, но строка в таблице есть: срок появится в <T id="middleware">middleware</T> в части 1b, и обработчики менять не придётся. (В уроке 0.3 обработчик отвечал на дедлайн 504 Gateway Timeout. 504 по смыслу — ответ прокси, который не дождался вышестоящего сервера; наш сервис сам и есть конечный сервер, поэтому 503.)
 
 **Порядок проверок важен.** Сначала ошибки разбора и валидации, потом сигнальные ошибки домена, потом контекст и в конце — «всё остальное». Ошибка может нести в цепочке несколько признаков сразу: с Go 1.20 `fmt.Errorf` принимает несколько `%w`, а `errors.Join` склеивает ошибки, и `errors.Is` найдёт в такой цепочке и `ErrConcurrentUpdate`, и `context.Canceled`. Таблица выбирает первое совпадение сверху, и порядок фиксирует, какой признак важнее.
 
-**401 против 400 у `X-User-ID`.** Заголовок разбирает обработчик **до** вызова use case. Нет заголовка или в нём не UUID в нижнем регистре — 401 `unauthenticated`: «не знаю, кто вы». Если бы обработчик отдал сырую строку в use case, тот вернул бы `ValidationError{Field: "user_id"}`, и клиент получил бы 400 «неверные данные» — смысл другой. А вот корректный UUID пользователя, которого нет, — это 400 с `field: "creator_id"` при создании чата и 403 при отправке и чтении: такого пользователя нет ни в одном чате. Отдельного 401 «нет такого пользователя» мы не делаем сознательно: настоящая проверка личности появится только с JWT, а пока несуществующий id — просто неверные входные данные. Так записано в <T id="adr">ADR</T>-0002 — записи архитектурного решения, о ней ниже.
+**401 против 400 у `X-User-ID`.** Заголовок разбирает обработчик **до** вызова use case. Нет заголовка или в нём не UUID в нижнем регистре — 401 `unauthenticated`: «не знаю, кто вы». Если бы обработчик отдал сырую строку в use case, тот вернул бы `ValidationError{Field: "user_id"}`, и клиент получил бы 400 «неверные данные» — смысл другой. А вот корректный UUID пользователя, которого нет, — это 400 с `field: "creator_id"` при создании чата и 403 при отправке и чтении: такого пользователя нет ни в одном чате. Отдельного 401 «нет такого пользователя» мы не делаем сознательно: настоящая проверка личности появится только с JWT, а пока несуществующий id — просто неверные входные данные. Так записано в <T id="adr">ADR</T>-0002 — о нём в следующем разделе.
 
 В уроке [0.3](../00-foundation/03-request-path) обработчик отвечал 401 на **любую** ошибку `h.auth.UserID(r)`. Теперь видно, что не так: если упало хранилище сессий, это не «вы не представились», а сбой сервера — 5xx. Правильная проверка различает «клиент не доказал, кто он» (401) и «мы не смогли проверить» (500) — ровно как таблица выше различает `ValidationError` и всё остальное.
 
@@ -488,19 +488,19 @@ git -c core.quotePath=false diff --stat m01-l06 m01-l07 -- messenger
 ```
 
 ```text
- messenger/cmd/messenger/main.go                    | 106 +++++
+ messenger/cmd/messenger/main.go                    | 106 ++++
  messenger/docs/adr/0002-x-user-id-до-jwt.md        |  34 ++
  messenger/internal/chat/adapters/httpapi/auth.go   |  45 ++
  messenger/internal/chat/adapters/httpapi/dto.go    |  83 ++++
  messenger/internal/chat/adapters/httpapi/errors.go |  36 ++
  .../internal/chat/adapters/httpapi/handler.go      | 158 ++++++
- .../internal/chat/adapters/httpapi/handler_test.go | 527 +++++++++++++++++++++
+ .../internal/chat/adapters/httpapi/handler_test.go | 534 +++++++++++++++++++++
  .../internal/chat/adapters/userchecker/checker.go  |  46 ++
  .../chat/adapters/userchecker/checker_test.go      | 105 ++++
  .../internal/chat/adapters/userchecker/doc.go      |   6 +-
  messenger/internal/platform/httperror/doc.go       |   4 +
- messenger/internal/platform/httperror/httperror.go |  59 +++
- .../internal/platform/httperror/httperror_test.go  |  93 ++++
+ messenger/internal/platform/httperror/httperror.go |  62 +++
+ .../internal/platform/httperror/httperror_test.go  | 100 ++++
  messenger/internal/platform/httpjson/doc.go        |   3 +-
  messenger/internal/platform/httpjson/httpjson.go   | 145 ++++++
  .../internal/platform/httpjson/httpjson_test.go    | 168 +++++++
@@ -509,11 +509,11 @@ git -c core.quotePath=false diff --stat m01-l06 m01-l07 -- messenger
  messenger/internal/user/adapters/httpapi/dto.go    |  31 ++
  messenger/internal/user/adapters/httpapi/errors.go |  31 ++
  .../internal/user/adapters/httpapi/handler.go      |  77 +++
- .../internal/user/adapters/httpapi/handler_test.go | 267 +++++++++++
- 22 files changed, 2247 insertions(+), 3 deletions(-)
+ .../internal/user/adapters/httpapi/handler_test.go | 273 +++++++++++
+ 22 files changed, 2270 insertions(+), 3 deletions(-)
 ```
 
-<N>2247 строк</N> добавлено, и больше половины из них — тесты: <N>69 проверок</N> (тесты и подтесты) в двух пакетах `httpapi`. Ни одной строки не изменилось в домене и use case'ах — HTTP пристроился снаружи, как и обещало <T id="dependency-rule">правило зависимостей</T>. Код урока целиком — `git checkout m01-l07`. Проверить (из `messenger/`): `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, `go test -race ./...`.
+<N>2270 строк</N> добавлено, и больше половины из них — тесты: <N>69 проверок</N> (тесты и подтесты) в двух пакетах `httpapi`. Ни одной строки не изменилось в домене и use case'ах — HTTP пристроился снаружи, как и обещало <T id="dependency-rule">правило зависимостей</T>. Код урока целиком — `git checkout m01-l07`. Проверить (из `messenger/`): `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, `go test -race ./...`.
 
 ### Итог части 1a
 
