@@ -29,12 +29,25 @@ func NewText(s string) (Text, error) {
 	if n > TextMaxLen {
 		return Text{}, invalid("text", fmt.Sprintf("не длиннее %d символов", TextMaxLen))
 	}
+	if strings.IndexFunc(s, isForbiddenInText) >= 0 {
+		return Text{}, invalid("text", "управляющие символы запрещены")
+	}
 	return Text{value: s}, nil
 }
 
 // #endregion new-text
 
+// isForbiddenInText пропускает переводы строк и табуляцию — без них не написать
+// многострочное сообщение, — а остальные управляющие символы запрещает: в чате им
+// не место, а NUL вдобавок не примет столбец text в Postgres (модуль 2a).
+func isForbiddenInText(r rune) bool {
+	return unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t'
+}
+
 func (t Text) String() string { return t.value }
+
+// IsZero сообщает, что значение не было создано через NewText (нулевое значение структуры).
+func (t Text) IsZero() bool { return t.value == "" }
 
 // Title — название группы.
 type Title struct{ value string }
@@ -54,3 +67,6 @@ func NewTitle(s string) (Title, error) {
 }
 
 func (t Title) String() string { return t.value }
+
+// IsZero сообщает, что значение не было создано через NewTitle (нулевое значение структуры).
+func (t Title) IsZero() bool { return t.value == "" }

@@ -46,7 +46,17 @@ type Chat struct {
 
 // #endregion chat
 
+// errNotSet — общий ответ на нулевое значение аргумента: конструкторы и методы агрегата
+// не доверяют тому, что вызывающий не забыл создать значение через Parse…/New….
+const errNotSet = "не задано"
+
 func NewDirectChat(id ChatID, a, b UserID, createdAt time.Time) (*Chat, error) {
+	if id.IsZero() {
+		return nil, invalid("chat_id", errNotSet)
+	}
+	if a.IsZero() || b.IsZero() {
+		return nil, invalid("member_ids", errNotSet)
+	}
 	if a == b {
 		return nil, invalid("member_ids", "в личном чате два разных участника")
 	}
@@ -56,6 +66,15 @@ func NewDirectChat(id ChatID, a, b UserID, createdAt time.Time) (*Chat, error) {
 // NewGroupChat сам добавляет создателя в участники: группа, в которой нет её создателя,
 // бессмысленна, а требовать это от клиента — лишняя ошибка на ровном месте.
 func NewGroupChat(id ChatID, title Title, creator UserID, others []UserID, createdAt time.Time) (*Chat, error) {
+	if id.IsZero() {
+		return nil, invalid("chat_id", errNotSet)
+	}
+	if title.IsZero() {
+		return nil, invalid("title", errNotSet)
+	}
+	if creator.IsZero() || slices.ContainsFunc(others, UserID.IsZero) {
+		return nil, invalid("member_ids", errNotSet)
+	}
 	members := normalizeMembers(append([]UserID{creator}, others...))
 	if len(members) < GroupMinMembers || len(members) > GroupMaxMembers {
 		return nil, invalid("member_ids", fmt.Sprintf("в группе от %d до %d участников", GroupMinMembers, GroupMaxMembers))
@@ -106,6 +125,14 @@ func (c *Chat) DirectKey() (key string, ok bool) {
 // Post — единственный способ добавить сообщение. Номер выдаёт агрегат,
 // а не хранилище: правило «seq подряд» — бизнес-правило, ему место в домене.
 func (c *Chat) Post(id MessageID, author UserID, text Text, sentAt time.Time) (Message, error) {
+	switch {
+	case id.IsZero():
+		return Message{}, invalid("message_id", errNotSet)
+	case author.IsZero():
+		return Message{}, invalid("author_id", errNotSet)
+	case text.IsZero():
+		return Message{}, invalid("text", errNotSet)
+	}
 	if !c.IsMember(author) {
 		return Message{}, ErrNotMember
 	}

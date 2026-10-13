@@ -3,6 +3,7 @@ package domain_test
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -118,13 +119,146 @@ func TestChatPost(t *testing.T) {
 	if c.LastSeq() != 0 || c.Version() != 0 {
 		t.Fatal("отклонённое сообщение не должно менять чат")
 	}
+	msk := time.FixedZone("MSK", 3*60*60)
 	for i := 1; i <= 3; i++ {
-		m, err := c.Post(mid(t, i), uid(t, 1), text(t, "привет"), t0)
+		sentAt := t0.In(msk)
+		m, err := c.Post(mid(t, i), uid(t, 1), text(t, "привет"), sentAt)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if m.Seq() != int64(i) || c.LastSeq() != int64(i) || c.Version() != int64(i) {
 			t.Fatalf("сообщение %d: seq=%d lastSeq=%d version=%d", i, m.Seq(), c.LastSeq(), c.Version())
+		}
+		if m.ID() != mid(t, i) || m.ChatID() != cid(t, 1) || m.AuthorID() != uid(t, 1) || m.Text().String() != "привет" {
+			t.Fatalf("сообщение %d: поля не совпадают", i)
+		}
+		if m.SentAt().Location() != time.UTC || !m.SentAt().Equal(sentAt) {
+			t.Fatalf("SentAt = %v, ждали тот же момент в UTC", m.SentAt())
+		}
+	}
+}
+
+func TestChatPostRejectsZeroArgs(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		id     domain.MessageID
+		author domain.UserID
+		text   domain.Text
+	}{
+		{name: "нулевой id сообщения", id: domain.MessageID{}, author: uid(t, 1), text: text(t, "привет")},
+		{name: "нулевой автор", id: mid(t, 1), author: domain.UserID{}, text: text(t, "привет")},
+		{name: "нулевой текст", id: mid(t, 1), author: uid(t, 1), text: domain.Text{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := domain.NewDirectChat(cid(t, 1), uid(t, 1), uid(t, 2), t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Post(tt.id, tt.author, tt.text, t0); err == nil || errors.Is(err, domain.ErrNotMember) {
+				t.Fatalf("ждали ошибку валидации, получили %v", err)
+			}
+			if c.LastSeq() != 0 || c.Version() != 0 {
+				t.Fatal("отклонённое сообщение не должно менять чат")
+			}
+		})
+	}
+}
+
+func TestNewChatRejectsZeroArgs(t *testing.T) {
+	t.Parallel()
+	title, err := domain.NewTitle("Семья")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		new  func(t *testing.T) (*domain.Chat, error)
+	}{
+		{name: "личный: нулевой id чата", new: func(t *testing.T) (*domain.Chat, error) {
+			return domain.NewDirectChat(domain.ChatID{}, uid(t, 1), uid(t, 2), t0)
+		}},
+		{name: "личный: нулевой участник", new: func(t *testing.T) (*domain.Chat, error) {
+			return domain.NewDirectChat(cid(t, 1), uid(t, 1), domain.UserID{}, t0)
+		}},
+		{name: "группа: нулевой id чата", new: func(t *testing.T) (*domain.Chat, error) {
+			return domain.NewGroupChat(domain.ChatID{}, title, uid(t, 1), []domain.UserID{uid(t, 2)}, t0)
+		}},
+		{name: "группа: нулевое название", new: func(t *testing.T) (*domain.Chat, error) {
+			return domain.NewGroupChat(cid(t, 1), domain.Title{}, uid(t, 1), []domain.UserID{uid(t, 2)}, t0)
+		}},
+		{name: "группа: нулевой создатель", new: func(t *testing.T) (*domain.Chat, error) {
+			return domain.NewGroupChat(cid(t, 1), title, domain.UserID{}, []domain.UserID{uid(t, 2), uid(t, 3)}, t0)
+		}},
+		{name: "группа: нулевой участник", new: func(t *testing.T) (*domain.Chat, error) {
+			return domain.NewGroupChat(cid(t, 1), title, uid(t, 1), []domain.UserID{uid(t, 2), {}}, t0)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if c, err := tt.new(t); err == nil {
+				t.Fatalf("ждали ошибку, получили чат %v", c.ID())
+			}
+		})
+	}
+}
+
+func TestDirectKey(t *testing.T) {
+	t.Parallel()
+	direct, err := domain.NewDirectChat(cid(t, 1), uid(t, 2), uid(t, 1), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key, ok := direct.DirectKey(); !ok || key != domain.DirectKeyFor(uid(t, 1), uid(t, 2)) {
+		t.Fatalf("DirectKey() = %q, %v", key, ok)
+	}
+	title, err := domain.NewTitle("Семья")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := domain.NewGroupChat(cid(t, 2), title, uid(t, 1), []domain.UserID{uid(t, 2)}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key, ok := group.DirectKey(); ok || key != "" {
+		t.Fatalf("у группы нет ключа пары, получили %q, %v", key, ok)
+	}
+}
+
+func TestParseKind(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in      string
+		want    domain.Kind
+		wantErr bool
+	}{
+		{in: "direct", want: domain.KindDirect},
+		{in: "group", want: domain.KindGroup},
+		{in: "Group", wantErr: true},
+		{in: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := domain.ParseKind(tt.in)
+		if (err != nil) != tt.wantErr || got != tt.want {
+			t.Fatalf("ParseKind(%q) = %q, %v", tt.in, got, err)
+		}
+	}
+}
+
+func TestParseIDsRejectBadInput(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{"", "0192F0C1-7E3A-7B4C-8D5E-6F7A8B9C0D1E", "0192f0c17e3a7b4c8d5e6f7a8b9c0d1e", "0192f0c1-7e3a-7b4c-8d5e-6f7a8b9c0d1"} {
+		if _, err := domain.ParseChatID(in); err == nil {
+			t.Errorf("ParseChatID(%q): ждали ошибку", in)
+		}
+		if _, err := domain.ParseMessageID(in); err == nil {
+			t.Errorf("ParseMessageID(%q): ждали ошибку", in)
+		}
+		if _, err := domain.ParseUserID(in); err == nil {
+			t.Errorf("ParseUserID(%q): ждали ошибку", in)
 		}
 	}
 }
@@ -137,7 +271,8 @@ func TestMembersIsCopy(t *testing.T) {
 	}
 	m := c.Members()
 	m[0] = uid(t, 9)
-	if c.IsMember(uid(t, 9)) {
-		t.Fatal("Members() должен отдавать копию: снаружи нельзя менять агрегат")
+	// Проверяем и состав, и участника, которого «затёрли»: будь срез общим, uid(1) исчез бы из чата.
+	if want := []domain.UserID{uid(t, 1), uid(t, 2)}; !slices.Equal(c.Members(), want) || !c.IsMember(uid(t, 1)) {
+		t.Fatalf("Members() должен отдавать копию: снаружи нельзя менять агрегат, участники %v", c.Members())
 	}
 }

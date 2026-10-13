@@ -57,6 +57,7 @@ func TestNewDisplayName(t *testing.T) {
 		{name: "ровно максимум рун", in: strings.Repeat("ж", domain.DisplayNameMaxLen), want: strings.Repeat("ж", domain.DisplayNameMaxLen)},
 		{name: "максимум + 1", in: strings.Repeat("ж", domain.DisplayNameMaxLen+1), wantErr: true},
 		{name: "управляющий символ", in: "a\x00b", wantErr: true},
+		{name: "невалидный UTF-8", in: "Ив\xffан", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
