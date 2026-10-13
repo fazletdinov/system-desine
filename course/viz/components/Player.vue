@@ -5,7 +5,7 @@ import T from '../../components/T.vue'
 import { captionSegments } from '../core/caption'
 import { SPEEDS, initPlayer, keyToAction, playerReducer, stepDelayMs, type PlayerAction } from '../core/player'
 
-const props = defineProps<{ steps: readonly Step<S>[]; label: string }>()
+const props = defineProps<{ steps: readonly Step<S>[]; label: string; startAtEnd?: boolean }>()
 
 const state = ref(initPlayer(props.steps.length))
 const dispatch = (action: PlayerAction): void => {
@@ -15,7 +15,11 @@ const step = computed(() => props.steps[state.value.index] as Step<S>)
 const isFirst = computed(() => state.value.index === 0)
 const isLast = computed(() => state.value.index === state.value.total - 1)
 
-watch(() => props.steps, (steps) => dispatch({ type: 'reset', total: steps.length }))
+// startAtEnd: песочница, где каждое действие добавляет шаг, показывает его результат, а не начало.
+watch(() => props.steps, (steps) => {
+  dispatch({ type: 'reset', total: steps.length })
+  if (props.startAtEnd) dispatch({ type: 'last' })
+})
 
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(
