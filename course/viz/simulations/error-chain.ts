@@ -46,7 +46,8 @@ const FRAMES: readonly Frame[] = [
     layers: [wrappedW, store],
     status: null,
     caption: [
-      { text: 'Use case добавляет контекст — ' },
+      term('Use case', 'use-case'),
+      { text: ' добавляет контекст — ' },
       term('оборачивает', 'error-wrapping'),
       { text: ' ошибку: fmt.Errorf("send message: %w", err). Получается новый «конверт»: его Error() — «send message: чат не найден», а метод Unwrap() возвращает исходную ошибку. errors.Is разворачивает конверты по очереди и находит ErrChatNotFound внутри.' },
     ],
@@ -55,7 +56,9 @@ const FRAMES: readonly Frame[] = [
     layers: [wrappedV],
     status: 500,
     caption: [
-      { text: 'Вариант с ошибкой: кто-то написал %v вместо %w. Текст Error() буква в букву тот же, но %v лишь вставляет текст ошибки в строку: получается новая ошибка без Unwrap, исходной внутри нет. errors.Is → false, адаптер не узнаёт «не найден» и отвечает 500 internal. Глазами в логе разницу не увидеть — её ловит тест или линтер errorlint.' },
+      { text: 'Вариант с ошибкой: кто-то написал %v вместо %w. Текст Error() буква в букву тот же, но %v лишь вставляет текст ошибки в строку: получается новая ошибка без Unwrap, исходной внутри нет. errors.Is → false, HTTP-' },
+      term('адаптер', 'adapter'),
+      { text: ' не узнаёт «не найден» и отвечает 500 internal. Глазами в логе разницу не увидеть — её ловит тест или линтер errorlint.' },
     ],
   },
   {
@@ -67,9 +70,7 @@ const FRAMES: readonly Frame[] = [
     layers: [wrappedW, store],
     status: 404,
     caption: [
-      { text: 'HTTP-' },
-      term('адаптер', 'adapter'),
-      { text: ' — единственное место, где ошибка превращается в статус: errors.Is(err, domain.ErrChatNotFound) → 404 с кодом not_found. Домен и use case про HTTP-статусы не знают.' },
+      { text: 'HTTP-адаптер — единственное место, где ошибка превращается в статус: errors.Is(err, domain.ErrChatNotFound) → 404 с кодом not_found. Домен и use case про HTTP-статусы не знают.' },
     ],
   },
   {

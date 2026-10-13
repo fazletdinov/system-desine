@@ -36,5 +36,5 @@ const current = computed(() => STAGES[index.value]!)
 .layer { font-size: 13px; color: var(--viz-muted); }
 .shape { margin: 0; padding: 0; background: none; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
 .shape code { font-size: 14px; line-height: 1.55; color: var(--viz-text); background: none; padding: 0; }
-@media (max-width: 480px) { .shape code { font-size: 13px; } }
+@container (max-width: 480px) { .shape code { font-size: 13px; } }
 </style>

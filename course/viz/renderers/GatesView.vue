@@ -55,9 +55,9 @@ const verdictText = computed(() => {
 .input { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 12px; }
 .key { font-size: 13px; font-weight: 700; color: var(--viz-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .input code { white-space: pre-wrap; font-size: 15px; color: var(--viz-text); background: none; padding: 0; overflow-wrap: anywhere; }
-.line { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.line { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; }
 .gate { position: relative; margin: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 2px solid var(--viz-edge); border-radius: 10px; background: var(--viz-node-bg); }
-.gate:not(:last-child)::after { content: '→'; position: absolute; right: -9px; top: 50%; transform: translate(50%, -50%); font-size: 14px; color: var(--viz-muted); }
+.gate:not(:last-child)::after { content: '→'; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%); font-size: 14px; line-height: 1; color: var(--viz-muted); }
 .gate.passed, .gate.here-pass { border-color: var(--viz-response); }
 .gate.here-pass { border-width: 4px; }
 .gate.here-reject { border-color: var(--viz-error); border-width: 4px; }

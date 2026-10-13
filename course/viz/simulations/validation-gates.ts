@@ -43,13 +43,16 @@ const FRAMES: readonly Frame[] = [
   {
     state: { input: INPUTS.blank, gate: 'dto', verdict: 'pass' },
     caption: [
-      { text: 'Прогон 1. Тело — корректный JSON, поле text — строка, так что ворота JSON и DTO пропускают его: им всё равно, что строка состоит из пробелов. Они проверяют форму запроса, а не смысл. Дальше обработчик собирает команду SendMessageCommand: id чата из пути, автор из заголовка X-User-ID.' },
+      { text: 'Прогон 1. Тело — корректный JSON, поле text — строка, так что ворота JSON и ' },
+      term('DTO', 'dto'),
+      { text: ' пропускают его: им всё равно, что строка состоит из пробелов. Они проверяют форму запроса, а не смысл. Дальше обработчик собирает команду SendMessageCommand: id чата из пути, автор из заголовка X-User-ID.' },
     ],
   },
   {
     state: { input: INPUTS.blank, gate: 'value-object', verdict: 'reject', reason: 'text: пустое сообщение → 400 invalid_input, field "text"' },
     caption: [
-      { text: 'Use case превращает строки команды в ' },
+      term('Use case', 'use-case'),
+      { text: ' превращает строки команды в ' },
       term('объекты-значения', 'value-object'),
       { text: '. domain.NewText обрезает пробелы по краям (strings.TrimSpace), остаётся 0 символов — отказ. Правило «сообщение не пустое» живёт в одном месте, в домене, и его нельзя обойти: другого способа получить domain.Text нет.' },
     ],
@@ -71,12 +74,10 @@ const FRAMES: readonly Frame[] = [
       input: INPUTS.wrongType,
       gate: 'json',
       verdict: 'reject',
-      reason: 'json: cannot unmarshal number into Go struct field sendMessageRequest.text of type string → 400 bad_json',
+      reason: 'некорректный JSON: json: cannot unmarshal number into Go struct field sendMessageRequest.text of type string → 400 bad_json',
     },
     caption: [
-      { text: 'Прогон 3. Поле text — число, а в ' },
-      term('DTO', 'dto'),
-      { text: ' sendMessageRequest оно объявлено строкой. encoding/json отказывает уже при разборе, httpjson.Decode возвращает 400 с кодом bad_json. До use case и домена этот запрос не доходит: проверять типы полей — работа границы, а не бизнес-правил.' },
+      { text: 'Прогон 3. Поле text — число, а в DTO sendMessageRequest оно объявлено строкой. encoding/json отказывает уже при разборе, httpjson.Decode возвращает 400 с кодом bad_json. До use case и домена этот запрос не доходит: проверять типы полей — работа границы, а не бизнес-правил.' },
     ],
   },
   {

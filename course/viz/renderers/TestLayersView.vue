@@ -49,5 +49,5 @@ const caught = computed(() => props.state.caughtBy)
 .race { margin-top: 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; border: 2px dashed var(--viz-broker); border-radius: 8px; text-align: center; }
 .hint { font-size: 13px; color: var(--viz-muted); }
 /* На телефоне узкая вершина не вместила бы название инструмента. */
-@media (max-width: 520px) { .tests { --tier-step: 7%; } }
+@container (max-width: 520px) { .tests { --tier-step: 7%; } }
 </style>
