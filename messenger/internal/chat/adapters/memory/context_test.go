@@ -98,7 +98,10 @@ func TestCanceledContextEveryMethod(t *testing.T) {
 		t.Fatalf("отменённый AppendMessage записал %d сообщений, %v", len(msgs), err)
 	}
 	stored, err := store.FindChat(ctx, chat.ID())
-	if err != nil || stored.Version() != expected {
-		t.Fatalf("отменённый AppendMessage изменил версию чата: %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Version() != expected {
+		t.Fatalf("отменённый AppendMessage изменил версию чата: %d, ждали %d", stored.Version(), expected)
 	}
 }

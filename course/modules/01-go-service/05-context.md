@@ -33,7 +33,7 @@ type Context interface {
 }
 ```
 
-- **`Done()`** возвращает канал, который **закрывается**, когда работу пора прекратить. Из закрытого канала чтение возвращается сразу, поэтому `<-ctx.Done()` в `select` срабатывает у всех, кто его ждёт, одновременно — это широковещательный сигнал без единой отправки. У контекста, который не отменяется никогда, `Done()` возвращает `nil`, а чтение из `nil`-канала блокируется навсегда — в `select` такая ветка просто никогда не выбирается.
+- **`Done()`** возвращает канал, который **закрывается**, когда работу пора прекратить. Из закрытого канала чтение возвращается сразу, поэтому `<-ctx.Done()` в `select` срабатывает у всех, кто его ждёт, одновременно — это широковещательный сигнал без единой отправки. Контекст, который не отменяется никогда, может вернуть из `Done()` `nil` — так делают `context.Background()` и `WithoutCancel`, а чтение из `nil`-канала блокируется навсегда — в `select` такая ветка просто никогда не выбирается.
 - **`Err()`** — почему работу прекратили. Пока `Done` не закрыт — `nil`. После — `context.Canceled` (кто-то вызвал отмену) или `context.DeadlineExceeded` (истёк срок), и дальше всегда одно и то же значение.
 - **`Deadline()`** — момент, к которому работа должна закончиться, если он задан (`ok == true`).
 - **`Value(key)`** — данные запроса по ключу. О том, что туда класть, а что нет, — ниже.
@@ -191,6 +191,7 @@ const auditTimeout = 2 * time.Second
 
 // recordAsync пишет аудит в фоне. Запись переживает отмену запроса, но не дольше
 // auditTimeout; wg — владелец горутины: при остановке сервиса его дожидаются.
+// wg.Go появился в Go 1.25; в старых версиях — wg.Add(1) и defer wg.Done().
 func recordAsync(ctx context.Context, wg *sync.WaitGroup, log AuditLog, event string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditTimeout)
 	wg.Go(func() {
@@ -240,13 +241,13 @@ func TraceID(ctx context.Context) (string, bool) {
 
 ## <Part kind="theory" /> Откуда берётся контекст в сервере
 
-Корень дерева запроса создаёт HTTP-сервер. `r.Context()` у входящего запроса, по документации `net/http`, отменяется в трёх случаях: клиент закрыл соединение, клиент отменил запрос (в HTTP/2 — отдельным кадром, не разрывая соединения) и **когда метод `ServeHTTP` вернул управление**.
+Контекст запроса создаёт HTTP-сервер — от корня, который ему задали в `main` (по умолчанию `context.Background()`). `r.Context()` у входящего запроса, по документации `net/http`, отменяется в трёх случаях: клиент закрыл соединение, клиент отменил запрос (в HTTP/2 — отдельным кадром, не разрывая соединения) и **когда метод `ServeHTTP` вернул управление**.
 
 Последний пункт часто упускают. Как только обработчик ответил, его контекст отменён. Всё, что обработчик запустил в фоне с `r.Context()`, оборвётся — это и есть ошибка № 61. Фоновой работе нужен `WithoutCancel` и свой срок, как в примере с аудитом.
 
 Как сервер узнаёт, что клиент ушёл? В HTTP/1.1 он, прочитав запрос, продолжает в фоне читать соединение: пришёл конец потока — клиент закрыл соединение, и сервер отменяет контекст. В исходниках Go 1.26 это фоновое чтение запускается, когда тело запроса прочитано до конца (или его нет). Отсюда две оговорки. Пока обработчик не дочитал тело, разрыв так не заметят. А если клиент пропал молча — выключился телефон, оборвалась сеть, — конца потока не будет вовсе, и сервер узнает об уходе клиента только по своим таймаутам. Поэтому у запроса должен быть и собственный срок, а не только надежда на разрыв.
 
-Обработчик мессенджера в уроке 1.7 начнёт так: `ctx, cancel := context.WithTimeout(r.Context(), …)`, `defer cancel()` — и дальше передаст `ctx` в use case. Как это выглядит деревом, показывает сцена ниже: корень — сервер, под ним запрос с таймаутом, под ним use case и всё, что он вызывает.
+Обработчик мессенджера в уроке 1.7 начнёт так: `ctx, cancel := context.WithTimeout(r.Context(), …)`, `defer cancel()` — и дальше передаст `ctx` в use case. Как это выглядит деревом, показывает сцена ниже: корень — `context.Background()` из `main`, под ним запрос с таймаутом (слои, которые добавляет сервер, и `r.Context()` в сцене свёрнуты в один узел), под ним use case и всё, что он вызывает.
 
 ## <Part kind="theory" /> Как отмена доходит до хранилища
 
@@ -262,7 +263,7 @@ func TraceID(ctx context.Context) (string, bool) {
 
 <<< @/../messenger/internal/chat/usecase/send_message.go#send-execute{go}
 
-Первую попытку останавливает хранилище: отменённый контекст не пройдёт `FindChat`. А вот между попытками use case проверяет сам. Представьте: первая попытка проиграла гонку, а клиент тем временем ушёл. Без проверки use case сделает ещё одно чтение и ещё одну запись для того, кому ответ не нужен, — а если хранилище контекст не проверяет (сторонний <T id="adapter">адаптер</T>, кеш), то и все три попытки. Проверка перед повтором — дешёвая страховка в месте, где use case сам решает «работать дальше».
+Первую попытку останавливает хранилище: отменённый контекст не пройдёт `FindChat`. А вот между попытками use case проверяет сам. Представьте: первая попытка проиграла гонку, а клиент тем временем ушёл. Без проверки use case полагался бы на то, что отмену заметит хранилище: `memory.Store` заметит её на входе в `FindChat`. Но другой <T id="adapter">адаптер</T> или кеш перед ним может контекст не проверять — и тогда для ушедшего клиента пройдут все три попытки. Проверка перед повтором — дешёвая страховка в месте, где use case сам решает «работать дальше».
 
 ## <Part kind="viz" /> Визуализация: дерево контекстов запроса
 
@@ -394,14 +395,14 @@ git -c core.quotePath=false diff --stat m01-l04 m01-l05 -- messenger
 ```
 
 ```
- .../internal/chat/adapters/memory/context_test.go  | 104 +++++++++++++++++++++
+ .../internal/chat/adapters/memory/context_test.go  | 107 +++++++++++++++++++++
  messenger/internal/chat/adapters/memory/store.go   |  29 +++++-
- messenger/internal/chat/usecase/context_test.go    |  64 +++++++++++++
+ messenger/internal/chat/usecase/context_test.go    |  64 ++++++++++++
  messenger/internal/chat/usecase/fakes_test.go      |  20 +++-
  messenger/internal/chat/usecase/send_message.go    |   7 ++
- .../internal/user/adapters/memory/context_test.go  |  32 +++++++
+ .../internal/user/adapters/memory/context_test.go  |  32 ++++++
  messenger/internal/user/adapters/memory/store.go   |  10 +-
- 7 files changed, 256 insertions(+), 10 deletions(-)
+ 7 files changed, 259 insertions(+), 10 deletions(-)
 ```
 
 <N>7 файлов</N>, и ни одного изменения в домене и портах: сигнатуры с `ctx` были с урока 1.4, этот урок научил код на контекст **смотреть**. Код урока целиком — `git checkout m01-l05`. Проверить (из `messenger/`): `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, `go test -race ./...`.
@@ -573,7 +574,7 @@ func ExportHistory(ctx context.Context, pages []Page, w PageWriter) error {
 
 - Sameer Ajmani, [«Go Concurrency Patterns: Context»](https://go.dev/blog/context), блог Go, 2014 — зачем появился пакет, дерево контекстов на примере поискового сервера.
 - Документация пакета [`context`](https://pkg.go.dev/context) — правила в комментарии к пакету (первый аргумент, не хранить в структуре, `Value` только для данных запроса), `WithCancelCause` и `Cause` (Go 1.20), `WithoutCancel`, `AfterFunc`, `WithDeadlineCause`, `WithTimeoutCause` (Go 1.21); исходник `src/context/context.go` — `propagateCancel` и `cancelCtx.cancel` из «Под капотом».
-- Jean de Klerk, Matt T. Proud, [«Contexts and structs»](https://go.dev/blog/context-and-structs), блог Go, 2021 — почему контекст не хранят в структуре и в каком редком случае это допустимо.
+- Jean Barkhuysen, Matt T. Proud, [«Contexts and structs»](https://go.dev/blog/context-and-structs), блог Go, 24 февраля 2021 — почему контекст не хранят в структуре и в каком редком случае это допустимо.
 - Документация [`net/http.Request.Context`](https://pkg.go.dev/net/http#Request.Context) — когда отменяется контекст входящего запроса; анализатор [`lostcancel`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel) в `go vet`.
 - Harsanyi T., «100 Go Mistakes and How to Avoid Them» (рус. «100 ошибок Go и как их избежать»): гл. 8, № 60 «Misunderstanding Go contexts» — срок, отмена, значения, почему функция, которая может ждать, принимает контекст; гл. 9, № 61 «Propagating an inappropriate context» — фоновая работа с контекстом запроса и отвязанный контекст.
 - Cox-Buday K., «Concurrency in Go» (рус. «Конкурентность в Go»), гл. 4, раздел «The context Package» — отмена через дерево контекстов, `Done` как широковещательный сигнал, что класть в `Value`.
