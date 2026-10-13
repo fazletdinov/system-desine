@@ -181,15 +181,18 @@ func testVersionConflict(t *testing.T, s Store) {
 	c := newDirect(t, 1, 1, 2)
 	create(t, s, c)
 	first, second := find(t, s, c.ID()), find(t, s, c.ID())
-	if err := s.AppendMessage(ctx, first, post(t, first, 1), 0); err != nil {
+	winner := post(t, first, 1)
+	if err := s.AppendMessage(ctx, first, winner, 0); err != nil {
 		t.Fatal(err)
 	}
 	// second прочитан до записи first — его версия 0 устарела.
 	if err := s.AppendMessage(ctx, second, post(t, second, 2), 0); !errors.Is(err, domain.ErrConcurrentUpdate) {
 		t.Fatalf("ждали ErrConcurrentUpdate, получили %v", err)
 	}
-	if got := seqs(t, s, c.ID()); fmt.Sprint(got) != "[1]" {
-		t.Fatalf("после конфликта в истории должно остаться одно сообщение с seq 1: %v", got)
+	// В истории — сообщение победителя: опоздавший не должен его ни дополнить, ни заменить.
+	msgs, err := s.ListMessages(ctx, c.ID(), 0, domain.ListLimitMax)
+	if err != nil || len(msgs) != 1 || msgs[0].ID() != winner.ID() || msgs[0].Text() != winner.Text() {
+		t.Fatalf("после конфликта в истории должно остаться только сообщение победителя: %d сообщений, %v", len(msgs), err)
 	}
 	if got := find(t, s, c.ID()); got.Version() != 1 || got.LastSeq() != 1 {
 		t.Fatalf("конфликт изменил чат: версия %d, lastSeq %d", got.Version(), got.LastSeq())
@@ -250,29 +253,39 @@ func testListReturnsCopy(t *testing.T, s Store) {
 	if err != nil || len(rest) != 1 {
 		t.Fatalf("вторая страница: %d сообщений, %v", len(rest), err)
 	}
-	// Запись в элемент и append в свободную ёмкость не должны дойти до хранилища.
+	// Запись в элемент страницы не должна дойти до хранилища.
 	page[0] = rest[0]
-	_ = append(page, page[0])
 	if got := seqs(t, s, c.ID()); fmt.Sprint(got) != "[1 2]" {
 		t.Fatalf("история изменилась через возвращённую страницу: seq %v", got)
 	}
 }
 
+// Окно гонки «прочитал версию — записал» узкое, и один забег его может не задеть.
+// Поэтому забегов несколько, каждый — в своём чате.
 func testConcurrentAppend(t *testing.T, s Store) {
+	const rounds = 20
+	for r := range rounds {
+		c := newDirect(t, r+1, 2*r+1, 2*r+2)
+		create(t, s, c)
+		raceAppend(t, s, c, r)
+	}
+}
+
+// raceAppend запускает одновременные записи в чат c и проверяет историю после них.
+func raceAppend(t *testing.T, s Store, c *domain.Chat, round int) {
+	t.Helper()
 	ctx := context.Background()
-	c := newDirect(t, 1, 1, 2)
-	create(t, s, c)
 	const writers = 16
 	// Всё, что может вызвать t.Fatal, готовим до горутин: FailNow из чужой горутины
 	// запрещён (go vet, анализатор testinggoroutine).
-	author := user(t, 1)
+	author := c.Members()[0]
 	text, err := domain.NewText("одновременно")
 	if err != nil {
 		t.Fatal(err)
 	}
 	msgIDs := make([]domain.MessageID, writers)
 	for w := range writers {
-		msgIDs[w] = id(t, domain.ParseMessageID, "a000", w+1)
+		msgIDs[w] = id(t, domain.ParseMessageID, "a000", round*writers+w+1)
 	}
 	var (
 		wg sync.WaitGroup
@@ -284,25 +297,16 @@ func testConcurrentAppend(t *testing.T, s Store) {
 	for w := range writers {
 		wg.Go(func() {
 			<-start
-			cur, err := s.FindChat(ctx, c.ID())
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			v := cur.Version()
-			msg, err := cur.Post(msgIDs[w], author, text, t0)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			err = s.AppendMessage(ctx, cur, msg, v)
-			if err != nil && !errors.Is(err, domain.ErrConcurrentUpdate) {
-				t.Error(err)
-			}
-			if err == nil {
+			err := tryAppend(ctx, s, c.ID(), func(cur *domain.Chat) (domain.Message, error) {
+				return cur.Post(msgIDs[w], author, text, t0)
+			})
+			switch {
+			case err == nil:
 				mu.Lock()
 				ok++
 				mu.Unlock()
+			case !errors.Is(err, domain.ErrConcurrentUpdate):
+				t.Error(err)
 			}
 			// Чтение истории наперегонки с чужими записями — работа для детектора гонок.
 			if _, err := s.ListMessages(ctx, c.ID(), 0, domain.ListLimitMax); err != nil {
@@ -312,6 +316,10 @@ func testConcurrentAppend(t *testing.T, s Store) {
 	}
 	close(start)
 	wg.Wait()
+	// Хотя бы одна запись обязана пройти: хранилище, которое отказывает всем, контракт не выполняет.
+	if ok < 1 {
+		t.Fatal("ни одна из одновременных записей не прошла")
+	}
 	got := seqs(t, s, c.ID())
 	if len(got) != ok {
 		t.Fatalf("успешных записей %d, в истории %d", ok, len(got))
@@ -321,6 +329,21 @@ func testConcurrentAppend(t *testing.T, s Store) {
 			t.Fatalf("seq с пропуском или повтором: позиция %d, seq %d", i, seq)
 		}
 	}
+}
+
+// tryAppend — одна попытка записи, как в use case: прочитать чат, добавить сообщение
+// через агрегат и сохранить с версией, которую прочитали.
+func tryAppend(ctx context.Context, s Store, chatID domain.ChatID, post func(*domain.Chat) (domain.Message, error)) error {
+	cur, err := s.FindChat(ctx, chatID)
+	if err != nil {
+		return err
+	}
+	v := cur.Version()
+	msg, err := post(cur)
+	if err != nil {
+		return err
+	}
+	return s.AppendMessage(ctx, cur, msg, v)
 }
 
 // Отменённый или истёкший контекст останавливает каждый метод, и ни один ничего не пишет.

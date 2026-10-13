@@ -62,6 +62,14 @@ func newUser(t *testing.T, n int, username string) domain.User {
 	return domain.NewUser(userID, name, display, t0)
 }
 
+// sameUser сравнивает пользователей по полям, а время — через Equal: хранилище вправе
+// вернуть тот же момент в другой локации (Postgres отдаёт timestamptz в локальной зоне
+// драйвера), и == у time.Time это различие увидел бы.
+func sameUser(a, b domain.User) bool {
+	return a.ID() == b.ID() && a.Username() == b.Username() &&
+		a.DisplayName() == b.DisplayName() && a.CreatedAt().Equal(b.CreatedAt())
+}
+
 func testCreateAndFind(t *testing.T, s Store) {
 	ctx := context.Background()
 	u := newUser(t, 1, "alice")
@@ -69,7 +77,7 @@ func testCreateAndFind(t *testing.T, s Store) {
 		t.Fatal(err)
 	}
 	got, err := s.FindUser(ctx, u.ID())
-	if err != nil || got != u {
+	if err != nil || !sameUser(got, u) {
 		t.Fatalf("FindUser: %+v, %v — ждали сохранённого пользователя", got, err)
 	}
 	if _, err := s.FindUser(ctx, newUser(t, 99, "nobody").ID()); !errors.Is(err, domain.ErrUserNotFound) {
@@ -90,7 +98,7 @@ func testUsernameTaken(t *testing.T, s Store) {
 	if _, err := s.FindUser(ctx, second.ID()); !errors.Is(err, domain.ErrUserNotFound) {
 		t.Fatalf("отклонённый пользователь не должен сохраниться: %v", err)
 	}
-	if got, err := s.FindUser(ctx, first.ID()); err != nil || got != first {
+	if got, err := s.FindUser(ctx, first.ID()); err != nil || !sameUser(got, first) {
 		t.Fatalf("первый пользователь перезаписан: %+v, %v", got, err)
 	}
 }
@@ -131,7 +139,7 @@ func testCanceledContext(t *testing.T, s Store) {
 // не задеть. Поэтому забегов несколько, каждый — за своё имя.
 func testConcurrentSameUsername(t *testing.T, s Store) {
 	const (
-		rounds  = 20
+		rounds  = 100
 		writers = 16
 	)
 	for r := range rounds {
@@ -143,10 +151,10 @@ func testConcurrentSameUsername(t *testing.T, s Store) {
 		winner := raceForUsername(t, s, users)
 		for _, u := range users {
 			_, err := s.FindUser(context.Background(), u.ID())
-			if u == winner && err != nil {
+			if u.ID() == winner.ID() && err != nil {
 				t.Fatalf("победитель не найден: %v", err)
 			}
-			if u != winner && !errors.Is(err, domain.ErrUserNotFound) {
+			if u.ID() != winner.ID() && !errors.Is(err, domain.ErrUserNotFound) {
 				t.Fatalf("проигравший %s сохранён: %v", u.ID(), err)
 			}
 		}
