@@ -5,7 +5,7 @@ import { useNarrow } from '../components/useNarrow'
 
 const props = defineProps<{ state: DepsFrame }>()
 
-const NARROW_PX = 560
+const NARROW_PX = 520
 
 const svgEl = ref<SVGSVGElement>()
 const narrow = useNarrow(svgEl, NARROW_PX)
@@ -22,16 +22,18 @@ const LAYER_ORDER: readonly Layer[] = ['root', 'adapter', 'usecase', 'platform',
 
 interface Box { x: number; y: number; w: number; h: number }
 
-const BOX_H = 34
-const ROW = 50
-const TOP = 40
+// Размеры подобраны так, чтобы при ширине колонки урока (≈600 px) масштаб SVG был около 1 и текст — ≥ 13 px.
+const BOX_H = 46
+const ROW = 60
+const TOP = 36
+const BOX_W = 114
 const COLUMNS = [
-  { x: 6, w: 140, title: 'корень сборки' },
-  { x: 201, w: 205, title: 'адаптеры' },
-  { x: 461, w: 125, title: 'use case' },
-  { x: 631, w: 125, title: 'домен и stdlib' },
+  { x: 2, w: BOX_W, title: 'корень' },
+  { x: 164, w: BOX_W, title: 'адаптеры' },
+  { x: 326, w: BOX_W, title: 'use case' },
+  { x: 484, w: BOX_W, title: 'домен, stdlib' },
 ] as const
-const WIDTH = 762
+const WIDTH = 600
 
 // Колонка и строка каждого пакета. Строки дробные: use case стоит напротив своего домена.
 const SLOT: Record<Pkg, { col: number; row: number }> = {
@@ -59,6 +61,11 @@ const boxes = computed(() => {
   }
   return out
 })
+// Двухстрочная подпись: «chat/adapters» и «userchecker» — так полное имя пакета умещается в узкий блок.
+function splitName(id: Pkg): [string, string] {
+  const i = id.lastIndexOf('/')
+  return [id.slice(0, i + 1), id.slice(i + 1)]
+}
 const height = TOP + 4.4 * ROW + BOX_H + 14
 
 interface Arrow { key: string; d: string; head: string; kind: 'base' | 'root' | 'added' | 'ok' | 'bad' }
@@ -131,14 +138,18 @@ const verdict = computed(() => {
 <template>
   <div class="deps">
     <svg v-if="!narrow" ref="svgEl" class="deps-svg" :viewBox="`0 0 ${WIDTH} ${height}`" role="img" aria-label="Граф импортов мессенджера: пакеты по слоям и стрелки зависимостей">
-      <text v-for="c in COLUMNS" :key="c.title" :x="c.x" y="22" class="col-title" font-size="13">{{ c.title }}</text>
+      <text v-for="c in COLUMNS" :key="c.title" :x="c.x" y="20" class="col-title" font-size="15">{{ c.title }}</text>
       <path v-for="a in orderedArrows" :key="a.key" :d="a.d" class="edge" :class="a.kind" />
       <polygon v-for="a in orderedArrows" :key="`h${a.key}`" :points="a.head" class="tip" :class="a.kind" />
       <g v-for="p in PACKAGES" :key="p.id">
         <rect :x="boxes[p.id].x" :y="boxes[p.id].y" :width="boxes[p.id].w" :height="boxes[p.id].h" rx="7" class="pkg" :class="p.layer" />
-        <text :x="boxes[p.id].x + boxes[p.id].w / 2" :y="boxes[p.id].y + 22" class="pkg-name" font-size="14">{{ p.id }}</text>
+        <text :x="boxes[p.id].x + boxes[p.id].w / 2" :y="boxes[p.id].y + 19" class="pkg-name" font-size="15">{{ splitName(p.id)[0] }}</text>
+        <text :x="boxes[p.id].x + boxes[p.id].w / 2" :y="boxes[p.id].y + 37" class="pkg-name" font-size="15">{{ splitName(p.id)[1] }}</text>
       </g>
     </svg>
+    <ul v-if="!narrow" class="sr-only" aria-label="Импорты на графе">
+      <li v-for="e in state.edges" :key="`${e[0]}>${e[1]}`">{{ e[0] }} импортирует {{ e[1] }}</li>
+    </ul>
     <!-- Узкий экран: тот же граф списком. Стрелки — строки «→ пакет», без горизонтальной прокрутки. -->
     <div v-else class="deps-list" role="group" aria-label="Граф импортов мессенджера списком">
       <section v-for="l in layersWithPackages" :key="l.layer" class="layer" :class="l.layer">
@@ -166,6 +177,7 @@ const verdict = computed(() => {
 <style scoped>
 .deps-svg { width: 100%; height: auto; display: block; }
 .col-title { fill: var(--viz-muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; list-style: none; }
 .pkg { fill: var(--viz-node-bg); stroke-width: 2.5; }
 .pkg.domain { stroke: var(--viz-db); }
 .pkg.usecase { stroke: var(--viz-service); }

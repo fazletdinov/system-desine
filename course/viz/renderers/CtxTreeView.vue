@@ -67,7 +67,7 @@ const view = computed(() =>
 .head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
 .work { font-weight: 600; }
 .status { font-size: 14px; font-weight: 600; }
-.status.run { color: var(--viz-db); }
+.status.run { color: var(--viz-text); }
 .status.stop { color: var(--viz-error); }
 .label { display: block; margin: 2px 0; font-size: 13px; color: var(--viz-muted); overflow-wrap: anywhere; background: none; padding: 0; }
 .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
