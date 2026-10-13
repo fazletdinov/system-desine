@@ -276,3 +276,32 @@ func TestMembersIsCopy(t *testing.T) {
 		t.Fatalf("Members() должен отдавать копию: снаружи нельзя менять агрегат, участники %v", c.Members())
 	}
 }
+
+func TestSnapshotRoundTrip(t *testing.T) {
+	t.Parallel()
+	title, err := domain.NewTitle("Семья")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := domain.NewGroupChat(cid(t, 1), title, uid(t, 1), []domain.UserID{uid(t, 2), uid(t, 3)}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Post(mid(t, 1), uid(t, 2), text(t, "привет"), t0); err != nil {
+		t.Fatal(err)
+	}
+	snap := c.Snapshot()
+	r := domain.RestoreChat(snap)
+	if r.ID() != c.ID() || r.Kind() != c.Kind() || r.Title() != c.Title() || !r.CreatedAt().Equal(c.CreatedAt()) ||
+		!slices.Equal(r.Members(), c.Members()) || r.LastSeq() != 1 || r.Version() != 1 {
+		t.Fatalf("восстановленный чат отличается: %+v", r.Snapshot())
+	}
+	// Восстановленный чат — рабочий агрегат: следующий seq продолжает счёт.
+	if m, err := r.Post(mid(t, 2), uid(t, 3), text(t, "и тебе"), t0); err != nil || m.Seq() != 2 {
+		t.Fatalf("Post после RestoreChat: seq %d, ошибка %v", m.Seq(), err)
+	}
+	snap.Members[0] = uid(t, 9)
+	if !c.IsMember(uid(t, 1)) || c.IsMember(uid(t, 9)) {
+		t.Fatalf("снимок делит срез участников с чатом: %v", c.Members())
+	}
+}

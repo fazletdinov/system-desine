@@ -142,3 +142,36 @@ func (c *Chat) Post(id MessageID, author UserID, text Text, sentAt time.Time) (M
 }
 
 // #endregion post
+
+// #region snapshot
+// ChatSnapshot — плоская копия состояния агрегата для хранилищ.
+// Без тегов json/db: как раскладывать поля по колонкам, решает адаптер.
+type ChatSnapshot struct {
+	ID        ChatID
+	Kind      Kind
+	Title     Title
+	Members   []UserID
+	LastSeq   int64
+	Version   int64
+	CreatedAt time.Time
+}
+
+// Snapshot копирует и срез участников: снимок, который хранилище держит у себя,
+// не должен меняться вместе с агрегатом, из которого он сделан.
+func (c *Chat) Snapshot() ChatSnapshot {
+	return ChatSnapshot{
+		ID: c.id, Kind: c.kind, Title: c.title, Members: slices.Clone(c.members),
+		LastSeq: c.lastSeq, Version: c.version, CreatedAt: c.createdAt,
+	}
+}
+
+// RestoreChat доверяет снимку: он получен из Snapshot и сохранён нашим же хранилищем,
+// поэтому инварианты повторно не проверяются.
+func RestoreChat(s ChatSnapshot) *Chat {
+	return &Chat{
+		id: s.ID, kind: s.Kind, title: s.Title, members: slices.Clone(s.Members),
+		lastSeq: s.LastSeq, version: s.Version, createdAt: s.CreatedAt,
+	}
+}
+
+// #endregion snapshot
