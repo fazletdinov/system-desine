@@ -69,7 +69,7 @@ push:        400 Bad Request, тело — строка "token is required"
 
 <Callout type="simplified">
 
-Мы описали формат JSON. В RFC есть и XML-вариант — `application/problem+xml` — с теми же полями; в JSON-API он встречается редко, и мы его не поддерживаем. Ещё RFC 9457 завёл в IANA реестр «HTTP Problem Types» (раздел 4.2) для общих типов, которые могут переиспользовать разные API; пока в нём зарегистрирован только `about:blank`.
+Мы описали формат JSON. В RFC есть и XML-вариант — `application/problem+xml` — с теми же полями; в JSON-API он встречается редко, и мы его не поддерживаем. Ещё RFC 9457 завёл в IANA реестр «HTTP Problem Types» (раздел 4.2) для общих типов, которые могут переиспользовать разные API. Он пока невелик: кроме `about:blank` — лишь несколько типов из соседних спецификаций, например `date` («Date Not Acceptable») и `ohttp-key` из RFC 9458 (Oblivious HTTP) и три типа ошибок дайджеста содержимого из черновика IETF. Адреса у них вида `https://iana.org/assignments/http-problem-types#date` — пример того самого абсолютного URI-идентификатора.
 
 </Callout>
 
@@ -498,6 +498,7 @@ RFC 9110 определяет 504 как ответ шлюза или прокс
 <Callout type="source">
 
 - RFC 9457 «Problem Details for HTTP APIs», 2023 — §3.1 стандартные поля (`type` и рекомендация абсолютных URI, `about:blank`; `status` совпадает со статусом ответа; `title` не меняется от случая к случаю; `detail` помогает исправить проблему и не разбирается программой; `instance`), §3.2 расширения и правило «игнорировать незнакомое», раздел 3 о нескольких проблемах, §4.2 реестр HTTP Problem Types, §5 безопасность — не раскрывать детали реализации.
+- IANA, [HTTP Problem Types](https://www.iana.org/assignments/http-problem-types/) — реестр общих типов проблем: `about:blank` (RFC 9457), `date` и `ohttp-key` (RFC 9458), типы ошибок дайджеста (draft-ietf-httpapi-digest-fields-problem-types).
 - RFC 7807 «Problem Details for HTTP APIs», 2016 — первая версия стандарта; в разделе 3 пример проблемы валидации с расширением `invalid-params` (`name`, `reason`), откуда взята наша форма.
 - RFC 6839 «Additional Media Type Structured Syntax Suffixes», 2013 — §3.1 суффикс `+json`: представление устроено как `application/json`; общая идея суффиксов — в §2.
 - RFC 9110 «HTTP Semantics», 2022 — §15.6.4 503 Service Unavailable и `Retry-After`, §15.6.5 504 Gateway Timeout — почему наш дедлайн не 504; §15.5.6 405 и обязательный `Allow`; §15.5.14 413 Content Too Large.
