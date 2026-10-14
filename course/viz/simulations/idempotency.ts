@@ -14,7 +14,7 @@ export interface Attempt {
   outcome: Outcome
 }
 
-// Запись ключа на сервере: тело — вместо отпечатка (SHA-256 метода, пути и тела).
+// Запись ключа на сервере: тело — вместо отпечатка (SHA-256 метода, пути, типа тела и тела).
 export interface KeyRecord {
   body: Body
   done: boolean

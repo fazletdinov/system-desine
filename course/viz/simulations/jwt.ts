@@ -77,7 +77,8 @@ export function verify(s: JwtState): { ok: boolean; rule: Rule } {
   const [oh, op, osig] = parts(original(s))
   if (h !== oh || p !== op || s.signature !== osig) return fail('signature')
   const now = IAT + s.clockOffsetSec
-  if (now > s.payload.exp + LEEWAY_SEC) return fail('exp')
+  // Граница строгая, как в golang-jwt/jwt/v5 (сравнение через Before): ровно exp + допуск — уже отказ.
+  if (now >= s.payload.exp + LEEWAY_SEC) return fail('exp')
   if (now + LEEWAY_SEC < s.payload.iat) return fail('iat')
   if (now + LEEWAY_SEC < s.payload.nbf) return fail('nbf')
   if (!s.payload.aud.includes(AUDIENCE)) return fail('aud')

@@ -25,6 +25,10 @@ describe('jwt', () => {
   it('допуск 30 секунд: 15 минут 20 секунд ещё проходят', () => {
     expect(verify(run({ type: 'clock', seconds: 15 * 60 + 20 })).ok).toBe(true)
   })
+  it('граница строгая, как в golang-jwt (Before): ровно exp + 30 с — уже отказ', () => {
+    expect(verify(run({ type: 'clock', seconds: 15 * 60 + 29 })).ok).toBe(true)
+    expect(verify(run({ type: 'clock', seconds: 15 * 60 + 30 }))).toEqual({ ok: false, rule: 'exp' })
+  })
   it('сброс возвращает исходный токен', () => {
     expect(encodeToken(run({ type: 'sub', value: 'eve' }, { type: 'reset' }))).toBe(MAIN_TOKEN)
   })
