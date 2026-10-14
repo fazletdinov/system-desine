@@ -17,6 +17,14 @@ type fixedClock struct{}
 
 func (fixedClock) Now() time.Time { return t0 }
 
+// steppingClock — часы, которые идут только по команде: тест сам решает, какое время
+// получит следующее событие, и порядок по активности не зависит от скорости машины.
+type steppingClock struct{ sec atomic.Int64 }
+
+func (c *steppingClock) Now() time.Time { return t0.Add(time.Duration(c.sec.Load()) * time.Second) }
+
+func (c *steppingClock) Advance() { c.sec.Add(1) }
+
 // seqIDs выдаёт предсказуемые UUID: тесты сравнивают id, а не случайные строки.
 type seqIDs struct{ n atomic.Int64 }
 

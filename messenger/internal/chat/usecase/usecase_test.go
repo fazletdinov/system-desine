@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,18 +24,27 @@ type env struct {
 	create *usecase.CreateChat
 	send   *usecase.SendMessage
 	list   *usecase.ListMessages
+	chats  *usecase.ListChats
+	get    *usecase.GetChat
 }
 
 func newEnv(t *testing.T) env {
 	t.Helper()
+	return newEnvWithClock(t, fixedClock{})
+}
+
+// newEnvWithClock — то же окружение с заданными часами: тестам порядка списка чатов
+// нужно, чтобы время шло.
+func newEnvWithClock(t *testing.T, clk usecase.Clock) env {
+	t.Helper()
 	store := memory.NewStore()
 	ids := &seqIDs{}
 	users := newKnownUsers(mustUser(t, alice), mustUser(t, bob), mustUser(t, eve))
-	create, err := usecase.NewCreateChat(store, store, users, fixedClock{}, ids)
+	create, err := usecase.NewCreateChat(store, store, users, clk, ids)
 	if err != nil {
 		t.Fatal(err)
 	}
-	send, err := usecase.NewSendMessage(store, store, fixedClock{}, ids)
+	send, err := usecase.NewSendMessage(store, store, clk, ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +52,15 @@ func newEnv(t *testing.T) env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return env{create: create, send: send, list: list}
+	chats, err := usecase.NewListChats(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get, err := usecase.NewGetChat(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env{create: create, send: send, list: list, chats: chats, get: get}
 }
 
 func mustUser(t *testing.T, s string) domain.UserID {
@@ -173,12 +191,12 @@ func TestSendAndList(t *testing.T) {
 			t.Fatalf("seq = %d, ждали %d", m.Seq(), i)
 		}
 	}
-	got, err := e.list.Execute(ctx, usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: bob, AfterSeq: 1, Limit: 10})
+	got, err := e.list.Execute(ctx, usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: bob, BeforeSeq: 3, Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].Seq() != 2 || got[1].Seq() != 3 {
-		t.Fatalf("ждали seq 2 и 3, получили %d сообщений", len(got))
+	if len(got.Messages) != 2 || got.Messages[0].Seq() != 2 || got.Messages[1].Seq() != 1 || got.NextBeforeSeq != 0 {
+		t.Fatalf("ждали seq 2 и 1 без следующей страницы, получили %d сообщений, next %d", len(got.Messages), got.NextBeforeSeq)
 	}
 }
 
@@ -202,18 +220,18 @@ func TestListLimits(t *testing.T) {
 	e := newEnv(t)
 	c := directChat(t, e)
 	tests := []struct {
-		name  string
-		after int64
-		limit int
-		field string
+		name   string
+		before int64
+		limit  int
+		field  string
 	}{
-		{name: "отрицательный after", after: -1, field: "after"},
+		{name: "отрицательная позиция", before: -1, field: "cursor"},
 		{name: "limit больше максимума", limit: domain.ListLimitMax + 1, field: "limit"},
 		{name: "отрицательный limit", limit: -1, field: "limit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := e.list.Execute(context.Background(), usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: alice, AfterSeq: tt.after, Limit: tt.limit})
+			_, err := e.list.Execute(context.Background(), usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: alice, BeforeSeq: tt.before, Limit: tt.limit})
 			var ve *domain.ValidationError
 			if !errors.As(err, &ve) || ve.Field != tt.field {
 				t.Fatalf("ждали ValidationError по %s, получили %v", tt.field, err)
@@ -258,20 +276,22 @@ func TestSendMessageConcurrent(t *testing.T) {
 	if ok == 0 || ok+retry != workers*perWorker {
 		t.Fatalf("успешно %d, конфликтов %d, всего ждали %d", ok, retry, workers*perWorker)
 	}
+	// История идёт от новых к старым; собираем её целиком и разворачиваем.
 	var seqs []int64
-	for after := int64(0); ; {
-		page, err := e.list.Execute(context.Background(), usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: alice, AfterSeq: after, Limit: domain.ListLimitMax})
+	for before := int64(0); ; {
+		page, err := e.list.Execute(context.Background(), usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: alice, BeforeSeq: before, Limit: domain.ListLimitMax})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(page) == 0 {
-			break
-		}
-		for _, m := range page {
+		for _, m := range page.Messages {
 			seqs = append(seqs, m.Seq())
 		}
-		after = page[len(page)-1].Seq()
+		if page.NextBeforeSeq == 0 {
+			break
+		}
+		before = page.NextBeforeSeq
 	}
+	slices.Reverse(seqs)
 	if len(seqs) != ok {
 		t.Fatalf("в истории %d сообщений, успешных отправок %d", len(seqs), ok)
 	}
@@ -364,6 +384,14 @@ func TestChatConstructorsRejectNil(t *testing.T) {
 		}},
 		{name: "list: нет MessageLister", new: func() error {
 			_, err := usecase.NewListMessages(store, nil)
+			return err
+		}},
+		{name: "list chats: нет ChatLister", new: func() error {
+			_, err := usecase.NewListChats(nil)
+			return err
+		}},
+		{name: "get chat: нет ChatFinder", new: func() error {
+			_, err := usecase.NewGetChat(nil)
 			return err
 		}},
 	}

@@ -49,10 +49,24 @@ type MessageAppender interface {
 }
 
 type MessageLister interface {
-	// ListMessages возвращает до limit сообщений с seq > afterSeq по возрастанию seq.
-	// Границы лимита проверяет use case (domain.ListLimitMax); на limit < 1 хранилище
-	// отвечает пустой страницей, а не ошибкой.
-	ListMessages(ctx context.Context, chatID domain.ChatID, afterSeq int64, limit int) ([]domain.Message, error)
+	// ListMessagesBefore возвращает до limit сообщений с seq < beforeSeq по убыванию seq;
+	// beforeSeq == 0 — начиная с самого нового. Границы лимита проверяет use case
+	// (domain.ListLimitMax); на limit < 1 хранилище отвечает пустой страницей, а не ошибкой.
+	ListMessagesBefore(ctx context.Context, chatID domain.ChatID, beforeSeq int64, limit int) ([]domain.Message, error)
+}
+
+// ChatPosition — место чата в списке «по последней активности», ключ keyset-пагинации.
+// Время одно на многих — поэтому в ключе ещё и id: порядок должен быть строгим, иначе
+// чаты с одинаковым временем на границе страницы потеряются или повторятся.
+type ChatPosition struct {
+	LastActivityAt time.Time
+	ID             domain.ChatID
+}
+
+type ChatLister interface {
+	// ListChatsByMember — чаты, где member участник, по убыванию (LastActivityAt, ID),
+	// строго после after (nil — с начала), не больше limit. На limit < 1 — пустая страница.
+	ListChatsByMember(ctx context.Context, member domain.UserID, after *ChatPosition, limit int) ([]*domain.Chat, error)
 }
 
 // #endregion ports

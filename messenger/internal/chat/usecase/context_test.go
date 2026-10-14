@@ -26,8 +26,8 @@ func TestSendMessageCanceledContextWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("отменённая отправка записала %d сообщений", len(got))
+	if len(got.Messages) != 0 {
+		t.Fatalf("отменённая отправка записала %d сообщений", len(got.Messages))
 	}
 }
 

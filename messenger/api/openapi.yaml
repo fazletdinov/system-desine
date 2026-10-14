@@ -94,6 +94,46 @@ paths:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    get:
+      tags: [chats]
+      operationId: listChats
+      summary: Мои чаты
+      description: |
+        Чаты, где вызывающий — участник, от самых активных: по убыванию времени
+        последнего сообщения (у чата без сообщений — времени создания).
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница списка чатов
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /v1/chats/{id}:
+    get:
+      tags: [chats]
+      operationId: getChat
+      summary: Чат
+      description: Только для участника; постороннему — 403.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Чат
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Chat' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   # region messages-paths
   /v1/chats/{id}/messages:
     parameters:
@@ -126,18 +166,16 @@ paths:
       tags: [chats]
       operationId: listMessages
       summary: История сообщений
+      description: От новых к старым. Первая страница — без cursor, следующая — с next_cursor предыдущей.
       parameters:
-        - name: after
-          in: query
-          description: Вернуть сообщения с seq больше этого.
-          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+        - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: Страница истории
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/MessageList' }
+              schema: { $ref: '#/components/schemas/MessagePage' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -163,6 +201,15 @@ components:
       in: query
       description: Размер страницы, от 1 до 100.
       schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+    # region pagination
+    Cursor:
+      name: cursor
+      in: query
+      description: |
+        Непрозрачная строка из next_cursor предыдущей страницы; не разбирайте её и не
+        собирайте сами — формат может измениться. Без cursor — первая страница.
+      schema: { type: string, maxLength: 512 }
+    # endregion pagination
   headers:
     Location:
       description: Адрес созданного (или найденного) ресурса.
@@ -252,7 +299,7 @@ components:
     Chat:
       type: object
       additionalProperties: false
-      required: [id, kind, member_ids, created_at]
+      required: [id, kind, member_ids, created_at, last_activity_at]
       properties:
         id: { type: string, format: uuid, x-go-type: string }
         kind: { type: string, enum: [direct, group] }
@@ -261,6 +308,10 @@ components:
           type: array
           items: { type: string, format: uuid, x-go-type: string }
         created_at: { type: string, format: date-time }
+        last_activity_at:
+          type: string
+          format: date-time
+          description: Время последнего сообщения; у чата без сообщений — время создания.
     Message:
       type: object
       additionalProperties: false
@@ -272,14 +323,34 @@ components:
         text: { type: string }
         seq: { type: integer, format: int64, minimum: 1 }
         sent_at: { type: string, format: date-time }
-    MessageList:
+    # region pagination-schemas
+    MessagePage:
       type: object
       additionalProperties: false
-      required: [messages]
+      description: Страница истории от новых к старым.
+      required: [items, next_cursor]
       properties:
-        messages:
+        items:
           type: array
           items: { $ref: '#/components/schemas/Message' }
+        next_cursor:
+          type: string
+          nullable: true
+          description: Курсор следующей (более старой) страницы; null — дальше ничего нет.
+    ChatPage:
+      type: object
+      additionalProperties: false
+      description: Страница списка чатов, самые активные первыми.
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Chat' }
+        next_cursor:
+          type: string
+          nullable: true
+          description: Курсор следующей страницы; null — дальше ничего нет.
+    # endregion pagination-schemas
     # region problem-schema
     Problem:
       type: object

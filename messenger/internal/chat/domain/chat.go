@@ -42,6 +42,9 @@ type Chat struct {
 	lastSeq   int64
 	version   int64 // растёт при каждом изменении — для оптимистической блокировки
 	createdAt time.Time
+	// lastActivityAt — время последнего сообщения, до первого — время создания;
+	// ключ сортировки списка чатов.
+	lastActivityAt time.Time
 }
 
 // #endregion chat
@@ -60,7 +63,7 @@ func NewDirectChat(id ChatID, a, b UserID, createdAt time.Time) (*Chat, error) {
 	if a == b {
 		return nil, invalid("member_ids", "в личном чате два разных участника")
 	}
-	return &Chat{id: id, kind: KindDirect, members: normalizeMembers([]UserID{a, b}), createdAt: createdAt.UTC()}, nil
+	return &Chat{id: id, kind: KindDirect, members: normalizeMembers([]UserID{a, b}), createdAt: createdAt.UTC(), lastActivityAt: createdAt.UTC()}, nil
 }
 
 // NewGroupChat сам добавляет создателя в участники: группа, в которой нет её создателя,
@@ -79,7 +82,10 @@ func NewGroupChat(id ChatID, title Title, creator UserID, others []UserID, creat
 	if len(members) < GroupMinMembers || len(members) > GroupMaxMembers {
 		return nil, invalid("member_ids", fmt.Sprintf("в группе от %d до %d участников", GroupMinMembers, GroupMaxMembers))
 	}
-	return &Chat{id: id, kind: KindGroup, title: title, members: members, createdAt: createdAt.UTC()}, nil
+	return &Chat{
+		id: id, kind: KindGroup, title: title, members: members,
+		createdAt: createdAt.UTC(), lastActivityAt: createdAt.UTC(),
+	}, nil
 }
 
 func normalizeMembers(ids []UserID) []UserID {
@@ -104,6 +110,9 @@ func (c *Chat) Title() Title         { return c.title }
 func (c *Chat) LastSeq() int64       { return c.lastSeq }
 func (c *Chat) Version() int64       { return c.version }
 func (c *Chat) CreatedAt() time.Time { return c.createdAt }
+
+// LastActivityAt — время последнего сообщения, а у чата без сообщений — время создания.
+func (c *Chat) LastActivityAt() time.Time { return c.lastActivityAt }
 
 // Members отдаёт копию: срез, отданный наружу как есть, позволил бы менять агрегат в обход его правил.
 func (c *Chat) Members() []UserID { return slices.Clone(c.members) }
@@ -136,9 +145,15 @@ func (c *Chat) Post(id MessageID, author UserID, text Text, sentAt time.Time) (M
 	if !c.IsMember(author) {
 		return Message{}, ErrNotMember
 	}
+	sentAt = sentAt.UTC()
 	c.lastSeq++
 	c.version++
-	return Message{id: id, chatID: c.id, authorID: author, text: text, seq: c.lastSeq, sentAt: sentAt.UTC()}, nil
+	// Активность не идёт назад: часы разных экземпляров сервиса расходятся, и сообщение
+	// с чуть меньшим временем не должно опускать чат в списке.
+	if sentAt.After(c.lastActivityAt) {
+		c.lastActivityAt = sentAt
+	}
+	return Message{id: id, chatID: c.id, authorID: author, text: text, seq: c.lastSeq, sentAt: sentAt}, nil
 }
 
 // #endregion post
@@ -154,6 +169,9 @@ type ChatSnapshot struct {
 	LastSeq   int64
 	Version   int64
 	CreatedAt time.Time
+	// LastActivityAt хранится, а не вычисляется по сообщениям: по нему сортируется
+	// список чатов, и хранилищу нужен готовый ключ для индекса.
+	LastActivityAt time.Time
 }
 
 // Snapshot копирует и срез участников: снимок, который хранилище держит у себя,
@@ -161,7 +179,7 @@ type ChatSnapshot struct {
 func (c *Chat) Snapshot() ChatSnapshot {
 	return ChatSnapshot{
 		ID: c.id, Kind: c.kind, Title: c.title, Members: slices.Clone(c.members),
-		LastSeq: c.lastSeq, Version: c.version, CreatedAt: c.createdAt,
+		LastSeq: c.lastSeq, Version: c.version, CreatedAt: c.createdAt, LastActivityAt: c.lastActivityAt,
 	}
 }
 
@@ -170,7 +188,7 @@ func (c *Chat) Snapshot() ChatSnapshot {
 func RestoreChat(s ChatSnapshot) *Chat {
 	return &Chat{
 		id: s.ID, kind: s.Kind, title: s.Title, members: slices.Clone(s.Members),
-		lastSeq: s.LastSeq, version: s.Version, createdAt: s.CreatedAt,
+		lastSeq: s.LastSeq, version: s.Version, createdAt: s.CreatedAt, lastActivityAt: s.LastActivityAt,
 	}
 }
 

@@ -88,12 +88,26 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("сборка: %w", err)
 	}
+	listChats, err := chatusecase.NewListChats(chats)
+	if err != nil {
+		return fmt.Errorf("сборка: %w", err)
+	}
+	getChat, err := chatusecase.NewGetChat(chats)
+	if err != nil {
+		return fmt.Errorf("сборка: %w", err)
+	}
 
 	userAPI, err := userhttp.New(registerUser, getUser, log)
 	if err != nil {
 		return fmt.Errorf("сборка: %w", err)
 	}
-	chatAPI, err := chathttp.New(createChat, sendMessage, listMessages, log)
+	chatAPI, err := chathttp.New(chathttp.UseCases{
+		CreateChat:   createChat,
+		SendMessage:  sendMessage,
+		ListMessages: listMessages,
+		ListChats:    listChats,
+		GetChat:      getChat,
+	}, log)
 	if err != nil {
 		return fmt.Errorf("сборка: %w", err)
 	}

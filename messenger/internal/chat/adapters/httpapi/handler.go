@@ -24,7 +24,26 @@ type messageSender interface {
 }
 
 type messageLister interface {
-	Execute(ctx context.Context, q usecase.ListMessagesQuery) ([]domain.Message, error)
+	Execute(ctx context.Context, q usecase.ListMessagesQuery) (usecase.MessagePage, error)
+}
+
+type chatLister interface {
+	Execute(ctx context.Context, q usecase.ListChatsQuery) (usecase.ChatPage, error)
+}
+
+type chatGetter interface {
+	Execute(ctx context.Context, q usecase.GetChatQuery) (*domain.Chat, error)
+}
+
+// UseCases — сценарии, которые обслуживает адаптер. Отдельная структура вместо пяти
+// аргументов New: при следующем сценарии меняется одно поле, а не сигнатура, и в
+// вызове видно, что куда передано.
+type UseCases struct {
+	CreateChat   chatCreator
+	SendMessage  messageSender
+	ListMessages messageLister
+	ListChats    chatLister
+	GetChat      chatGetter
 }
 
 // Handler — ведущий адаптер контекста chat: разобрать запрос → вызвать use case →
@@ -33,14 +52,16 @@ type Handler struct {
 	create chatCreator
 	send   messageSender
 	list   messageLister
+	chats  chatLister
+	get    chatGetter
 	log    *slog.Logger
 }
 
-func New(create chatCreator, send messageSender, list messageLister, log *slog.Logger) (*Handler, error) {
-	if create == nil || send == nil || list == nil || log == nil {
+func New(uc UseCases, log *slog.Logger) (*Handler, error) {
+	if uc.CreateChat == nil || uc.SendMessage == nil || uc.ListMessages == nil || uc.ListChats == nil || uc.GetChat == nil || log == nil {
 		return nil, errors.New("chat httpapi: nil-зависимость")
 	}
-	return &Handler{create: create, send: send, list: list, log: log}, nil
+	return &Handler{create: uc.CreateChat, send: uc.SendMessage, list: uc.ListMessages, chats: uc.ListChats, get: uc.GetChat, log: log}, nil
 }
 
 // chatsPath — адрес коллекции чатов; адрес чата — chatsPath + "/" + id.
@@ -121,27 +142,84 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request, id gen.ID)
 
 // #endregion send-handler
 
-// ListMessages: необязательные параметры — указатели; nil — «не передан», и тогда
-// 0: значение по умолчанию и проверку диапазона выбирает use case, а не адаптер.
+// GetChat — элемент коллекции, адрес которого CreateChat отдаёт в Location.
+func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request, id gen.ID) {
+	reader, ok := h.caller(w, r)
+	if !ok {
+		return
+	}
+	chat, err := h.get.Execute(r.Context(), usecase.GetChatQuery{ChatID: id.String(), ReaderID: reader.String()})
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	h.respond(w, r, http.StatusOK, toChat(chat))
+}
+
+// #region list-handlers
+// ListMessages: необязательные параметры — указатели; nil — «не передан». Лимит 0 —
+// значение по умолчанию: его и диапазон выбирает use case, а не адаптер. Курсор —
+// забота адаптера: use case видит только ключ seq.
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request, id gen.ID, params gen.ListMessagesParams) {
 	reader, ok := h.caller(w, r)
 	if !ok {
 		return
 	}
-	q := usecase.ListMessagesQuery{ChatID: id.String(), ReaderID: reader.String()}
-	if params.After != nil {
-		q.AfterSeq = *params.After
-	}
-	if params.Limit != nil {
-		q.Limit = *params.Limit
-	}
-	msgs, err := h.list.Execute(r.Context(), q)
+	chatID, err := domain.ParseChatID(id.String())
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	h.respond(w, r, http.StatusOK, toMessageList(msgs))
+	before, err := decodeMessagesCursor(params.Cursor, chatID)
+	if err != nil {
+		h.badCursor(w, r, err)
+		return
+	}
+	q := usecase.ListMessagesQuery{ChatID: id.String(), ReaderID: reader.String(), BeforeSeq: before}
+	if params.Limit != nil {
+		q.Limit = *params.Limit
+	}
+	page, err := h.list.Execute(r.Context(), q)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	next, err := encodeMessagesCursor(chatID, page.NextBeforeSeq)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	h.respond(w, r, http.StatusOK, toMessagePage(page.Messages, next))
 }
+
+func (h *Handler) ListChats(w http.ResponseWriter, r *http.Request, params gen.ListChatsParams) {
+	member, ok := h.caller(w, r)
+	if !ok {
+		return
+	}
+	after, err := decodeChatsCursor(params.Cursor)
+	if err != nil {
+		h.badCursor(w, r, err)
+		return
+	}
+	q := usecase.ListChatsQuery{MemberID: member.String(), After: after}
+	if params.Limit != nil {
+		q.Limit = *params.Limit
+	}
+	page, err := h.chats.Execute(r.Context(), q)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	next, err := encodeChatsCursor(page.Next)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	h.respond(w, r, http.StatusOK, toChatPage(page.Chats, next))
+}
+
+// #endregion list-handlers
 
 // respond пишет успешный ответ. Ошибка записи — только в лог: заголовки уже ушли.
 func (h *Handler) respond(w http.ResponseWriter, r *http.Request, status int, v any) {

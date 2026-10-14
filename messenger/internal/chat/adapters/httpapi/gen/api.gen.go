@@ -104,7 +104,10 @@ type Chat struct {
 	CreatedAt time.Time `json:"created_at"`
 	Id        string    `json:"id"`
 	Kind      ChatKind  `json:"kind"`
-	MemberIds []string  `json:"member_ids"`
+
+	// LastActivityAt Время последнего сообщения; у чата без сообщений — время создания.
+	LastActivityAt time.Time `json:"last_activity_at"`
+	MemberIds      []string  `json:"member_ids"`
 
 	// Title Только у группы.
 	Title *string `json:"title,omitempty"`
@@ -112,6 +115,14 @@ type Chat struct {
 
 // ChatKind defines model for Chat.Kind.
 type ChatKind string
+
+// ChatPage Страница списка чатов, самые активные первыми.
+type ChatPage struct {
+	Items []Chat `json:"items"`
+
+	// NextCursor Курсор следующей страницы; null — дальше ничего нет.
+	NextCursor *string `json:"next_cursor"`
+}
 
 // CreateChatRequest defines model for CreateChatRequest.
 type CreateChatRequest struct {
@@ -143,9 +154,12 @@ type Message struct {
 	Text     string    `json:"text"`
 }
 
-// MessageList defines model for MessageList.
-type MessageList struct {
-	Messages []Message `json:"messages"`
+// MessagePage Страница истории от новых к старым.
+type MessagePage struct {
+	Items []Message `json:"items"`
+
+	// NextCursor Курсор следующей (более старой) страницы; null — дальше ничего нет.
+	NextCursor *string `json:"next_cursor"`
 }
 
 // Problem Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
@@ -167,6 +181,9 @@ type ProblemCode string
 type SendMessageRequest struct {
 	Text string `json:"text"`
 }
+
+// Cursor defines model for Cursor.
+type Cursor = string
 
 // ID defines model for ID.
 type ID = openapi_types.UUID
@@ -201,10 +218,21 @@ type Unauthorized = Problem
 // UnsupportedMediaType Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type UnsupportedMediaType = Problem
 
+// ListChatsParams defines parameters for ListChats.
+type ListChatsParams struct {
+	// Cursor Непрозрачная строка из next_cursor предыдущей страницы; не разбирайте её и не
+	// собирайте сами — формат может измениться. Без cursor — первая страница.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit Размер страницы, от 1 до 100.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListMessagesParams defines parameters for ListMessages.
 type ListMessagesParams struct {
-	// After Вернуть сообщения с seq больше этого.
-	After *int64 `form:"after,omitempty" json:"after,omitempty"`
+	// Cursor Непрозрачная строка из next_cursor предыдущей страницы; не разбирайте её и не
+	// собирайте сами — формат может измениться. Без cursor — первая страница.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 
 	// Limit Размер страницы, от 1 до 100.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -218,9 +246,15 @@ type SendMessageJSONRequestBody = SendMessageRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListChats Мои чаты
+	// (GET /v1/chats)
+	ListChats(w http.ResponseWriter, r *http.Request, params ListChatsParams)
 	// CreateChat Создать чат
 	// (POST /v1/chats)
 	CreateChat(w http.ResponseWriter, r *http.Request)
+	// GetChat Чат
+	// (GET /v1/chats/{id})
+	GetChat(w http.ResponseWriter, r *http.Request, id ID)
 	// ListMessages История сообщений
 	// (GET /v1/chats/{id}/messages)
 	ListMessages(w http.ResponseWriter, r *http.Request, id ID, params ListMessagesParams)
@@ -238,11 +272,83 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// ListChats operation middleware
+func (siw *ServerInterfaceWrapper) ListChats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListChatsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListChats(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateChat operation middleware
 func (siw *ServerInterfaceWrapper) CreateChat(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateChat(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetChat operation middleware
+func (siw *ServerInterfaceWrapper) GetChat(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetChat(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -270,15 +376,15 @@ func (siw *ServerInterfaceWrapper) ListMessages(w http.ResponseWriter, r *http.R
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListMessagesParams
 
-	// ------------- Optional query parameter "after" -------------
+	// ------------- Optional query parameter "cursor" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
 		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
 		}
 		return
 	}
@@ -453,7 +559,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/chats", wrapper.ListChats)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/chats", wrapper.CreateChat)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/chats/{id}", wrapper.GetChat)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/chats/{id}/messages", wrapper.ListMessages)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/chats/{id}/messages", wrapper.SendMessage)
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ type Store interface {
 	usecase.DirectChatFinder
 	usecase.MessageAppender
 	usecase.MessageLister
+	usecase.ChatLister
 }
 
 var t0 = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
@@ -40,8 +42,11 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		{"второй личный чат для пары", testDirectUnique},
 		{"оптимистическая блокировка", testVersionConflict},
 		{"запись в неизвестный чат", testAppendUnknownChat},
-		{"история по seq", testListPaging},
+		{"история до seq", testListMessagesBefore},
 		{"страница истории — копия", testListReturnsCopy},
+		{"чаты участника по активности", testListChatsByMember},
+		{"чаты с одним временем — порядок по id", testListChatsTieBreak},
+		{"limit < 1 у списка чатов", testListChatsLimit},
 		{"одновременная запись", testConcurrentAppend},
 		{"отменённый контекст", testCanceledContext},
 		{"найденный чат — копия", testFindReturnsCopy},
@@ -124,10 +129,10 @@ func appendN(t *testing.T, s Store, chatID domain.ChatID, n int) {
 	}
 }
 
-// seqs читает историю целиком и возвращает номера сообщений по порядку.
+// seqs читает историю целиком и возвращает номера сообщений по возрастанию.
 func seqs(t *testing.T, s Store, chatID domain.ChatID) []int64 {
 	t.Helper()
-	msgs, err := s.ListMessages(context.Background(), chatID, 0, domain.ListLimitMax)
+	msgs, err := s.ListMessagesBefore(context.Background(), chatID, 0, domain.ListLimitMax)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +140,7 @@ func seqs(t *testing.T, s Store, chatID domain.ChatID) []int64 {
 	for _, m := range msgs {
 		got = append(got, m.Seq())
 	}
+	slices.Reverse(got) // хранилище отдаёт от новых к старым
 	return got
 }
 
@@ -190,7 +196,7 @@ func testVersionConflict(t *testing.T, s Store) {
 		t.Fatalf("ждали ErrConcurrentUpdate, получили %v", err)
 	}
 	// В истории — сообщение победителя: опоздавший не должен его ни дополнить, ни заменить.
-	msgs, err := s.ListMessages(ctx, c.ID(), 0, domain.ListLimitMax)
+	msgs, err := s.ListMessagesBefore(ctx, c.ID(), 0, domain.ListLimitMax)
 	if err != nil || len(msgs) != 1 || msgs[0].ID() != winner.ID() || msgs[0].Text() != winner.Text() {
 		t.Fatalf("после конфликта в истории должно остаться только сообщение победителя: %d сообщений, %v", len(msgs), err)
 	}
@@ -208,25 +214,25 @@ func testAppendUnknownChat(t *testing.T, s Store) {
 	}
 }
 
-func testListPaging(t *testing.T, s Store) {
+func testListMessagesBefore(t *testing.T, s Store) {
 	c := newDirect(t, 1, 1, 2)
 	create(t, s, c)
 	appendN(t, s, c.ID(), 5)
 	tests := []struct {
-		after    int64
+		before   int64
 		limit    int
 		wantSeqs []int64
 	}{
-		{0, 2, []int64{1, 2}},
-		{2, 2, []int64{3, 4}},
-		{4, 10, []int64{5}},
-		{5, 10, nil},
-		{100, 10, nil},
-		{0, 0, nil},  // порт обещает пустую страницу на limit < 1
-		{0, -1, nil}, // и не падает на отрицательном
+		{0, 2, []int64{5, 4}}, // 0 — с самого нового
+		{4, 2, []int64{3, 2}},
+		{2, 10, []int64{1}},
+		{1, 10, nil},
+		{100, 2, []int64{5, 4}}, // ключ больше любого — тоже с самого нового
+		{0, 0, nil},             // порт обещает пустую страницу на limit < 1
+		{0, -1, nil},            // и не падает на отрицательном
 	}
 	for _, tt := range tests {
-		msgs, err := s.ListMessages(context.Background(), c.ID(), tt.after, tt.limit)
+		msgs, err := s.ListMessagesBefore(context.Background(), c.ID(), tt.before, tt.limit)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +241,7 @@ func testListPaging(t *testing.T, s Store) {
 			got = append(got, m.Seq())
 		}
 		if fmt.Sprint(got) != fmt.Sprint(tt.wantSeqs) {
-			t.Fatalf("after=%d limit=%d: seq %v, ждали %v", tt.after, tt.limit, got, tt.wantSeqs)
+			t.Fatalf("before=%d limit=%d: seq %v, ждали %v", tt.before, tt.limit, got, tt.wantSeqs)
 		}
 	}
 }
@@ -245,11 +251,11 @@ func testListReturnsCopy(t *testing.T, s Store) {
 	c := newDirect(t, 1, 1, 2)
 	create(t, s, c)
 	appendN(t, s, c.ID(), 2)
-	page, err := s.ListMessages(ctx, c.ID(), 0, 1)
+	page, err := s.ListMessagesBefore(ctx, c.ID(), 0, 1)
 	if err != nil || len(page) != 1 {
 		t.Fatalf("первая страница: %d сообщений, %v", len(page), err)
 	}
-	rest, err := s.ListMessages(ctx, c.ID(), 1, 1)
+	rest, err := s.ListMessagesBefore(ctx, c.ID(), 2, 1)
 	if err != nil || len(rest) != 1 {
 		t.Fatalf("вторая страница: %d сообщений, %v", len(rest), err)
 	}
@@ -257,6 +263,91 @@ func testListReturnsCopy(t *testing.T, s Store) {
 	page[0] = rest[0]
 	if got := seqs(t, s, c.ID()); fmt.Sprint(got) != "[1 2]" {
 		t.Fatalf("история изменилась через возвращённую страницу: seq %v", got)
+	}
+}
+
+// postAt сохраняет сообщение от первого участника со временем at — так тест двигает
+// активность чата.
+func postAt(t *testing.T, s Store, chatID domain.ChatID, n int, at time.Time) {
+	t.Helper()
+	err := tryAppend(context.Background(), s, chatID, func(cur *domain.Chat) (domain.Message, error) {
+		text, err := domain.NewText(fmt.Sprintf("сообщение %d", n))
+		if err != nil {
+			return domain.Message{}, err
+		}
+		return cur.Post(id(t, domain.ParseMessageID, "a000", n), cur.Members()[0], text, at)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// listChats — id чатов страницы по порядку.
+func listChats(t *testing.T, s Store, member domain.UserID, after *usecase.ChatPosition, limit int) []domain.ChatID {
+	t.Helper()
+	chats, err := s.ListChatsByMember(context.Background(), member, after, limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]domain.ChatID, 0, len(chats))
+	for _, c := range chats {
+		ids = append(ids, c.ID())
+	}
+	return ids
+}
+
+func testListChatsByMember(t *testing.T, s Store) {
+	a, b, c := newDirect(t, 1, 1, 2), newDirect(t, 2, 1, 3), newDirect(t, 3, 1, 4)
+	foreign := newDirect(t, 4, 2, 3) // без пользователя 1
+	for _, ch := range []*domain.Chat{a, b, c, foreign} {
+		create(t, s, ch)
+	}
+	// Активность: b — самый свежий, затем a, затем c (без сообщений, время создания).
+	postAt(t, s, a.ID(), 1, t0.Add(time.Minute))
+	postAt(t, s, b.ID(), 2, t0.Add(2*time.Minute))
+	postAt(t, s, foreign.ID(), 3, t0.Add(time.Hour))
+
+	all := listChats(t, s, user(t, 1), nil, 10)
+	if want := []domain.ChatID{b.ID(), a.ID(), c.ID()}; fmt.Sprint(all) != fmt.Sprint(want) {
+		t.Fatalf("чаты %v, ждали %v", all, want)
+	}
+	// after строгий: чат на самой позиции не повторяется.
+	after := &usecase.ChatPosition{LastActivityAt: t0.Add(time.Minute), ID: a.ID()}
+	if got, want := listChats(t, s, user(t, 1), after, 10), []domain.ChatID{c.ID()}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("после a: %v, ждали %v", got, want)
+	}
+	if got := listChats(t, s, user(t, 1), nil, 1); len(got) != 1 || got[0] != b.ID() {
+		t.Fatalf("limit 1: %v, ждали только %s", got, b.ID())
+	}
+	got, err := s.ListChatsByMember(context.Background(), user(t, 1), nil, 1)
+	if err != nil || !got[0].LastActivityAt().Equal(t0.Add(2*time.Minute)) {
+		t.Fatalf("хранилище потеряло активность: %v, %v", got[0].LastActivityAt(), err)
+	}
+}
+
+// Три чата без сообщений, созданные в один момент: порядок держится на id, и страница
+// с курсором на границе не теряет и не повторяет чат.
+func testListChatsTieBreak(t *testing.T, s Store) {
+	chats := []*domain.Chat{newDirect(t, 1, 1, 2), newDirect(t, 2, 1, 3), newDirect(t, 3, 1, 4)}
+	for _, c := range chats {
+		create(t, s, c)
+	}
+	first := listChats(t, s, user(t, 1), nil, 2)
+	if want := []domain.ChatID{chats[2].ID(), chats[1].ID()}; fmt.Sprint(first) != fmt.Sprint(want) {
+		t.Fatalf("первая страница %v, ждали %v (по убыванию id)", first, want)
+	}
+	after := &usecase.ChatPosition{LastActivityAt: t0, ID: first[1]}
+	if got, want := listChats(t, s, user(t, 1), after, 2), []domain.ChatID{chats[0].ID()}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("вторая страница %v, ждали %v", got, want)
+	}
+}
+
+func testListChatsLimit(t *testing.T, s Store) {
+	create(t, s, newDirect(t, 1, 1, 2))
+	for _, limit := range []int{0, -1} {
+		if got := listChats(t, s, user(t, 1), nil, limit); len(got) != 0 {
+			t.Fatalf("limit %d: %v, ждали пустую страницу", limit, got)
+		}
 	}
 }
 
@@ -309,7 +400,7 @@ func raceAppend(t *testing.T, s Store, c *domain.Chat, round int) {
 				t.Error(err)
 			}
 			// Чтение истории наперегонки с чужими записями — работа для детектора гонок.
-			if _, err := s.ListMessages(ctx, c.ID(), 0, domain.ListLimitMax); err != nil {
+			if _, err := s.ListMessagesBefore(ctx, c.ID(), 0, domain.ListLimitMax); err != nil {
 				t.Error(err)
 			}
 		})
@@ -363,7 +454,8 @@ func testCanceledContext(t *testing.T, s Store) {
 		{"FindDirectChat", func(ctx context.Context) error { _, err := s.FindDirectChat(ctx, a, b); return err }},
 		{"AppendMessage", func(ctx context.Context) error { return s.AppendMessage(ctx, c, msg, 0) }},
 		// limit 0: проверка контекста должна идти раньше проверки лимита.
-		{"ListMessages", func(ctx context.Context) error { _, err := s.ListMessages(ctx, c.ID(), 0, 0); return err }},
+		{"ListMessagesBefore", func(ctx context.Context) error { _, err := s.ListMessagesBefore(ctx, c.ID(), 0, 0); return err }},
+		{"ListChatsByMember", func(ctx context.Context) error { _, err := s.ListChatsByMember(ctx, a, nil, 0); return err }},
 	}
 	for _, done := range doneContexts(t) {
 		for _, tt := range calls {

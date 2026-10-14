@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -52,10 +53,26 @@ func (f fakeSend) Execute(ctx context.Context, cmd usecase.SendMessageCommand) (
 }
 
 type fakeList struct {
-	fn func(context.Context, usecase.ListMessagesQuery) ([]domain.Message, error)
+	fn func(context.Context, usecase.ListMessagesQuery) (usecase.MessagePage, error)
 }
 
-func (f fakeList) Execute(ctx context.Context, q usecase.ListMessagesQuery) ([]domain.Message, error) {
+func (f fakeList) Execute(ctx context.Context, q usecase.ListMessagesQuery) (usecase.MessagePage, error) {
+	return f.fn(ctx, q)
+}
+
+type fakeListChats struct {
+	fn func(context.Context, usecase.ListChatsQuery) (usecase.ChatPage, error)
+}
+
+func (f fakeListChats) Execute(ctx context.Context, q usecase.ListChatsQuery) (usecase.ChatPage, error) {
+	return f.fn(ctx, q)
+}
+
+type fakeGet struct {
+	fn func(context.Context, usecase.GetChatQuery) (*domain.Chat, error)
+}
+
+func (f fakeGet) Execute(ctx context.Context, q usecase.GetChatQuery) (*domain.Chat, error) {
 	return f.fn(ctx, q)
 }
 
@@ -63,6 +80,8 @@ type fakes struct {
 	create fakeCreate
 	send   fakeSend
 	list   fakeList
+	chats  fakeListChats
+	get    fakeGet
 }
 
 // #region contract-server
@@ -93,19 +112,35 @@ func rawServer(t *testing.T, f fakes) (*http.ServeMux, *bytes.Buffer) {
 		}
 	}
 	if f.list.fn == nil {
-		f.list.fn = func(context.Context, usecase.ListMessagesQuery) ([]domain.Message, error) {
+		f.list.fn = func(context.Context, usecase.ListMessagesQuery) (usecase.MessagePage, error) {
 			t.Fatal("ListMessages не должен вызываться")
+			return usecase.MessagePage{}, nil
+		}
+	}
+	if f.chats.fn == nil {
+		f.chats.fn = func(context.Context, usecase.ListChatsQuery) (usecase.ChatPage, error) {
+			t.Fatal("ListChats не должен вызываться")
+			return usecase.ChatPage{}, nil
+		}
+	}
+	if f.get.fn == nil {
+		f.get.fn = func(context.Context, usecase.GetChatQuery) (*domain.Chat, error) {
+			t.Fatal("GetChat не должен вызываться")
 			return nil, nil
 		}
 	}
 	var logs bytes.Buffer
-	h, err := httpapi.New(f.create, f.send, f.list, slog.New(slog.NewJSONHandler(&logs, nil)))
+	h, err := httpapi.New(useCases(f), slog.New(slog.NewJSONHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
 	h.Register(mux)
 	return mux, &logs
+}
+
+func useCases(f fakes) httpapi.UseCases {
+	return httpapi.UseCases{CreateChat: f.create, SendMessage: f.send, ListMessages: f.list, ListChats: f.chats, GetChat: f.get}
 }
 
 func must[T any](t *testing.T) func(T, error) T {
@@ -228,19 +263,19 @@ func TestCreateChatStatus(t *testing.T) {
 			name: "личный создан", chat: directChat, created: true,
 			body:       `{"kind":"direct","member_ids":["` + bobID + `"]}`,
 			wantStatus: http.StatusCreated,
-			wantBody:   `{"id":"` + chatID + `","kind":"direct","member_ids":["` + aliceID + `","` + bobID + `"],"created_at":"2026-10-13T12:00:00Z"}`,
+			wantBody:   `{"id":"` + chatID + `","kind":"direct","member_ids":["` + aliceID + `","` + bobID + `"],"created_at":"2026-10-13T12:00:00Z","last_activity_at":"2026-10-13T12:00:00Z"}`,
 		},
 		{
 			name: "личный уже был", chat: directChat, created: false,
 			body:       `{"kind":"direct","member_ids":["` + bobID + `"]}`,
 			wantStatus: http.StatusOK,
-			wantBody:   `{"id":"` + chatID + `","kind":"direct","member_ids":["` + aliceID + `","` + bobID + `"],"created_at":"2026-10-13T12:00:00Z"}`,
+			wantBody:   `{"id":"` + chatID + `","kind":"direct","member_ids":["` + aliceID + `","` + bobID + `"],"created_at":"2026-10-13T12:00:00Z","last_activity_at":"2026-10-13T12:00:00Z"}`,
 		},
 		{
 			name: "группа с названием", chat: groupChat, created: true,
 			body:       `{"kind":"group","title":"Команда","member_ids":["` + bobID + `","` + carolID + `"]}`,
 			wantStatus: http.StatusCreated,
-			wantBody:   `{"id":"` + chatID + `","kind":"group","title":"Команда","member_ids":["` + aliceID + `","` + bobID + `","` + carolID + `"],"created_at":"2026-10-13T12:00:00Z"}`,
+			wantBody:   `{"id":"` + chatID + `","kind":"group","title":"Команда","member_ids":["` + aliceID + `","` + bobID + `","` + carolID + `"],"created_at":"2026-10-13T12:00:00Z","last_activity_at":"2026-10-13T12:00:00Z"}`,
 		},
 	}
 	for _, tt := range tests {
@@ -295,29 +330,31 @@ func TestListMessages(t *testing.T) {
 	tests := []struct {
 		name      string
 		query     string
-		msgs      func(*testing.T) []domain.Message
+		page      func(*testing.T) usecase.MessagePage
 		wantQuery usecase.ListMessagesQuery
 		wantBody  string
 	}{
 		{
-			name: "пустая история — [], а не null", query: "",
-			msgs:      func(*testing.T) []domain.Message { return nil },
+			name: "пустая история — [] и next_cursor null", query: "",
+			page:      func(*testing.T) usecase.MessagePage { return usecase.MessagePage{} },
 			wantQuery: usecase.ListMessagesQuery{ChatID: chatID, ReaderID: bobID},
-			wantBody:  `{"messages":[]}`,
+			wantBody:  `{"items":[],"next_cursor":null}`,
 		},
 		{
-			name: "after и limit из строки запроса", query: "?after=7&limit=10",
-			msgs:      func(t *testing.T) []domain.Message { return []domain.Message{message(t)} },
-			wantQuery: usecase.ListMessagesQuery{ChatID: chatID, ReaderID: bobID, AfterSeq: 7, Limit: 10},
-			wantBody:  `{"messages":[{"id":"` + msgID + `","chat_id":"` + chatID + `","author_id":"` + aliceID + `","text":"Привет, Боб!","seq":1,"sent_at":"2026-10-13T12:00:00Z"}]}`,
+			name: "последняя страница — next_cursor null", query: "?limit=10",
+			page: func(t *testing.T) usecase.MessagePage {
+				return usecase.MessagePage{Messages: []domain.Message{message(t)}}
+			},
+			wantQuery: usecase.ListMessagesQuery{ChatID: chatID, ReaderID: bobID, Limit: 10},
+			wantBody:  `{"items":[{"id":"` + msgID + `","chat_id":"` + chatID + `","author_id":"` + aliceID + `","text":"Привет, Боб!","seq":1,"sent_at":"2026-10-13T12:00:00Z"}],"next_cursor":null}`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got usecase.ListMessagesQuery
-			mux, _ := server(t, fakes{list: fakeList{fn: func(_ context.Context, q usecase.ListMessagesQuery) ([]domain.Message, error) {
+			mux, _ := server(t, fakes{list: fakeList{fn: func(_ context.Context, q usecase.ListMessagesQuery) (usecase.MessagePage, error) {
 				got = q
-				return tt.msgs(t), nil
+				return tt.page(t), nil
 			}}})
 
 			w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages" + tt.query, userID: bobID})
@@ -333,14 +370,100 @@ func TestListMessages(t *testing.T) {
 	}
 }
 
+// nextCursor достаёт next_cursor из ответа-страницы.
+func nextCursor(t *testing.T, w *httptest.ResponseRecorder) *string {
+	t.Helper()
+	var page struct {
+		NextCursor *string `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatalf("тело %q: %v", w.Body, err)
+	}
+	return page.NextCursor
+}
+
+// Курсор с первой страницы открывает вторую: адаптер заворачивает ключ use case'а
+// в курсор и разворачивает обратно — клиент только переносит строку.
+func TestListMessagesCursorOpensNextPage(t *testing.T) {
+	var queries []usecase.ListMessagesQuery
+	mux, _ := server(t, fakes{list: fakeList{fn: func(_ context.Context, q usecase.ListMessagesQuery) (usecase.MessagePage, error) {
+		queries = append(queries, q)
+		if q.BeforeSeq == 0 {
+			return usecase.MessagePage{Messages: []domain.Message{message(t)}, NextBeforeSeq: 41}, nil
+		}
+		return usecase.MessagePage{}, nil
+	}}})
+	target := "/v1/chats/" + chatID + "/messages?limit=1"
+
+	first := do(t, mux, request{method: http.MethodGet, target: target, userID: bobID})
+	cur := nextCursor(t, first)
+	if first.Code != http.StatusOK || cur == nil {
+		t.Fatalf("первая страница: status %d, next_cursor %v", first.Code, cur)
+	}
+	second := do(t, mux, request{method: http.MethodGet, target: target + "&cursor=" + url.QueryEscape(*cur), userID: bobID})
+
+	if second.Code != http.StatusOK {
+		t.Fatalf("вторая страница: status %d; body %s", second.Code, second.Body)
+	}
+	if len(queries) != 2 || queries[1].BeforeSeq != 41 || queries[1].Limit != 1 {
+		t.Fatalf("запросы к use case %+v, ждали BeforeSeq 41 во втором", queries)
+	}
+	if nextCursor(t, second) != nil {
+		t.Error("на последней странице next_cursor должен быть null")
+	}
+}
+
+func TestListMessagesBadCursor(t *testing.T) {
+	const otherChat = "00000000-0000-7000-c000-000000000002"
+	// Настоящий курсор чата otherChat: снимаем его с ответа сервера, а не собираем руками.
+	foreign := func(t *testing.T) string {
+		t.Helper()
+		mux, _ := server(t, fakes{list: fakeList{fn: func(context.Context, usecase.ListMessagesQuery) (usecase.MessagePage, error) {
+			return usecase.MessagePage{Messages: []domain.Message{message(t)}, NextBeforeSeq: 5}, nil
+		}}})
+		w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + otherChat + "/messages", userID: bobID})
+		cur := nextCursor(t, w)
+		if cur == nil {
+			t.Fatal("нет next_cursor")
+		}
+		return *cur
+	}
+	tests := []struct {
+		name   string
+		cursor func(*testing.T) string
+	}{
+		{name: "курсор другого чата", cursor: foreign},
+		{name: "мусор", cursor: func(*testing.T) string { return "abc" }},
+		{name: "номер страницы", cursor: func(*testing.T) string { return "2" }},
+		{name: "длиннее 512", cursor: func(*testing.T) string { return strings.Repeat("A", 513) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux, logs := server(t, fakes{}) // до use case'а дело не доходит
+			cur := tt.cursor(t)
+
+			w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages?cursor=" + url.QueryEscape(cur), userID: bobID})
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
+			}
+			if b := decodeError(t, w); b.Code != "invalid_input" || b.field() != "cursor" {
+				t.Errorf("code %q field %q, want invalid_input cursor", b.Code, b.field())
+			}
+			if !strings.Contains(logs.String(), "негодный курсор") {
+				t.Errorf("причина отказа не попала в журнал: %s", logs)
+			}
+		})
+	}
+}
+
 func TestListMessagesBadQuery(t *testing.T) {
 	tests := []struct {
 		target    string
 		wantField string
 	}{
 		{target: "/v1/chats/" + chatID + "/messages?limit=abc", wantField: "limit"},
-		{target: "/v1/chats/" + chatID + "/messages?after=1.5", wantField: "after"},
-		{target: "/v1/chats/" + chatID + "/messages?after=99999999999999999999", wantField: "after"},
+		{target: "/v1/chats/" + chatID + "/messages?limit=1.5", wantField: "limit"},
 		// Параметр пути разбирает сгенерированная обёртка, и поле в ошибке — как в контракте.
 		{target: "/v1/chats/not-a-uuid/messages", wantField: "id"},
 	}
@@ -357,6 +480,133 @@ func TestListMessagesBadQuery(t *testing.T) {
 				t.Errorf("code %q field %q, want invalid_input %q", b.Code, b.field(), tt.wantField)
 			}
 		})
+	}
+}
+
+// chatAt — личный чат Алисы с собеседником n, созданный в момент at.
+func chatAt(t *testing.T, n int, at time.Time) *domain.Chat {
+	t.Helper()
+	id := must[domain.ChatID](t)(domain.ParseChatID(fmt.Sprintf("00000000-0000-7000-c000-%012d", n)))
+	a := must[domain.UserID](t)(domain.ParseUserID(aliceID))
+	b := must[domain.UserID](t)(domain.ParseUserID(fmt.Sprintf("00000000-0000-7000-e000-%012d", n)))
+	return must[*domain.Chat](t)(domain.NewDirectChat(id, a, b, at))
+}
+
+func TestListChats(t *testing.T) {
+	newer, older := chatAt(t, 1, t0.Add(time.Minute)), chatAt(t, 2, t0)
+	var queries []usecase.ListChatsQuery
+	mux, _ := server(t, fakes{chats: fakeListChats{fn: func(_ context.Context, q usecase.ListChatsQuery) (usecase.ChatPage, error) {
+		queries = append(queries, q)
+		if q.After == nil {
+			return usecase.ChatPage{Chats: []*domain.Chat{newer}, Next: &usecase.ChatPosition{LastActivityAt: newer.LastActivityAt(), ID: newer.ID()}}, nil
+		}
+		return usecase.ChatPage{Chats: []*domain.Chat{older}}, nil
+	}}})
+
+	first := do(t, mux, request{method: http.MethodGet, target: "/v1/chats?limit=1", userID: aliceID})
+	if first.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200; body %s", first.Code, first.Body)
+	}
+	assertJSON(t, first.Body, `{"items":[{"id":"`+newer.ID().String()+`","kind":"direct","member_ids":["`+aliceID+`","00000000-0000-7000-e000-000000000001"],"created_at":"2026-10-13T12:01:00Z","last_activity_at":"2026-10-13T12:01:00Z"}],"next_cursor":`+jsonString(t, nextCursor(t, first))+`}`)
+	cur := nextCursor(t, first)
+	if cur == nil {
+		t.Fatal("нет next_cursor на первой странице")
+	}
+
+	second := do(t, mux, request{method: http.MethodGet, target: "/v1/chats?limit=1&cursor=" + url.QueryEscape(*cur), userID: aliceID})
+
+	if second.Code != http.StatusOK || nextCursor(t, second) != nil {
+		t.Fatalf("вторая страница: status %d, body %s", second.Code, second.Body)
+	}
+	want := usecase.ListChatsQuery{MemberID: aliceID, Limit: 1, After: &usecase.ChatPosition{LastActivityAt: newer.LastActivityAt(), ID: newer.ID()}}
+	if len(queries) != 2 || queries[0].MemberID != aliceID || queries[0].After != nil ||
+		queries[1].MemberID != want.MemberID || queries[1].Limit != 1 || queries[1].After == nil ||
+		!queries[1].After.LastActivityAt.Equal(want.After.LastActivityAt) || queries[1].After.ID != want.After.ID {
+		t.Fatalf("запросы к use case %+v, ждали второй %+v", queries, want)
+	}
+}
+
+func jsonString(t *testing.T, s *string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// Курсор истории не годится для списка чатов: вид курсора зашит в него самого.
+func TestListChatsRejectsMessagesCursor(t *testing.T) {
+	msgs, _ := server(t, fakes{list: fakeList{fn: func(context.Context, usecase.ListMessagesQuery) (usecase.MessagePage, error) {
+		return usecase.MessagePage{Messages: []domain.Message{message(t)}, NextBeforeSeq: 5}, nil
+	}}})
+	cur := nextCursor(t, do(t, msgs, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages", userID: aliceID}))
+	if cur == nil {
+		t.Fatal("нет next_cursor")
+	}
+	mux, _ := server(t, fakes{})
+
+	w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats?cursor=" + url.QueryEscape(*cur), userID: aliceID})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
+	}
+	if b := decodeError(t, w); b.field() != "cursor" {
+		t.Errorf("field %q, want cursor", b.field())
+	}
+}
+
+func TestGetChat(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "участник", wantStatus: http.StatusOK},
+		{name: "не участник", err: domain.ErrNotMember, wantStatus: http.StatusForbidden, wantCode: "not_member"},
+		{name: "нет чата", err: fmt.Errorf("get chat: %w", domain.ErrChatNotFound), wantStatus: http.StatusNotFound, wantCode: "not_found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got usecase.GetChatQuery
+			mux, _ := server(t, fakes{get: fakeGet{fn: func(_ context.Context, q usecase.GetChatQuery) (*domain.Chat, error) {
+				got = q
+				if tt.err != nil {
+					return nil, tt.err
+				}
+				return directChat(t), nil
+			}}})
+
+			w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID, userID: bobID})
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
+			}
+			if want := (usecase.GetChatQuery{ChatID: chatID, ReaderID: bobID}); got != want {
+				t.Errorf("запрос %+v, want %+v", got, want)
+			}
+			if tt.wantCode != "" {
+				if b := decodeError(t, w); b.Code != tt.wantCode {
+					t.Errorf("code %q, want %q", b.Code, tt.wantCode)
+				}
+				return
+			}
+			assertJSON(t, w.Body, `{"id":"`+chatID+`","kind":"direct","member_ids":["`+aliceID+`","`+bobID+`"],"created_at":"2026-10-13T12:00:00Z","last_activity_at":"2026-10-13T12:00:00Z"}`)
+		})
+	}
+}
+
+func TestGetChatBadID(t *testing.T) {
+	mux, _ := server(t, fakes{})
+
+	w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/not-a-uuid", userID: bobID})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
+	}
+	if b := decodeError(t, w); b.field() != "id" {
+		t.Errorf("field %q, want id", b.field())
 	}
 }
 
@@ -398,8 +648,8 @@ func TestErrorMapping(t *testing.T) {
 }
 
 func TestInternalErrorHidesDetails(t *testing.T) {
-	mux, logs := server(t, fakes{list: fakeList{fn: func(context.Context, usecase.ListMessagesQuery) ([]domain.Message, error) {
-		return nil, errors.New("секрет БД: pq: password authentication failed for user messenger")
+	mux, logs := server(t, fakes{list: fakeList{fn: func(context.Context, usecase.ListMessagesQuery) (usecase.MessagePage, error) {
+		return usecase.MessagePage{}, errors.New("секрет БД: pq: password authentication failed for user messenger")
 	}}})
 
 	w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages", userID: bobID})
@@ -465,6 +715,8 @@ func TestUnauthenticated(t *testing.T) {
 		{method: http.MethodPost, target: "/v1/chats", body: `{"kind":"direct","member_ids":["` + bobID + `"]}`},
 		{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"a"}`},
 		{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages"},
+		{method: http.MethodGet, target: "/v1/chats"},
+		{method: http.MethodGet, target: "/v1/chats/" + chatID},
 	}
 	// Личность в контексте, какой её положил бы middleware. Он сам отсекает пустой
 	// заголовок, но адаптер не должен на это полагаться: формат id проверяет он.
@@ -539,17 +791,23 @@ func TestUnsupportedMediaType(t *testing.T) {
 
 func TestNewNilDependencies(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
-	c, s, l := fakeCreate{}, fakeSend{}, fakeList{}
-	cases := map[string]func() (*httpapi.Handler, error){
-		"create": func() (*httpapi.Handler, error) { return httpapi.New(nil, s, l, log) },
-		"send":   func() (*httpapi.Handler, error) { return httpapi.New(c, nil, l, log) },
-		"list":   func() (*httpapi.Handler, error) { return httpapi.New(c, s, nil, log) },
-		"log":    func() (*httpapi.Handler, error) { return httpapi.New(c, s, l, nil) },
+	full := useCases(fakes{})
+	cases := map[string]func(*httpapi.UseCases){
+		"create": func(u *httpapi.UseCases) { u.CreateChat = nil },
+		"send":   func(u *httpapi.UseCases) { u.SendMessage = nil },
+		"list":   func(u *httpapi.UseCases) { u.ListMessages = nil },
+		"chats":  func(u *httpapi.UseCases) { u.ListChats = nil },
+		"get":    func(u *httpapi.UseCases) { u.GetChat = nil },
 	}
-	for name, newHandler := range cases {
-		if _, err := newHandler(); err == nil {
-			t.Errorf("New с nil %s: want error", name)
+	for name, drop := range cases {
+		uc := full
+		drop(&uc)
+		if _, err := httpapi.New(uc, log); err == nil {
+			t.Errorf("New без %s: want error", name)
 		}
+	}
+	if _, err := httpapi.New(full, nil); err == nil {
+		t.Error("New без журнала: want error")
 	}
 }
 

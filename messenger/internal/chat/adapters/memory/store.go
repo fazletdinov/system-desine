@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 
 	"messenger/internal/chat/domain"
+	"messenger/internal/chat/usecase"
 )
 
 // #region store
@@ -100,19 +102,72 @@ func (s *Store) AppendMessage(ctx context.Context, chat *domain.Chat, msg domain
 
 // #endregion append
 
-func (s *Store) ListMessages(ctx context.Context, chatID domain.ChatID, afterSeq int64, limit int) ([]domain.Message, error) {
+// #region list-before
+func (s *Store) ListMessagesBefore(ctx context.Context, chatID domain.ChatID, beforeSeq int64, limit int) ([]domain.Message, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("memory: %w", err)
 	}
-	// Порт обещает пустую страницу на limit < 1; при отрицательном limit срез all[from:to] без этой проверки запаниковал бы.
+	// Порт обещает пустую страницу на limit < 1; при отрицательном limit make ниже
+	// без этой проверки запаниковал бы.
 	if limit < 1 {
 		return []domain.Message{}, nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	all := s.messages[chatID]
-	// Сообщения лежат по возрастанию seq — ищем первое после afterSeq двоичным поиском.
-	from := sort.Search(len(all), func(i int) bool { return all[i].Seq() > afterSeq })
-	to := min(from+limit, len(all))
-	return slices.Clone(all[from:to]), nil
+	all := s.messages[chatID] // по возрастанию seq
+	to := len(all)
+	if beforeSeq > 0 {
+		// Двоичный поиск первого сообщения с seq >= beforeSeq: всё левее — старше ключа.
+		to = sort.Search(len(all), func(i int) bool { return all[i].Seq() >= beforeSeq })
+	}
+	from := max(0, to-limit)
+	page := make([]domain.Message, 0, to-from)
+	for i := to - 1; i >= from; i-- {
+		page = append(page, all[i])
+	}
+	return page, nil
+}
+
+// #endregion list-before
+
+// ListChatsByMember перебирает все чаты: в памяти их немного. В Postgres (модуль 2a) это
+// индекс по участнику и (last_activity_at, id) и запрос «WHERE (at, id) < ($1, $2)».
+func (s *Store) ListChatsByMember(ctx context.Context, member domain.UserID, after *usecase.ChatPosition, limit int) ([]*domain.Chat, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("memory: %w", err)
+	}
+	if limit < 1 {
+		return []*domain.Chat{}, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var found []*domain.Chat
+	for _, snap := range s.chats {
+		c := domain.RestoreChat(snap)
+		if !c.IsMember(member) {
+			continue
+		}
+		if after != nil && comparePosition(position(c), *after) >= 0 {
+			continue
+		}
+		found = append(found, c)
+	}
+	slices.SortFunc(found, func(a, b *domain.Chat) int { return comparePosition(position(b), position(a)) })
+	if len(found) > limit {
+		found = found[:limit]
+	}
+	return found, nil
+}
+
+func position(c *domain.Chat) usecase.ChatPosition {
+	return usecase.ChatPosition{LastActivityAt: c.LastActivityAt(), ID: c.ID()}
+}
+
+// comparePosition — порядок «по возрастанию»: сначала время, при равном — id.
+// UUIDv7 растёт со временем, поэтому сравнение строк id тоже осмысленно.
+func comparePosition(a, b usecase.ChatPosition) int {
+	if c := a.LastActivityAt.Compare(b.LastActivityAt); c != 0 {
+		return c
+	}
+	return strings.Compare(a.ID.String(), b.ID.String())
 }

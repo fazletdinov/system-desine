@@ -9,10 +9,17 @@ import (
 )
 
 type ListMessagesQuery struct {
-	ChatID   string
-	ReaderID string
-	AfterSeq int64 // 0 — с начала
-	Limit    int   // 0 — domain.ListLimitDefault
+	ChatID    string
+	ReaderID  string
+	BeforeSeq int64 // 0 — с самого нового
+	Limit     int   // 0 — domain.ListLimitDefault
+}
+
+// MessagePage — страница истории от новых к старым. NextBeforeSeq == 0 — дальше ничего нет;
+// иначе это ключ следующей страницы (адаптер завернёт его в курсор).
+type MessagePage struct {
+	Messages      []domain.Message
+	NextBeforeSeq int64
 }
 
 type ListMessages struct {
@@ -27,35 +34,42 @@ func NewListMessages(chats ChatFinder, messages MessageLister) (*ListMessages, e
 	return &ListMessages{chats: chats, messages: messages}, nil
 }
 
-func (uc *ListMessages) Execute(ctx context.Context, q ListMessagesQuery) ([]domain.Message, error) {
+// #region list-messages
+func (uc *ListMessages) Execute(ctx context.Context, q ListMessagesQuery) (MessagePage, error) {
 	chatID, err := domain.ParseChatID(q.ChatID)
 	if err != nil {
-		return nil, err
+		return MessagePage{}, err
 	}
 	reader, err := domain.ParseUserID(q.ReaderID)
 	if err != nil {
-		return nil, err
+		return MessagePage{}, err
 	}
-	if q.AfterSeq < 0 {
-		return nil, &domain.ValidationError{Field: "after", Reason: "не может быть отрицательным"}
+	if q.BeforeSeq < 0 {
+		// Отрицательный ключ мог прийти только из испорченного курсора.
+		return MessagePage{}, &domain.ValidationError{Field: "cursor", Reason: "некорректная позиция"}
 	}
-	limit := q.Limit
-	if limit == 0 {
-		limit = domain.ListLimitDefault
-	}
-	if limit < 1 || limit > domain.ListLimitMax {
-		return nil, &domain.ValidationError{Field: "limit", Reason: fmt.Sprintf("от 1 до %d", domain.ListLimitMax)}
+	limit, err := pageLimit(q.Limit)
+	if err != nil {
+		return MessagePage{}, err
 	}
 	chat, err := uc.chats.FindChat(ctx, chatID)
 	if err != nil {
-		return nil, fmt.Errorf("list messages: %w", err)
+		return MessagePage{}, fmt.Errorf("list messages: %w", err)
 	}
 	if !chat.IsMember(reader) {
-		return nil, domain.ErrNotMember
+		return MessagePage{}, domain.ErrNotMember
 	}
-	msgs, err := uc.messages.ListMessages(ctx, chatID, q.AfterSeq, limit)
+	// На одно больше, чем просили: так узнаём, есть ли следующая страница, без отдельного
+	// запроса COUNT и без лишнего пустого запроса клиента в конце ленты.
+	msgs, err := uc.messages.ListMessagesBefore(ctx, chatID, q.BeforeSeq, limit+1)
 	if err != nil {
-		return nil, fmt.Errorf("list messages: %w", err)
+		return MessagePage{}, fmt.Errorf("list messages: %w", err)
 	}
-	return msgs, nil
+	if len(msgs) <= limit {
+		return MessagePage{Messages: msgs}, nil
+	}
+	msgs = msgs[:limit]
+	return MessagePage{Messages: msgs, NextBeforeSeq: msgs[limit-1].Seq()}, nil
 }
+
+// #endregion list-messages

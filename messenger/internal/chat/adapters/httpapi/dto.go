@@ -24,6 +24,9 @@ func toChat(c *domain.Chat) gen.Chat {
 		Kind:      gen.ChatKind(c.Kind()),
 		MemberIds: ids,
 		CreatedAt: c.CreatedAt().UTC(),
+		// Отдаём клиенту ключ сортировки: по нему он сам поднимет чат вверх, когда
+		// придёт новое сообщение, не перечитывая список.
+		LastActivityAt: c.LastActivityAt().UTC(),
 	}
 	// У личного чата названия нет: nil-указатель с omitempty — поля нет в ответе.
 	if title := c.Title().String(); title != "" {
@@ -43,14 +46,24 @@ func toMessage(m domain.Message) gen.Message {
 	}
 }
 
-// toMessageList создаёт срез через make, а не var: nil-срез encoding/json
-// пишет как null, и клиенту пришлось бы отдельно обрабатывать «null» и «[]».
-func toMessageList(msgs []domain.Message) gen.MessageList {
+// Страницы создают items через make, а не var: nil-срез encoding/json пишет как null,
+// и клиенту пришлось бы отдельно обрабатывать «null» и «[]». next == nil — next_cursor
+// уходит как null: поле есть всегда, его отсутствие не нужно угадывать.
+
+func toMessagePage(msgs []domain.Message, next *string) gen.MessagePage {
 	out := make([]gen.Message, 0, len(msgs))
 	for _, m := range msgs {
 		out = append(out, toMessage(m))
 	}
-	return gen.MessageList{Messages: out}
+	return gen.MessagePage{Items: out, NextCursor: next}
+}
+
+func toChatPage(chats []*domain.Chat, next *string) gen.ChatPage {
+	out := make([]gen.Chat, 0, len(chats))
+	for _, c := range chats {
+		out = append(out, toChat(c))
+	}
+	return gen.ChatPage{Items: out, NextCursor: next}
 }
 
 // #endregion dto

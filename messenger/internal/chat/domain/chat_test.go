@@ -308,3 +308,28 @@ func TestSnapshotRoundTrip(t *testing.T) {
 		t.Fatalf("RestoreChat делит срез участников со снимком: %v", r.Members())
 	}
 }
+
+func TestPostMovesLastActivityForwardOnly(t *testing.T) {
+	t.Parallel()
+	c, err := domain.NewDirectChat(cid(t, 1), uid(t, 1), uid(t, 2), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.LastActivityAt().Equal(t0) {
+		t.Fatalf("у нового чата активность %v, ждали время создания %v", c.LastActivityAt(), t0)
+	}
+	post := func(n int, at time.Time) {
+		t.Helper()
+		if _, err := c.Post(mid(t, n), c.Members()[0], text(t, "привет"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	post(1, t0.Add(time.Minute))
+	post(2, t0.Add(30*time.Second)) // часы другого сервера отстают — назад не идём
+	if want := t0.Add(time.Minute); !c.LastActivityAt().Equal(want) {
+		t.Fatalf("активность %v, ждали %v", c.LastActivityAt(), want)
+	}
+	if got := domain.RestoreChat(c.Snapshot()).LastActivityAt(); !got.Equal(c.LastActivityAt()) {
+		t.Fatalf("снимок потерял активность: %v", got)
+	}
+}
