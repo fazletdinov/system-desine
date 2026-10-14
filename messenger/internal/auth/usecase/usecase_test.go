@@ -65,11 +65,12 @@ func TestLoginDoesNotRevealUsers(t *testing.T) {
 	e := newEnv(t) // регистрирует alice с паролем "правильный-пароль-длинный"
 	tests := []struct {
 		name, username, password string
+		reason                   error // внутренняя причина: для журнала, не для клиента
 	}{
-		{"нет такого пользователя", "nobody", "правильный-пароль-длинный"},
-		{"неверный пароль", "alice", "неправильный-пароль-длинный"},
-		{"профиль без пароля (ADR-0004)", "orphan", "правильный-пароль-длинный"},
-		{"некорректное имя", "Не Имя!", "правильный-пароль-длинный"},
+		{"нет такого пользователя", "nobody", "правильный-пароль-длинный", domain.ErrNoSuchUser},
+		{"неверный пароль", "alice", "неправильный-пароль-длинный", domain.ErrWrongPassword},
+		{"профиль без пароля (ADR-0004)", "orphan", "правильный-пароль-длинный", domain.ErrNoCredentials},
+		{"некорректное имя", "Не Имя!", "правильный-пароль-длинный", domain.ErrNoSuchUser},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -77,6 +78,11 @@ func TestLoginDoesNotRevealUsers(t *testing.T) {
 			_, err := e.login.Execute(context.Background(), usecase.LoginCommand{Username: tt.username, Password: tt.password})
 			if !errors.Is(err, domain.ErrInvalidCredentials) {
 				t.Fatalf("ждали ErrInvalidCredentials, получили %v", err)
+			}
+			// Клиент увидит только ErrInvalidCredentials, а причина остаётся в ошибке —
+			// обработчик входа запишет её в журнал.
+			if !errors.Is(err, tt.reason) {
+				t.Fatalf("в ошибке нет причины %v: %v", tt.reason, err)
 			}
 			// Каждый отказ — ровно одна проверка хеша: настоящего или фиктивного.
 			if got := e.hasher.verifies.Load() - before; got != 1 {
@@ -94,8 +100,8 @@ func TestLoginHugePassword(t *testing.T) {
 	before := e.hasher.verifies.Load()
 	huge := strings.Repeat("a", domain.PasswordMaxBytes+1)
 	_, err := e.login.Execute(context.Background(), usecase.LoginCommand{Username: "alice", Password: huge})
-	if !errors.Is(err, domain.ErrInvalidCredentials) {
-		t.Fatalf("ждали ErrInvalidCredentials, получили %v", err)
+	if !errors.Is(err, domain.ErrInvalidCredentials) || !errors.Is(err, domain.ErrPasswordTooLong) {
+		t.Fatalf("ждали ErrInvalidCredentials с причиной ErrPasswordTooLong, получили %v", err)
 	}
 	if got := e.hasher.verifies.Load() - before; got != 0 {
 		t.Fatalf("огромный пароль дошёл до хешера: %d проверок", got)

@@ -11,9 +11,12 @@ var (
 	// разные ответы рассказали бы атакующему, какие имена существуют.
 	ErrInvalidCredentials = errors.New("неверное имя пользователя или пароль")
 	ErrUsernameTaken      = errors.New("имя пользователя занято")
-	// ErrNoSuchUser и ErrNoCredentials — внутренние: наружу они уходят как ErrInvalidCredentials.
+	// Причины отказа во входе — внутренние: Login заворачивает их в ErrInvalidCredentials
+	// (errors.Is видит обе), клиенту уходит только она, а причина — в журнал.
 	ErrNoSuchUser       = errors.New("пользователь не найден")
 	ErrNoCredentials    = errors.New("учётные данные не найдены")
+	ErrWrongPassword    = errors.New("пароль не совпал")
+	ErrPasswordTooLong  = errors.New("пароль длиннее допустимого")
 	ErrCredentialsExist = errors.New("учётные данные уже есть")
 )
 

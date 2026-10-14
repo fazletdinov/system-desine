@@ -93,7 +93,7 @@ const FRAMES: readonly Frame[] = [
   {
     state: { impl: 'safe', attempt: 'wrong-password', response: UNIFORM, elapsedMs: SAFE_WRONG_MS, steps: ['клиенту: invalid_credentials', 'в лог: reason=wrong_password, user=alice, request_id=…', 'в лог: reason=unknown_user, login=mallory, request_id=…'] },
     highlight: 'response',
-    caption: 'Различие не пропало, а переехало туда, куда посторонним хода нет: в лог. Оператор видит настоящую причину под request_id, клиент — один и тот же ответ.',
+    caption: 'Различие не пропало, а переехало туда, куда посторонним хода нет: в лог. Use case держит настоящую причину внутри ошибки, обработчик входа пишет её в лог под request_id, а клиент получает один и тот же ответ.',
   },
 ]
 

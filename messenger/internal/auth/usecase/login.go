@@ -46,11 +46,11 @@ func NewLogin(users UserLookup, creds CredentialsFinder, hasher PasswordHasher, 
 func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 	if len(cmd.Password) > domain.PasswordMaxBytes {
 		// Ничего не выдаёт: длину пароля атакующий знает и так.
-		return Token{}, domain.ErrInvalidCredentials
+		return Token{}, rejected(domain.ErrPasswordTooLong)
 	}
 	id, err := uc.users.UserIDByUsername(ctx, cmd.Username)
 	if errors.Is(err, domain.ErrNoSuchUser) {
-		return Token{}, uc.reject(cmd.Password)
+		return Token{}, uc.reject(cmd.Password, err)
 	}
 	if err != nil {
 		return Token{}, fmt.Errorf("login: %w", err)
@@ -58,7 +58,7 @@ func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 	creds, err := uc.creds.FindCredentials(ctx, id)
 	if errors.Is(err, domain.ErrNoCredentials) {
 		// Профиль без пароля — след неудачной регистрации (ADR-0004). Для клиента — то же «неверно».
-		return Token{}, uc.reject(cmd.Password)
+		return Token{}, uc.reject(cmd.Password, err)
 	}
 	if err != nil {
 		return Token{}, fmt.Errorf("login: %w", err)
@@ -68,7 +68,7 @@ func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 		return Token{}, fmt.Errorf("login: %w", err)
 	}
 	if !ok {
-		return Token{}, domain.ErrInvalidCredentials
+		return Token{}, rejected(domain.ErrWrongPassword)
 	}
 	tok, err := uc.tokens.Issue(id)
 	if err != nil {
@@ -79,11 +79,18 @@ func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 
 // reject тратит на отказ столько же, сколько настоящая проверка: иначе по времени
 // ответа видно, есть ли пользователь (быстро — нет, медленно — есть, но пароль не тот).
-func (uc *Login) reject(password string) error {
+func (uc *Login) reject(password string, reason error) error {
 	if _, err := uc.hasher.Verify(password, uc.dummy); err != nil {
 		return fmt.Errorf("login: фиктивная проверка: %w", err)
 	}
-	return domain.ErrInvalidCredentials
+	return rejected(reason)
+}
+
+// rejected — отказ во входе: снаружи всегда ErrInvalidCredentials, а настоящая причина
+// остаётся внутри ошибки (errors.Is видит обе). Обработчик входа пишет её в журнал,
+// клиенту отдаёт только invalid_credentials.
+func rejected(reason error) error {
+	return fmt.Errorf("%w: %w", domain.ErrInvalidCredentials, reason)
 }
 
 // #endregion login
