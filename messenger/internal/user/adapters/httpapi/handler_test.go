@@ -16,6 +16,7 @@ import (
 
 	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/openapitest"
+	"messenger/internal/platform/problem"
 	"messenger/internal/user/adapters/httpapi"
 	"messenger/internal/user/domain"
 	"messenger/internal/user/usecase"
@@ -93,12 +94,24 @@ func rawServer(t *testing.T, reg fakeRegister, get fakeGet) (*http.ServeMux, *by
 	return mux, &logs
 }
 
-type errorBody struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Field   string `json:"field"`
-	} `json:"error"`
+// problemBody — ответ-ошибка RFC 9457 в том объёме, который проверяют тесты.
+type problemBody struct {
+	Title         string `json:"title"`
+	Code          string `json:"code"`
+	Detail        string `json:"detail"`
+	RequestID     string `json:"request_id"`
+	InvalidParams []struct {
+		Name   string `json:"name"`
+		Reason string `json:"reason"`
+	} `json:"invalid_params"`
+}
+
+// field — имя первого неверного параметра; пусто, если ошибка не про конкретное поле.
+func (b problemBody) field() string {
+	if len(b.InvalidParams) == 0 {
+		return ""
+	}
+	return b.InvalidParams[0].Name
 }
 
 func do(t *testing.T, mux http.Handler, method, target, body string) *httptest.ResponseRecorder {
@@ -125,9 +138,12 @@ func assertJSON(t *testing.T, got *bytes.Buffer, want string) {
 	}
 }
 
-func decodeError(t *testing.T, w *httptest.ResponseRecorder) errorBody {
+func decodeError(t *testing.T, w *httptest.ResponseRecorder) problemBody {
 	t.Helper()
-	var b errorBody
+	if ct := w.Header().Get("Content-Type"); ct != problem.ContentType {
+		t.Fatalf("Content-Type %q, want %q", ct, problem.ContentType)
+	}
+	var b problemBody
 	if err := json.Unmarshal(w.Body.Bytes(), &b); err != nil {
 		t.Fatalf("тело ошибки %q: %v", w.Body.String(), err)
 	}
@@ -181,8 +197,8 @@ func TestGetUserBadID(t *testing.T) {
 		t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
 	}
 	// Поле — как параметр в контракте ({id}), а не как в домене.
-	if b := decodeError(t, w); b.Error.Code != "invalid_input" || b.Error.Field != "id" {
-		t.Errorf("code %q field %q, want invalid_input id", b.Error.Code, b.Error.Field)
+	if b := decodeError(t, w); b.Code != "invalid_input" || b.field() != "id" {
+		t.Errorf("code %q field %q, want invalid_input id", b.Code, b.field())
 	}
 }
 
@@ -224,11 +240,12 @@ func TestErrorMapping(t *testing.T) {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
 			}
 			b := decodeError(t, w)
-			if b.Error.Code != tt.wantCode || b.Error.Field != tt.wantField {
-				t.Errorf("code %q field %q, want %q %q", b.Error.Code, b.Error.Field, tt.wantCode, tt.wantField)
+			if b.Code != tt.wantCode || b.field() != tt.wantField {
+				t.Errorf("code %q field %q, want %q %q", b.Code, b.field(), tt.wantCode, tt.wantField)
 			}
-			if b.Error.Message == "" {
-				t.Error("пустое message")
+			// detail необязателен (у 500 его нет нарочно), а title есть у каждой проблемы.
+			if b.Title == "" {
+				t.Error("пустой title")
 			}
 		})
 	}
@@ -300,8 +317,8 @@ func TestDecodeErrors(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
 			}
-			if b := decodeError(t, w); b.Error.Code != tt.wantCode {
-				t.Errorf("code %q, want %q", b.Error.Code, tt.wantCode)
+			if b := decodeError(t, w); b.Code != tt.wantCode {
+				t.Errorf("code %q, want %q", b.Code, tt.wantCode)
 			}
 		})
 	}

@@ -94,28 +94,6 @@ func TestWriteUnencodable(t *testing.T) {
 	}
 }
 
-func TestWriteError(t *testing.T) {
-	tests := []struct {
-		name  string
-		field string
-		want  string
-	}{
-		{name: "с полем", field: "text", want: `{"error":{"code":"invalid_input","message":"пустое сообщение","field":"text"}}` + "\n"},
-		{name: "без поля — field опускается", want: `{"error":{"code":"invalid_input","message":"пустое сообщение"}}` + "\n"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			if err := httpjson.WriteError(w, http.StatusBadRequest, "invalid_input", "пустое сообщение", tt.field); err != nil {
-				t.Fatalf("WriteError: %v", err)
-			}
-			if w.Code != http.StatusBadRequest || w.Body.String() != tt.want {
-				t.Errorf("got %d %q, want 400 %q", w.Code, w.Body, tt.want)
-			}
-		})
-	}
-}
-
 // richPayload — DTO с полями разных типов: сообщения об ошибке типа должны говорить
 // на языке JSON, а не Go.
 type richPayload struct {

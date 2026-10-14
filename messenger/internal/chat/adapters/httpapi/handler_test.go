@@ -20,6 +20,7 @@ import (
 	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/openapitest"
 	"messenger/internal/platform/principal"
+	"messenger/internal/platform/problem"
 )
 
 const (
@@ -166,12 +167,24 @@ func do(t *testing.T, mux http.Handler, req request) *httptest.ResponseRecorder 
 	return w
 }
 
-type errorBody struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Field   string `json:"field"`
-	} `json:"error"`
+// problemBody — ответ-ошибка RFC 9457 в том объёме, который проверяют тесты.
+type problemBody struct {
+	Title         string `json:"title"`
+	Code          string `json:"code"`
+	Detail        string `json:"detail"`
+	RequestID     string `json:"request_id"`
+	InvalidParams []struct {
+		Name   string `json:"name"`
+		Reason string `json:"reason"`
+	} `json:"invalid_params"`
+}
+
+// field — имя первого неверного параметра; пусто, если ошибка не про конкретное поле.
+func (b problemBody) field() string {
+	if len(b.InvalidParams) == 0 {
+		return ""
+	}
+	return b.InvalidParams[0].Name
 }
 
 // assertJSON сравнивает тела как JSON, а не как строки: порядок полей в объекте
@@ -190,9 +203,12 @@ func assertJSON(t *testing.T, got *bytes.Buffer, want string) {
 	}
 }
 
-func decodeError(t *testing.T, w *httptest.ResponseRecorder) errorBody {
+func decodeError(t *testing.T, w *httptest.ResponseRecorder) problemBody {
 	t.Helper()
-	var b errorBody
+	if ct := w.Header().Get("Content-Type"); ct != problem.ContentType {
+		t.Fatalf("Content-Type %q, want %q", ct, problem.ContentType)
+	}
+	var b problemBody
 	if err := json.Unmarshal(w.Body.Bytes(), &b); err != nil {
 		t.Fatalf("тело ошибки %q: %v", w.Body.String(), err)
 	}
@@ -337,8 +353,8 @@ func TestListMessagesBadQuery(t *testing.T) {
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
 			}
-			if b := decodeError(t, w); b.Error.Code != "invalid_input" || b.Error.Field != tt.wantField {
-				t.Errorf("code %q field %q, want invalid_input %q", b.Error.Code, b.Error.Field, tt.wantField)
+			if b := decodeError(t, w); b.Code != "invalid_input" || b.field() != tt.wantField {
+				t.Errorf("code %q field %q, want invalid_input %q", b.Code, b.field(), tt.wantField)
 			}
 		})
 	}
@@ -374,8 +390,8 @@ func TestErrorMapping(t *testing.T) {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
 			}
 			b := decodeError(t, w)
-			if b.Error.Code != tt.wantCode || b.Error.Field != tt.wantField {
-				t.Errorf("code %q field %q, want %q %q", b.Error.Code, b.Error.Field, tt.wantCode, tt.wantField)
+			if b.Code != tt.wantCode || b.field() != tt.wantField {
+				t.Errorf("code %q field %q, want %q %q", b.Code, b.field(), tt.wantCode, tt.wantField)
 			}
 		})
 	}
@@ -421,6 +437,29 @@ func TestClientGoneWritesNothing(t *testing.T) {
 	}
 }
 
+// TestInternalCanceledIsServerError: Canceled пришёл не от клиента (тот ждёт ответа), а
+// от внутреннего контекста сервера — это сбой, и молчать нельзя: иначе клиент получит
+// пустой 200.
+func TestInternalCanceledIsServerError(t *testing.T) {
+	mux, logs := server(t, fakes{send: fakeSend{fn: func(context.Context, usecase.SendMessageCommand) (domain.Message, error) {
+		inner, cancel := context.WithCancel(context.Background())
+		cancel()
+		return domain.Message{}, fmt.Errorf("send message: %w", inner.Err())
+	}}})
+
+	w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"a"}`, userID: aliceID})
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d, want 500; body %s", w.Code, w.Body)
+	}
+	if b := decodeError(t, w); b.Code != "internal" {
+		t.Errorf("code %q, want internal", b.Code)
+	}
+	if !strings.Contains(logs.String(), `"level":"ERROR"`) {
+		t.Errorf("сбой сервера должен логироваться на Error: %s", logs)
+	}
+}
+
 func TestUnauthenticated(t *testing.T) {
 	routes := []request{
 		{method: http.MethodPost, target: "/v1/chats", body: `{"kind":"direct","member_ids":["` + bobID + `"]}`},
@@ -446,8 +485,8 @@ func TestUnauthenticated(t *testing.T) {
 				if w.Code != http.StatusUnauthorized {
 					t.Fatalf("status %d, want 401; body %s", w.Code, w.Body)
 				}
-				if b := decodeError(t, w); b.Error.Code != "unauthenticated" {
-					t.Errorf("code %q, want unauthenticated", b.Error.Code)
+				if b := decodeError(t, w); b.Code != "unauthenticated" {
+					t.Errorf("code %q, want unauthenticated", b.Code)
 				}
 			})
 		}
@@ -474,8 +513,8 @@ func TestDecodeErrors(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
 			}
-			if b := decodeError(t, w); b.Error.Code != tt.wantCode {
-				t.Errorf("code %q, want %q", b.Error.Code, tt.wantCode)
+			if b := decodeError(t, w); b.Code != tt.wantCode {
+				t.Errorf("code %q, want %q", b.Code, tt.wantCode)
 			}
 		})
 	}
@@ -493,8 +532,8 @@ func TestUnsupportedMediaType(t *testing.T) {
 	if w.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("status %d, want 415", w.Code)
 	}
-	if b := decodeError(t, w); b.Error.Code != "unsupported_media_type" {
-		t.Errorf("code %q, want unsupported_media_type", b.Error.Code)
+	if b := decodeError(t, w); b.Code != "unsupported_media_type" {
+		t.Errorf("code %q, want unsupported_media_type", b.Code)
 	}
 }
 

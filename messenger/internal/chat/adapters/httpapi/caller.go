@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"messenger/internal/chat/domain"
-	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/principal"
+	"messenger/internal/platform/problem"
 )
 
 // #region caller
@@ -29,7 +29,5 @@ func (h *Handler) caller(w http.ResponseWriter, r *http.Request) (domain.UserID,
 // #endregion caller
 
 func (h *Handler) unauthenticated(w http.ResponseWriter, r *http.Request) {
-	if err := httpjson.WriteError(w, http.StatusUnauthorized, "unauthenticated", "не удалось определить пользователя", ""); err != nil {
-		h.log.Error("запись ответа", "path", r.URL.Path, "err", err)
-	}
+	writeProblem(w, r, h.log, problem.Problem{Code: problem.CodeUnauthenticated, Detail: "не удалось определить пользователя"})
 }

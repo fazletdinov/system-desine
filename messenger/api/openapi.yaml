@@ -171,48 +171,48 @@ components:
     BadRequest:
       description: Некорректные данные запроса
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     Unauthorized:
       description: Не удалось определить пользователя
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     Forbidden:
       description: Нет доступа
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     NotFound:
       description: Не найдено
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     Conflict:
       description: Конфликт с текущим состоянием
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     PayloadTooLarge:
       description: Тело больше 1 МиБ
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     UnsupportedMediaType:
       description: Нужен Content-Type application/json
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     InternalError:
       description: Сбой сервера
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     ServiceUnavailable:
       description: Сервер не успел ответить
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
   schemas:
     # region schemas-request
     RegisterUserRequest:
@@ -280,16 +280,32 @@ components:
         messages:
           type: array
           items: { $ref: '#/components/schemas/Message' }
-    ErrorResponse:
+    # region problem-schema
+    Problem:
+      type: object
+      description: Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+      required: [type, title, status, instance, code]
+      additionalProperties: false
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string }
+        code: { $ref: '#/components/schemas/ProblemCode' }
+        request_id: { type: string }
+        invalid_params:
+          type: array
+          items: { $ref: '#/components/schemas/InvalidParam' }
+    InvalidParam:
       type: object
       additionalProperties: false
-      required: [error]
+      required: [name, reason]
       properties:
-        error:
-          type: object
-          additionalProperties: false
-          required: [code, message]
-          properties:
-            code: { type: string }
-            message: { type: string }
-            field: { type: string }
+        name: { type: string }
+        reason: { type: string }
+    ProblemCode:
+      type: string
+      enum: [bad_json, body_too_large, conflict, internal, invalid_input, method_not_allowed,
+             not_found, not_member, timeout, unauthenticated, unsupported_media_type, username_taken]
+    # endregion problem-schema

@@ -51,6 +51,54 @@ func (e CreateChatRequestKind) Valid() bool {
 	}
 }
 
+// Defines values for ProblemCode.
+const (
+	ProblemCodeBadJson              ProblemCode = "bad_json"
+	ProblemCodeBodyTooLarge         ProblemCode = "body_too_large"
+	ProblemCodeConflict             ProblemCode = "conflict"
+	ProblemCodeInternal             ProblemCode = "internal"
+	ProblemCodeInvalidInput         ProblemCode = "invalid_input"
+	ProblemCodeMethodNotAllowed     ProblemCode = "method_not_allowed"
+	ProblemCodeNotFound             ProblemCode = "not_found"
+	ProblemCodeNotMember            ProblemCode = "not_member"
+	ProblemCodeTimeout              ProblemCode = "timeout"
+	ProblemCodeUnauthenticated      ProblemCode = "unauthenticated"
+	ProblemCodeUnsupportedMediaType ProblemCode = "unsupported_media_type"
+	ProblemCodeUsernameTaken        ProblemCode = "username_taken"
+)
+
+// Valid indicates whether the value is a known member of the ProblemCode enum.
+func (e ProblemCode) Valid() bool {
+	switch e {
+	case ProblemCodeBadJson:
+		return true
+	case ProblemCodeBodyTooLarge:
+		return true
+	case ProblemCodeConflict:
+		return true
+	case ProblemCodeInternal:
+		return true
+	case ProblemCodeInvalidInput:
+		return true
+	case ProblemCodeMethodNotAllowed:
+		return true
+	case ProblemCodeNotFound:
+		return true
+	case ProblemCodeNotMember:
+		return true
+	case ProblemCodeTimeout:
+		return true
+	case ProblemCodeUnauthenticated:
+		return true
+	case ProblemCodeUnsupportedMediaType:
+		return true
+	case ProblemCodeUsernameTaken:
+		return true
+	default:
+		return false
+	}
+}
+
 // Chat defines model for Chat.
 type Chat struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -79,13 +127,10 @@ type CreateChatRequest struct {
 // CreateChatRequestKind defines model for CreateChatRequest.Kind.
 type CreateChatRequestKind string
 
-// ErrorResponse defines model for ErrorResponse.
-type ErrorResponse struct {
-	Error struct {
-		Code    string  `json:"code"`
-		Field   *string `json:"field,omitempty"`
-		Message string  `json:"message"`
-	} `json:"error"`
+// InvalidParam defines model for InvalidParam.
+type InvalidParam struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
 }
 
 // Message defines model for Message.
@@ -103,6 +148,21 @@ type MessageList struct {
 	Messages []Message `json:"messages"`
 }
 
+// Problem Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type Problem struct {
+	Code          ProblemCode     `json:"code"`
+	Detail        *string         `json:"detail,omitempty"`
+	Instance      string          `json:"instance"`
+	InvalidParams *[]InvalidParam `json:"invalid_params,omitempty"`
+	RequestId     *string         `json:"request_id,omitempty"`
+	Status        int             `json:"status"`
+	Title         string          `json:"title"`
+	Type          string          `json:"type"`
+}
+
+// ProblemCode defines model for ProblemCode.
+type ProblemCode string
+
 // SendMessageRequest defines model for SendMessageRequest.
 type SendMessageRequest struct {
 	Text string `json:"text"`
@@ -114,32 +174,32 @@ type ID = openapi_types.UUID
 // Limit defines model for Limit.
 type Limit = int
 
-// BadRequest defines model for BadRequest.
-type BadRequest = ErrorResponse
+// BadRequest Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type BadRequest = Problem
 
-// Conflict defines model for Conflict.
-type Conflict = ErrorResponse
+// Conflict Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type Conflict = Problem
 
-// Forbidden defines model for Forbidden.
-type Forbidden = ErrorResponse
+// Forbidden Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type Forbidden = Problem
 
-// InternalError defines model for InternalError.
-type InternalError = ErrorResponse
+// InternalError Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type InternalError = Problem
 
-// NotFound defines model for NotFound.
-type NotFound = ErrorResponse
+// NotFound Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type NotFound = Problem
 
-// PayloadTooLarge defines model for PayloadTooLarge.
-type PayloadTooLarge = ErrorResponse
+// PayloadTooLarge Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type PayloadTooLarge = Problem
 
-// ServiceUnavailable defines model for ServiceUnavailable.
-type ServiceUnavailable = ErrorResponse
+// ServiceUnavailable Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type ServiceUnavailable = Problem
 
-// Unauthorized defines model for Unauthorized.
-type Unauthorized = ErrorResponse
+// Unauthorized Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type Unauthorized = Problem
 
-// UnsupportedMediaType defines model for UnsupportedMediaType.
-type UnsupportedMediaType = ErrorResponse
+// UnsupportedMediaType Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type UnsupportedMediaType = Problem
 
 // ListMessagesParams defines parameters for ListMessages.
 type ListMessagesParams struct {

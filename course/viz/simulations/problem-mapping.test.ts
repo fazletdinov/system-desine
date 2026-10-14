@@ -6,7 +6,8 @@ import { PROBLEM_SOURCES, problemMappingScenario } from './problem-mapping'
 
 const steps = problemMappingScenario()
 const problems = steps.filter((s) => s.state.problem !== null)
-const REQUIRED = ['type', 'title', 'status', 'detail', 'instance', 'code', 'request_id']
+// Обязательные поля схемы Problem в контракте плюс request_id; detail необязателен.
+const REQUIRED = ['type', 'title', 'status', 'instance', 'code', 'request_id']
 
 describe('problemMappingScenario', () => {
   it('от 8 до 10 кадров, у каждого подпись и ошибка', () => {
@@ -49,9 +50,9 @@ describe('problemMappingScenario', () => {
     expect(p('decode').problem).toMatchObject({ status: 413, code: 'body_too_large' })
   })
 
-  it('у 500 detail не содержит текста исходной ошибки', () => {
+  it('у 500 нет detail и нет текста исходной ошибки', () => {
     const s = problems.find((x) => x.state.source === 'panic')!.state
-    expect(String(s.problem!.detail)).not.toContain(s.error)
+    expect(s.problem).not.toHaveProperty('detail')
     expect(JSON.stringify(s.problem)).not.toContain('runtime error')
   })
 })

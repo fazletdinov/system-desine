@@ -125,21 +125,3 @@ func Write(w http.ResponseWriter, status int, v any) error {
 	}
 	return nil
 }
-
-// errorBody — единый формат ошибки для всего API: {"error":{"code","message","field"}}.
-// Клиент ветвится по code (стабильный машинный ключ), message — для человека и может
-// меняться, field — только у ошибок валидации.
-type errorBody struct {
-	Error errorDetail `json:"error"`
-}
-
-type errorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Field   string `json:"field,omitempty"`
-}
-
-// WriteError пишет ошибку в едином формате. Пустой field в ответ не попадает.
-func WriteError(w http.ResponseWriter, status int, code, msg, field string) error {
-	return Write(w, status, errorBody{Error: errorDetail{Code: code, Message: msg, Field: field}})
-}
