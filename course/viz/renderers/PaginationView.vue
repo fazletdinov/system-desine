@@ -65,7 +65,9 @@ const cursorB64 = computed(() => (cursorJson.value === null ? '' : btoa(cursorJs
 .p2 { border-color: var(--viz-cache); }
 .p3 { border-color: var(--viz-broker); }
 .cell.dup { border-color: var(--viz-error); border-width: 3px; }
-.cell.skip { border-color: var(--viz-error); border-style: dashed; background: repeating-linear-gradient(135deg, transparent 0 6px, var(--viz-edge) 6px 8px), var(--viz-node-bg); }
+.cell.skip { position: relative; border-color: var(--viz-error); border-style: dashed; }
+/* Штриховка — только полоска сверху: под текстом остаётся сплошной фон. */
+.cell.skip::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: repeating-linear-gradient(135deg, var(--viz-error) 0 3px, transparent 3px 6px); }
 .cell.gone .seq { text-decoration: line-through; color: var(--viz-muted); }
 .pages { margin: 0 0 8px; padding-left: 22px; font-size: 14px; }
 .pages b { font-weight: 600; }

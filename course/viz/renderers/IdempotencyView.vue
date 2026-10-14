@@ -57,7 +57,7 @@ const OUTCOME_TEXT = {
 .server { border-color: var(--viz-service); }
 h4 { margin: 0 0 4px; font-size: 15px; }
 .meta { margin: 2px 0; font-size: 13px; color: var(--viz-muted); overflow-wrap: anywhere; }
-.flag { margin: 2px 0; font-size: 13px; font-weight: 700; color: var(--viz-cache); }
+.flag { margin: 2px 0; font-size: 13px; font-weight: 700; color: color-mix(in srgb, var(--viz-cache) 60%, var(--viz-text)); }
 .chats { margin: 2px 0; font-size: 14px; }
 .chats b { font-size: 28px; font-variant-numeric: tabular-nums; }
 .chats.dup b, .bad { color: var(--viz-error); }

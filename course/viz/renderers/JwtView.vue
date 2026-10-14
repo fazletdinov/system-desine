@@ -40,14 +40,14 @@ const payloadJson = computed(() => JSON.stringify(props.state.payload, null, 2))
 .token { margin: 0 0 6px; font-family: var(--vp-font-family-mono); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; word-break: break-all; }
 .h { color: var(--viz-error); }
 .p { color: var(--viz-service); }
-.s { color: var(--viz-broker); }
+.s { color: color-mix(in srgb, var(--viz-broker) 60%, var(--viz-text)); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
 .decoded { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 pre { margin: 0; padding: 8px; border: 2px solid currentColor; border-radius: 8px; background: var(--viz-node-bg); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .meta { margin: 8px 0; font-size: 13px; color: var(--viz-muted); }
 .verdict { margin: 0; padding: 8px 12px; border: 2px solid; border-radius: 8px; background: var(--viz-node-bg); font-size: 15px; }
 .verdict.ok { border-color: var(--viz-db); }
-.verdict.ok b { color: var(--viz-db); }
+.verdict.ok b { color: color-mix(in srgb, var(--viz-db) 60%, var(--viz-text)); }
 .verdict.no { border-color: var(--viz-error); }
 .verdict.no b { color: var(--viz-error); }
 @container (max-width: 520px) { .decoded { grid-template-columns: 1fr; } }
