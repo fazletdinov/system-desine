@@ -9,11 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"messenger/internal/platform/httpjson"
+	"messenger/internal/platform/openapitest"
 	"messenger/internal/user/adapters/httpapi"
 	"messenger/internal/user/domain"
 	"messenger/internal/user/usecase"
@@ -58,8 +60,16 @@ func alice(t *testing.T) domain.User {
 	return domain.NewUser(id, name, display, created)
 }
 
-// server собирает настоящий ServeMux с обработчиком и пишет лог в буфер.
-func server(t *testing.T, reg fakeRegister, get fakeGet) (*http.ServeMux, *bytes.Buffer) {
+// server собирает настоящий ServeMux с обработчиком, пишет лог в буфер и сверяет
+// каждый ответ с контрактом api/openapi.yaml.
+func server(t *testing.T, reg fakeRegister, get fakeGet) (http.Handler, *bytes.Buffer) {
+	t.Helper()
+	mux, logs := rawServer(t, reg, get)
+	return openapitest.New(t).Wrap(mux), logs
+}
+
+// rawServer — без проверки по контракту: только для случая, когда ответа нет вовсе.
+func rawServer(t *testing.T, reg fakeRegister, get fakeGet) (*http.ServeMux, *bytes.Buffer) {
 	t.Helper()
 	if reg.fn == nil {
 		reg.fn = func(context.Context, usecase.RegisterUserCommand) (domain.User, error) {
@@ -99,6 +109,22 @@ func do(t *testing.T, mux http.Handler, method, target, body string) *httptest.R
 	return w
 }
 
+// assertJSON сравнивает тела как JSON, а не как строки: порядок полей в объекте
+// значения не имеет (RFC 8259, §4), а сгенерированные типы пишут их по алфавиту.
+func assertJSON(t *testing.T, got *bytes.Buffer, want string) {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got.Bytes(), &g); err != nil {
+		t.Fatalf("тело %q: %v", got, err)
+	}
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatalf("ожидаемое тело %q: %v", want, err)
+	}
+	if !reflect.DeepEqual(g, w) {
+		t.Errorf("body\n%s\nwant\n%s", got, want)
+	}
+}
+
 func decodeError(t *testing.T, w *httptest.ResponseRecorder) errorBody {
 	t.Helper()
 	var b errorBody
@@ -126,10 +152,7 @@ func TestRegisterUserCreated(t *testing.T) {
 	if got != (usecase.RegisterUserCommand{Username: "alice", DisplayName: "Алиса"}) {
 		t.Errorf("команда %+v", got)
 	}
-	want := `{"id":"` + aliceID + `","username":"alice","display_name":"Алиса","created_at":"2026-10-13T12:04:05Z"}` + "\n"
-	if w.Body.String() != want {
-		t.Errorf("body\n%s\nwant\n%s", w.Body, want)
-	}
+	assertJSON(t, w.Body, `{"id":"`+aliceID+`","username":"alice","display_name":"Алиса","created_at":"2026-10-13T12:04:05Z"}`)
 }
 
 func TestGetUserOK(t *testing.T) {
@@ -149,29 +172,53 @@ func TestGetUserOK(t *testing.T) {
 	}
 }
 
-// TestErrorMapping — по строке на каждую строку таблицы «ошибка → статус».
+func TestGetUserBadID(t *testing.T) {
+	mux, _ := server(t, fakeRegister{}, fakeGet{}) // до use case дело не доходит
+
+	w := do(t, mux, http.MethodGet, "/v1/users/alice", "")
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
+	}
+	// Поле — как параметр в контракте ({id}), а не как в домене.
+	if b := decodeError(t, w); b.Error.Code != "invalid_input" || b.Error.Field != "id" {
+		t.Errorf("code %q field %q, want invalid_input id", b.Error.Code, b.Error.Field)
+	}
+}
+
+// TestErrorMapping — по строке на каждую строку таблицы «ошибка → статус». Каждую
+// ошибку возвращает операция, которая и правда может её вернуть: проверка по контракту
+// не пропустит, например, 404 у регистрации — в контракте его нет.
 func TestErrorMapping(t *testing.T) {
+	const (
+		register = http.MethodPost + " /v1/users"
+		get      = http.MethodGet + " /v1/users/" + aliceID
+	)
 	tests := []struct {
 		name       string
+		route      string
 		err        error
 		wantStatus int
 		wantCode   string
 		wantField  string
 	}{
-		{name: "валидация", err: &domain.ValidationError{Field: "username", Reason: "только a–z, 0–9 и _"}, wantStatus: 400, wantCode: "invalid_input", wantField: "username"},
-		{name: "валидация, обёрнутая", err: fmt.Errorf("register user: %w", &domain.ValidationError{Field: "display_name", Reason: "пусто"}), wantStatus: 400, wantCode: "invalid_input", wantField: "display_name"},
-		{name: "не найден", err: fmt.Errorf("get user: %w", domain.ErrUserNotFound), wantStatus: 404, wantCode: "not_found"},
-		{name: "имя занято", err: fmt.Errorf("register user: %w", domain.ErrUsernameTaken), wantStatus: 409, wantCode: "username_taken"},
-		{name: "дедлайн", err: fmt.Errorf("register user: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
-		{name: "прочее", err: errors.New("секрет БД: pq: connection refused"), wantStatus: 500, wantCode: "internal"},
+		{name: "валидация", route: register, err: &domain.ValidationError{Field: "username", Reason: "только a–z, 0–9 и _"}, wantStatus: 400, wantCode: "invalid_input", wantField: "username"},
+		{name: "валидация, обёрнутая", route: register, err: fmt.Errorf("register user: %w", &domain.ValidationError{Field: "display_name", Reason: "пусто"}), wantStatus: 400, wantCode: "invalid_input", wantField: "display_name"},
+		{name: "не найден", route: get, err: fmt.Errorf("get user: %w", domain.ErrUserNotFound), wantStatus: 404, wantCode: "not_found"},
+		{name: "имя занято", route: register, err: fmt.Errorf("register user: %w", domain.ErrUsernameTaken), wantStatus: 409, wantCode: "username_taken"},
+		{name: "дедлайн", route: register, err: fmt.Errorf("register user: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
+		{name: "прочее", route: get, err: errors.New("секрет БД: pq: connection refused"), wantStatus: 500, wantCode: "internal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mux, _ := server(t, fakeRegister{fn: func(context.Context, usecase.RegisterUserCommand) (domain.User, error) {
 				return domain.User{}, tt.err
-			}}, fakeGet{})
+			}}, fakeGet{fn: func(context.Context, usecase.GetUserQuery) (domain.User, error) {
+				return domain.User{}, tt.err
+			}})
+			method, target, _ := strings.Cut(tt.route, " ")
 
-			w := do(t, mux, http.MethodPost, "/v1/users", `{"username":"alice","display_name":"Алиса"}`)
+			w := do(t, mux, method, target, `{"username":"alice","display_name":"Алиса"}`)
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
@@ -210,7 +257,7 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 
 func TestClientGoneWritesNothing(t *testing.T) {
 	// Use case, как и настоящий, возвращает ошибку своего ctx — контекста запроса.
-	mux, logs := server(t, fakeRegister{fn: func(ctx context.Context, _ usecase.RegisterUserCommand) (domain.User, error) {
+	mux, logs := rawServer(t, fakeRegister{fn: func(ctx context.Context, _ usecase.RegisterUserCommand) (domain.User, error) {
 		return domain.User{}, fmt.Errorf("register user: %w", ctx.Err())
 	}}, fakeGet{})
 	ctx, cancel := context.WithCancel(t.Context())

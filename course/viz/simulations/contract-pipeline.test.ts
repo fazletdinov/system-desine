@@ -32,7 +32,7 @@ describe('contractPipelineScenario', () => {
 
   it('имена как у oapi-codegen встречаются в сниппетах', () => {
     const all = steps.flatMap((s) => s.state.files.map((f) => f.snippet)).join('\n')
-    for (const name of ['SendMessageRequest', 'ClientMessageId', 'ServerInterface', 'sendMessage']) expect(all).toContain(name)
+    for (const name of ['SendMessageRequest', 'ChatId', 'ServerInterface', 'sendMessage', 'gen.ID']) expect(all).toContain(name)
   })
 })
 

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"messenger/internal/chat/domain"
 	"messenger/internal/chat/usecase"
 	"messenger/internal/platform/httpjson"
+	"messenger/internal/platform/openapitest"
 	"messenger/internal/platform/principal"
 )
 
@@ -62,8 +64,20 @@ type fakes struct {
 	list   fakeList
 }
 
-// server собирает настоящий ServeMux; не заданный тестом use case валит тест при вызове.
-func server(t *testing.T, f fakes) (*http.ServeMux, *bytes.Buffer) {
+// #region contract-server
+// server собирает настоящий ServeMux и оборачивает его проверкой по контракту: каждый
+// ответ сверяется с api/openapi.yaml. Не заданный тестом use case валит тест при вызове.
+func server(t *testing.T, f fakes) (http.Handler, *bytes.Buffer) {
+	t.Helper()
+	mux, logs := rawServer(t, f)
+	return openapitest.New(t).Wrap(mux), logs
+}
+
+// #endregion contract-server
+
+// rawServer — без проверки по контракту: только для случая, когда ответа нет вовсе
+// (клиент ушёл), — проверять по схеме нечего.
+func rawServer(t *testing.T, f fakes) (*http.ServeMux, *bytes.Buffer) {
 	t.Helper()
 	if f.create.fn == nil {
 		f.create.fn = func(context.Context, usecase.CreateChatCommand) (usecase.CreateChatResult, error) {
@@ -160,6 +174,22 @@ type errorBody struct {
 	} `json:"error"`
 }
 
+// assertJSON сравнивает тела как JSON, а не как строки: порядок полей в объекте
+// значения не имеет (RFC 8259, §4), а сгенерированные типы пишут их по алфавиту.
+func assertJSON(t *testing.T, got *bytes.Buffer, want string) {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got.Bytes(), &g); err != nil {
+		t.Fatalf("тело %q: %v", got, err)
+	}
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatalf("ожидаемое тело %q: %v", want, err)
+	}
+	if !reflect.DeepEqual(g, w) {
+		t.Errorf("body\n%s\nwant\n%s", got, want)
+	}
+}
+
 func decodeError(t *testing.T, w *httptest.ResponseRecorder) errorBody {
 	t.Helper()
 	var b errorBody
@@ -210,9 +240,7 @@ func TestCreateChatStatus(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
 			}
-			if w.Body.String() != tt.wantBody+"\n" {
-				t.Errorf("body\n%s\nwant\n%s", w.Body, tt.wantBody)
-			}
+			assertJSON(t, w.Body, tt.wantBody)
 			if got.CreatorID != aliceID {
 				t.Errorf("CreatorID %q, want из principal %q", got.CreatorID, aliceID)
 			}
@@ -244,10 +272,7 @@ func TestSendMessageCreated(t *testing.T) {
 	if got != want {
 		t.Errorf("команда %+v, want %+v", got, want)
 	}
-	wantBody := `{"id":"` + msgID + `","chat_id":"` + chatID + `","author_id":"` + aliceID + `","text":"Привет, Боб!","seq":1,"sent_at":"2026-10-13T12:00:00Z"}` + "\n"
-	if w.Body.String() != wantBody {
-		t.Errorf("body\n%s\nwant\n%s", w.Body, wantBody)
-	}
+	assertJSON(t, w.Body, `{"id":"`+msgID+`","chat_id":"`+chatID+`","author_id":"`+aliceID+`","text":"Привет, Боб!","seq":1,"sent_at":"2026-10-13T12:00:00Z"}`)
 }
 
 func TestListMessages(t *testing.T) {
@@ -287,27 +312,27 @@ func TestListMessages(t *testing.T) {
 			if got != tt.wantQuery {
 				t.Errorf("запрос %+v, want %+v", got, tt.wantQuery)
 			}
-			if w.Body.String() != tt.wantBody+"\n" {
-				t.Errorf("body\n%s\nwant\n%s", w.Body, tt.wantBody)
-			}
+			assertJSON(t, w.Body, tt.wantBody)
 		})
 	}
 }
 
 func TestListMessagesBadQuery(t *testing.T) {
 	tests := []struct {
-		query     string
+		target    string
 		wantField string
 	}{
-		{query: "?limit=abc", wantField: "limit"},
-		{query: "?after=1.5", wantField: "after"},
-		{query: "?after=99999999999999999999", wantField: "after"},
+		{target: "/v1/chats/" + chatID + "/messages?limit=abc", wantField: "limit"},
+		{target: "/v1/chats/" + chatID + "/messages?after=1.5", wantField: "after"},
+		{target: "/v1/chats/" + chatID + "/messages?after=99999999999999999999", wantField: "after"},
+		// Параметр пути разбирает сгенерированная обёртка, и поле в ошибке — как в контракте.
+		{target: "/v1/chats/not-a-uuid/messages", wantField: "id"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.query, func(t *testing.T) {
+		t.Run(tt.target, func(t *testing.T) {
 			mux, _ := server(t, fakes{})
 
-			w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages" + tt.query, userID: bobID})
+			w := do(t, mux, request{method: http.MethodGet, target: tt.target, userID: bobID})
 
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
@@ -376,7 +401,7 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 
 func TestClientGoneWritesNothing(t *testing.T) {
 	// Use case, как и настоящий, возвращает ошибку своего ctx — контекста запроса.
-	mux, logs := server(t, fakes{send: fakeSend{fn: func(ctx context.Context, _ usecase.SendMessageCommand) (domain.Message, error) {
+	mux, logs := rawServer(t, fakes{send: fakeSend{fn: func(ctx context.Context, _ usecase.SendMessageCommand) (domain.Message, error) {
 		return domain.Message{}, fmt.Errorf("send message: %w", ctx.Err())
 	}}})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -502,7 +527,7 @@ func TestDecodeErrorsHideInternals(t *testing.T) {
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
 			}
-			for _, leak := range []string{"Go", "struct", "sendMessageRequest", "json:"} {
+			for _, leak := range []string{"Go", "struct", "SendMessageRequest", "gen.", "json:"} {
 				if strings.Contains(w.Body.String(), leak) {
 					t.Errorf("ответ раскрывает внутреннее (%q): %s", leak, w.Body)
 				}

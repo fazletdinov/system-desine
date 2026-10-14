@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
+	"messenger/internal/chat/adapters/httpapi/gen"
 	"messenger/internal/chat/domain"
 	"messenger/internal/chat/usecase"
 	"messenger/internal/platform/httpjson"
@@ -46,27 +46,40 @@ func New(create chatCreator, send messageSender, list messageLister, log *slog.L
 // chatsPath — адрес коллекции чатов; адрес чата — chatsPath + "/" + id.
 const chatsPath = "/v1/chats"
 
-// Register вешает маршруты на переданный mux, а не на http.DefaultServeMux:
-// какой mux и с какими middleware — решает composition root.
-func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /v1/chats", h.createChat)
-	mux.HandleFunc("POST /v1/chats/{id}/messages", h.sendMessage)
-	mux.HandleFunc("GET /v1/chats/{id}/messages", h.listMessages)
+// #region register
+// Компилятор сверяет обработчик с контрактом: метода нет или сигнатура другая —
+// сборка падает, а не клиент в проде.
+var _ gen.ServerInterface = (*Handler)(nil)
+
+// Register вешает маршруты контракта на переданный mux, а не на http.DefaultServeMux:
+// какой mux и с какими middleware — решает composition root. Пути, методы и разбор
+// параметров пути и строки запроса — в сгенерированном gen.HandlerWithOptions;
+// mws оборачивают каждую операцию после разбора параметров.
+func (h *Handler) Register(mux *http.ServeMux, mws ...gen.MiddlewareFunc) {
+	gen.HandlerWithOptions(h, gen.StdHTTPServerOptions{
+		BaseRouter:       mux,
+		Middlewares:      mws,
+		ErrorHandlerFunc: h.paramError,
+	})
 }
 
-func (h *Handler) createChat(w http.ResponseWriter, r *http.Request) {
+// #endregion register
+
+func (h *Handler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	creator, ok := h.caller(w, r)
 	if !ok {
 		return
 	}
-	var req createChatRequest
+	var req gen.CreateChatRequest
 	if err := httpjson.Decode(w, r, &req); err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	res, err := h.create.Execute(r.Context(), usecase.CreateChatCommand{
-		CreatorID: creator.String(), Kind: req.Kind, Title: req.Title, MemberIDs: req.MemberIDs,
-	})
+	cmd := usecase.CreateChatCommand{CreatorID: creator.String(), Kind: string(req.Kind), MemberIDs: req.MemberIds}
+	if req.Title != nil {
+		cmd.Title = *req.Title
+	}
+	res, err := h.create.Execute(r.Context(), cmd)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -80,22 +93,22 @@ func (h *Handler) createChat(w http.ResponseWriter, r *http.Request) {
 	// для 200 стандарт смысла Location не задаёт, но и не запрещает. Ставим, чтобы
 	// клиент узнавал адрес чата одинаково — создан тот сейчас или был раньше.
 	w.Header().Set("Location", chatsPath+"/"+res.Chat.ID().String())
-	h.respond(w, r, status, toChatResponse(res.Chat))
+	h.respond(w, r, status, toChat(res.Chat))
 }
 
 // #region send-handler
-func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request, id gen.ID) {
 	author, ok := h.caller(w, r)
 	if !ok {
 		return
 	}
-	var req sendMessageRequest
+	var req gen.SendMessageRequest
 	if err := httpjson.Decode(w, r, &req); err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
 	msg, err := h.send.Execute(r.Context(), usecase.SendMessageCommand{
-		ChatID:   r.PathValue("id"),
+		ChatID:   id.String(),
 		AuthorID: author.String(),
 		Text:     req.Text,
 	})
@@ -103,58 +116,31 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
-	h.respond(w, r, http.StatusCreated, toMessageResponse(msg))
+	h.respond(w, r, http.StatusCreated, toMessage(msg))
 }
 
 // #endregion send-handler
 
-func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
+// ListMessages: необязательные параметры — указатели; nil — «не передан», и тогда
+// 0: значение по умолчанию и проверку диапазона выбирает use case, а не адаптер.
+func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request, id gen.ID, params gen.ListMessagesParams) {
 	reader, ok := h.caller(w, r)
 	if !ok {
 		return
 	}
-	q := usecase.ListMessagesQuery{ChatID: r.PathValue("id"), ReaderID: reader.String()}
-	var err error
-	if q.AfterSeq, err = queryInt64(r, "after"); err != nil {
-		writeError(w, r, h.log, err)
-		return
+	q := usecase.ListMessagesQuery{ChatID: id.String(), ReaderID: reader.String()}
+	if params.After != nil {
+		q.AfterSeq = *params.After
 	}
-	if q.Limit, err = queryInt(r, "limit"); err != nil {
-		writeError(w, r, h.log, err)
-		return
+	if params.Limit != nil {
+		q.Limit = *params.Limit
 	}
 	msgs, err := h.list.Execute(r.Context(), q)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	h.respond(w, r, http.StatusOK, toListMessagesResponse(msgs))
-}
-
-// queryInt64 разбирает параметр строки запроса; отсутствующий — 0 (значение по умолчанию
-// выбирает use case). Диапазон тоже проверяет use case: здесь — только «это число».
-func queryInt64(r *http.Request, name string) (int64, error) {
-	s := r.URL.Query().Get(name)
-	if s == "" {
-		return 0, nil
-	}
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0, &domain.ValidationError{Field: name, Reason: "должно быть целым числом"}
-	}
-	return n, nil
-}
-
-func queryInt(r *http.Request, name string) (int, error) {
-	s := r.URL.Query().Get(name)
-	if s == "" {
-		return 0, nil
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return 0, &domain.ValidationError{Field: name, Reason: "должно быть целым числом"}
-	}
-	return n, nil
+	h.respond(w, r, http.StatusOK, toMessageList(msgs))
 }
 
 // respond пишет успешный ответ. Ошибка записи — только в лог: заголовки уже ушли.

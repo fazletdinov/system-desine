@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"messenger/internal/platform/httpjson"
+	"messenger/internal/user/adapters/httpapi/gen"
 	"messenger/internal/user/domain"
 	"messenger/internal/user/usecase"
 )
@@ -39,15 +40,23 @@ func New(register userRegistrar, get userGetter, log *slog.Logger) (*Handler, er
 // usersPath — адрес коллекции пользователей; адрес пользователя — usersPath + "/" + id.
 const usersPath = "/v1/users"
 
-// Register вешает маршруты на переданный mux, а не на http.DefaultServeMux:
-// какой mux и с какими middleware — решает composition root.
-func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /v1/users", h.registerUser)
-	mux.HandleFunc("GET /v1/users/{id}", h.getUser)
+// Компилятор сверяет обработчик с контрактом: метода нет или сигнатура другая —
+// сборка падает, а не клиент в проде.
+var _ gen.ServerInterface = (*Handler)(nil)
+
+// Register вешает маршруты контракта на переданный mux, а не на http.DefaultServeMux:
+// какой mux и с какими middleware — решает composition root. Пути, методы и разбор
+// параметра пути — в сгенерированном gen.HandlerWithOptions.
+func (h *Handler) Register(mux *http.ServeMux, mws ...gen.MiddlewareFunc) {
+	gen.HandlerWithOptions(h, gen.StdHTTPServerOptions{
+		BaseRouter:       mux,
+		Middlewares:      mws,
+		ErrorHandlerFunc: h.paramError,
+	})
 }
 
-func (h *Handler) registerUser(w http.ResponseWriter, r *http.Request) {
-	var req registerUserRequest
+func (h *Handler) RegisterUser(w http.ResponseWriter, r *http.Request) {
+	var req gen.RegisterUserRequest
 	if err := httpjson.Decode(w, r, &req); err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -63,16 +72,16 @@ func (h *Handler) registerUser(w http.ResponseWriter, r *http.Request) {
 	// Location — адрес созданного ресурса (RFC 9110, §9.3.3 и §15.3.2): без него клиент
 	// по стандарту счёл бы созданным сам /v1/users. GET по этому адресу вернёт то же тело.
 	w.Header().Set("Location", usersPath+"/"+user.ID().String())
-	h.respond(w, r, http.StatusCreated, toUserResponse(user))
+	h.respond(w, r, http.StatusCreated, toUser(user))
 }
 
-func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {
-	user, err := h.get.Execute(r.Context(), usecase.GetUserQuery{ID: r.PathValue("id")})
+func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request, id gen.ID) {
+	user, err := h.get.Execute(r.Context(), usecase.GetUserQuery{ID: id.String()})
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	h.respond(w, r, http.StatusOK, toUserResponse(user))
+	h.respond(w, r, http.StatusOK, toUser(user))
 }
 
 // respond пишет успешный ответ. Ошибка записи — только в лог: заголовки уже ушли.

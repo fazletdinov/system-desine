@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"messenger/internal/platform/httperror"
+	"messenger/internal/user/adapters/httpapi/gen"
 	"messenger/internal/user/domain"
 )
 
@@ -28,4 +29,25 @@ func problemFor(err error) (httperror.Problem, bool) {
 	default:
 		return httperror.Problem{}, false
 	}
+}
+
+// paramError — ErrorHandlerFunc сгенерированной обёртки: параметр пути или строки
+// запроса не разобрался. Ошибки генератора переводим в доменную ValidationError,
+// чтобы ответ был в общем формате, а поле называлось так же, как в контракте.
+func (h *Handler) paramError(w http.ResponseWriter, r *http.Request, err error) {
+	var (
+		format   *gen.InvalidParamFormatError
+		required *gen.RequiredParamError
+		tooMany  *gen.TooManyValuesForParamError
+	)
+	invalid := &domain.ValidationError{Reason: "некорректные параметры запроса"}
+	switch {
+	case errors.As(err, &format):
+		invalid.Field, invalid.Reason = format.ParamName, "неверный формат"
+	case errors.As(err, &required):
+		invalid.Field, invalid.Reason = required.ParamName, "обязательный параметр"
+	case errors.As(err, &tooMany):
+		invalid.Field, invalid.Reason = tooMany.ParamName, "неверный формат"
+	}
+	writeError(w, r, h.log, invalid)
 }
