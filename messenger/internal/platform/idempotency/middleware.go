@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 
 	"messenger/internal/platform/httpjson"
@@ -69,7 +70,7 @@ func (g guard) serve(w http.ResponseWriter, r *http.Request, next http.Handler, 
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			g.write(w, r, problem.Problem{Code: problem.CodeBodyTooLarge, Detail: "тело больше 1 МиБ"})
+			g.write(w, r, problem.Problem{Code: problem.CodeBodyTooLarge, Detail: httpjson.TooLargeMsg()})
 			return
 		}
 		problem.Respond(w, r, g.log, err, notOurs)
@@ -166,17 +167,32 @@ func (g guard) write(w http.ResponseWriter, r *http.Request, p problem.Problem) 
 }
 
 // fingerprint отличает повтор от другого запроса с тем же ключом: тот же метод, путь
-// с запросом и то же тело. Разделитель — байт 0: он не встречается ни в методе, ни в пути.
+// с запросом, тип тела и само тело. Тип входит потому, что от него зависит ответ:
+// без него исправленный Content-Type с тем же ключом получил бы сохранённый 415.
+// Разделитель — байт 0: он не встречается ни в методе, ни в пути, ни в типе.
 func fingerprint(r *http.Request, body []byte) [sha256.Size]byte {
 	h := sha256.New()
 	h.Write([]byte(r.Method))
 	h.Write([]byte{0})
 	h.Write([]byte(r.URL.RequestURI()))
 	h.Write([]byte{0})
+	h.Write([]byte(mediaType(r)))
+	h.Write([]byte{0})
 	h.Write(body)
 	var out [sha256.Size]byte
 	copy(out[:], h.Sum(nil))
 	return out
+}
+
+// mediaType — тип тела без параметров и в нижнем регистре: "Application/JSON; charset=utf-8"
+// и "application/json" — один и тот же запрос. Нет заголовка или он не разбирается —
+// пустая строка: такие запросы равны между собой и отличны от любого настоящего типа.
+func mediaType(r *http.Request) string {
+	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		return ""
+	}
+	return mt // ParseMediaType уже приводит тип к нижнему регистру
 }
 
 // validKey — непустой, не длиннее KeyMaxLen, только печатные ASCII (0x20–0x7e): ключ

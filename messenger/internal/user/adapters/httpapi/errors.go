@@ -43,6 +43,9 @@ func problemFor(err error) (problem.Problem, bool) {
 // запроса не разобрался. Ошибки генератора — свои типы в каждом gen-пакете; переводим
 // их в invalid_input с именем параметра из контракта. Текст err.Error() наружу не идёт:
 // в нём детали разбора на языке Go, клиенту они не помогут.
+// Функция повторена в каждом адаптере намеренно: у каждого gen-пакета свои типы ошибок
+// (gen.InvalidParamFormatError и др. — разные типы в chat, user и auth), и общая версия
+// потребовала бы либо дженериков над чужим сгенерированным кодом, либо разбора текста.
 func (h *Handler) paramError(w http.ResponseWriter, r *http.Request, err error) {
 	var (
 		format   *gen.InvalidParamFormatError

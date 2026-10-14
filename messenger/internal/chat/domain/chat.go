@@ -14,6 +14,15 @@ const (
 	ListLimitMax     = 100
 )
 
+// CheckListLimit — граница размера страницы: от 1 до ListLimitMax. Значение по
+// умолчанию — не её забота: «не передан» знает только тот, кто разбирал запрос.
+func CheckListLimit(n int) error {
+	if n < 1 || n > ListLimitMax {
+		return invalid("limit", fmt.Sprintf("от 1 до %d", ListLimitMax))
+	}
+	return nil
+}
+
 type Kind string
 
 const (

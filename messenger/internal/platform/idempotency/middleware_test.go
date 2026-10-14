@@ -325,6 +325,10 @@ func TestIdempotencyBodyTooLarge(t *testing.T) {
 	if code, _ := problemCode(t, rec); rec.Code != http.StatusRequestEntityTooLarge || code != string(problem.CodeBodyTooLarge) || calls.Load() != 0 {
 		t.Fatalf("ответ %d %s, вызовов %d — ждали 413 body_too_large без вызова", rec.Code, code, calls.Load())
 	}
+	// Текст тот же, что у декодера обработчика: клиенту не важно, кто из двоих прочитал тело.
+	if !strings.Contains(rec.Body.String(), `"detail":"`+httpjson.TooLargeMsg()+`"`) {
+		t.Fatalf("detail не из httpjson.TooLargeMsg: %s", rec.Body)
+	}
 }
 
 // Без личности ключ не к чему привязать: это ошибка сборки конвейера, а не клиента.
@@ -437,5 +441,50 @@ func TestIdempotencyReleasesAfterPanic(t *testing.T) {
 	rec := s.do(request(t, "key-2", `{}`))
 	if rec.Code != http.StatusCreated || calls.Load() != 2 {
 		t.Fatalf("после паники повтор: %d, вызовов %d — ждали 201 и 2", rec.Code, calls.Load())
+	}
+}
+
+// Content-Type входит в отпечаток: исправленный запрос с тем же ключом — уже другой
+// запрос (422), а не повтор сохранённого 415. Обработчик второй раз не вызывается.
+func TestIdempotencyContentTypeInFingerprint(t *testing.T) {
+	var calls atomic.Int32
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Header.Get("Content-Type") != "application/json" {
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	})
+	s := serve(t, memory.NewStore(), h)
+
+	wrong := request(t, "key-1", `{}`)
+	wrong.Header.Set("Content-Type", "text/plain")
+	if rec := s.do(wrong); rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("первый ответ %d, ждали 415", rec.Code)
+	}
+	rec := s.do(request(t, "key-1", `{}`))
+
+	if code, _ := problemCode(t, rec); rec.Code != http.StatusUnprocessableEntity || code != string(problem.CodeIdempotencyKeyReused) {
+		t.Fatalf("ответ %d %s, ждали 422 idempotency_key_reused", rec.Code, code)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("обработчик вызван %d раз, ждали 1", calls.Load())
+	}
+}
+
+// Отпечаток сравнивает тип, а не написание заголовка: регистр и параметры не делают
+// запрос другим.
+func TestIdempotencyContentTypeSpellingIsSameRequest(t *testing.T) {
+	var calls atomic.Int32
+	s := serve(t, memory.NewStore(), created(&calls))
+
+	s.do(request(t, "key-1", `{}`))
+	again := request(t, "key-1", `{}`)
+	again.Header.Set("Content-Type", "Application/JSON; charset=utf-8")
+	rec := s.do(again)
+
+	if calls.Load() != 1 || rec.Header().Get(idempotency.ReplayedHeader) != "true" {
+		t.Fatalf("ответ %d, вызовов %d — ждали повтор и 1 вызов", rec.Code, calls.Load())
 	}
 }

@@ -49,22 +49,28 @@ func (h *Handler) Register(mux *http.ServeMux, mws ...gen.MiddlewareFunc) {
 // #region get-me
 // GetMe — профиль вызывающего. Это тот же GetUser, только id берётся не из пути,
 // а из личности, которую установила аутентификация: клиенту не нужно знать свой id.
+// Отличие одно: «пользователь не найден» здесь — не 404. Токен верен, а его субъекта
+// уже нет (в памяти — после перезапуска), значит, токен больше никого не называет: 401.
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	id, ok := h.caller(w, r)
 	if !ok {
 		return
 	}
-	h.getUser(w, r, id)
+	user, err := h.get.Execute(r.Context(), usecase.GetUserQuery{ID: id})
+	switch {
+	case errors.Is(err, domain.ErrUserNotFound):
+		h.subjectGone(w, r)
+	case err != nil:
+		writeError(w, r, h.log, err)
+	default:
+		h.respond(w, r, http.StatusOK, toUser(user))
+	}
 }
 
 // #endregion get-me
 
 func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	h.getUser(w, r, id.String())
-}
-
-func (h *Handler) getUser(w http.ResponseWriter, r *http.Request, id string) {
-	user, err := h.get.Execute(r.Context(), usecase.GetUserQuery{ID: id})
+	user, err := h.get.Execute(r.Context(), usecase.GetUserQuery{ID: id.String()})
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

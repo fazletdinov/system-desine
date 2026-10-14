@@ -166,9 +166,9 @@ func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request, id gen.ID) {
 }
 
 // #region list-handlers
-// ListMessages: необязательные параметры — указатели; nil — «не передан». Лимит 0 —
-// значение по умолчанию: его и диапазон выбирает use case, а не адаптер. Курсор —
-// забота адаптера: use case видит только ключ seq.
+// ListMessages: необязательные параметры — указатели; nil — «не передан». Не переданный
+// limit уходит в use case нулём, и значение по умолчанию выбирает он; переданный
+// проверяет queryLimit. Курсор — забота адаптера: use case видит только ключ seq.
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request, id gen.ID, params gen.ListMessagesParams) {
 	reader, ok := h.caller(w, r)
 	if !ok {
@@ -184,10 +184,12 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request, id gen.ID
 		h.badCursor(w, r, err)
 		return
 	}
-	q := usecase.ListMessagesQuery{ChatID: id.String(), ReaderID: reader.String(), BeforeSeq: before}
-	if params.Limit != nil {
-		q.Limit = *params.Limit
+	limit, err := queryLimit(params.Limit)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
 	}
+	q := usecase.ListMessagesQuery{ChatID: id.String(), ReaderID: reader.String(), BeforeSeq: before, Limit: limit}
 	page, err := h.list.Execute(r.Context(), q)
 	if err != nil {
 		writeError(w, r, h.log, err)
@@ -211,10 +213,12 @@ func (h *Handler) ListChats(w http.ResponseWriter, r *http.Request, params gen.L
 		h.badCursor(w, r, err)
 		return
 	}
-	q := usecase.ListChatsQuery{MemberID: member.String(), After: after}
-	if params.Limit != nil {
-		q.Limit = *params.Limit
+	limit, err := queryLimit(params.Limit)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
 	}
+	q := usecase.ListChatsQuery{MemberID: member.String(), After: after, Limit: limit}
 	page, err := h.chats.Execute(r.Context(), q)
 	if err != nil {
 		writeError(w, r, h.log, err)
@@ -226,6 +230,19 @@ func (h *Handler) ListChats(w http.ResponseWriter, r *http.Request, params gen.L
 		return
 	}
 	h.respond(w, r, http.StatusOK, toChatPage(page.Chats, next))
+}
+
+// queryLimit переводит необязательный limit в поле запроса use case. Не передан — 0,
+// и use case подставит значение по умолчанию. Передан — проверяем здесь: у use case
+// явный 0 неотличим от «не передан», и ?limit=0 молча получил бы 50 записей.
+func queryLimit(p *int) (int, error) {
+	if p == nil {
+		return 0, nil
+	}
+	if err := domain.CheckListLimit(*p); err != nil {
+		return 0, err
+	}
+	return *p, nil
 }
 
 // #endregion list-handlers

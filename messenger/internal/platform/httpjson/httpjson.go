@@ -16,6 +16,10 @@ import (
 // группа — до 200 id по 36 байт; 1 МиБ — с большим запасом, но не даёт забить память.
 const MaxBodyBytes = 1 << 20
 
+// TooLargeMsg — текст 413 для клиента. Тело читает не только Decode, но и middleware
+// идемпотентности (тело входит в отпечаток); текст один, как и лимит, из которого он собран.
+func TooLargeMsg() string { return fmt.Sprintf("тело больше %d байт", MaxBodyBytes) }
+
 // DecodeError — ошибка разбора тела; Status — HTTP-статус, который стоит вернуть.
 type DecodeError struct {
 	Status int
@@ -67,7 +71,7 @@ func decodeError(err error) *DecodeError {
 	)
 	switch {
 	case errors.As(err, &tooLarge):
-		return &DecodeError{Status: http.StatusRequestEntityTooLarge, Code: "body_too_large", Msg: fmt.Sprintf("тело больше %d байт", MaxBodyBytes)}
+		return &DecodeError{Status: http.StatusRequestEntityTooLarge, Code: "body_too_large", Msg: TooLargeMsg()}
 	case errors.Is(err, io.EOF):
 		return badJSON("пустое тело", "")
 	case errors.Is(err, io.ErrUnexpectedEOF):

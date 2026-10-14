@@ -274,6 +274,27 @@ func TestGetMe(t *testing.T) {
 	assertJSON(t, w.Body, `{"id":"`+aliceID+`","username":"alice","display_name":"Алиса","created_at":"2026-10-13T12:04:05Z"}`)
 }
 
+// Токен подписан нами и не просрочен, но пользователя уже нет (например, хранилище
+// в памяти пережило перезапуск). Это не 404 «нет ресурса», а 401: субъект токена
+// больше никого не называет, и клиенту нужно войти заново.
+func TestGetMeUserGone(t *testing.T) {
+	mux, _ := server(t, fakeGet{fn: func(context.Context, usecase.GetUserQuery) (domain.User, error) {
+		return domain.User{}, domain.ErrUserNotFound
+	}})
+
+	w := doAs(t, mux, aliceID, http.MethodGet, "/v1/users/me")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401; body %s", w.Code, w.Body)
+	}
+	if b := decodeError(t, w); b.Code != "unauthenticated" {
+		t.Errorf("code %q, want unauthenticated", b.Code)
+	}
+	if got := w.Header().Get("WWW-Authenticate"); got != `Bearer realm="messenger", error="invalid_token"` {
+		t.Errorf("WWW-Authenticate %q", got)
+	}
+}
+
 func TestGetMeWithoutIdentity(t *testing.T) {
 	tests := []struct{ name, userID string }{
 		{name: "личности нет", userID: ""},

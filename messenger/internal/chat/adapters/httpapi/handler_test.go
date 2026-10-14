@@ -484,13 +484,21 @@ func TestListMessagesBadCursor(t *testing.T) {
 	}
 }
 
-func TestListMessagesBadQuery(t *testing.T) {
+func TestListsBadQuery(t *testing.T) {
 	tests := []struct {
 		target    string
 		wantField string
 	}{
 		{target: "/v1/chats/" + chatID + "/messages?limit=abc", wantField: "limit"},
 		{target: "/v1/chats/" + chatID + "/messages?limit=1.5", wantField: "limit"},
+		// Явный limit вне 1…100 — ошибка клиента, даже 0: «не передан» и «передан 0» —
+		// разные запросы, и молча подставить значение по умолчанию значит скрыть ошибку.
+		{target: "/v1/chats/" + chatID + "/messages?limit=0", wantField: "limit"},
+		{target: "/v1/chats/" + chatID + "/messages?limit=-1", wantField: "limit"},
+		{target: "/v1/chats/" + chatID + "/messages?limit=101", wantField: "limit"},
+		{target: "/v1/chats?limit=0", wantField: "limit"},
+		{target: "/v1/chats?limit=-5", wantField: "limit"},
+		{target: "/v1/chats?limit=101", wantField: "limit"},
 		// Параметр пути разбирает сгенерированная обёртка, и поле в ошибке — как в контракте.
 		{target: "/v1/chats/not-a-uuid/messages", wantField: "id"},
 	}

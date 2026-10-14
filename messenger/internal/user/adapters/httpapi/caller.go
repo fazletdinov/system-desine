@@ -32,3 +32,11 @@ func (h *Handler) unauthenticated(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("WWW-Authenticate", httpauth.Challenge(httpauth.ErrNoCredentials))
 	writeProblem(w, r, h.log, problem.Problem{Code: problem.CodeUnauthenticated, Detail: "не удалось определить пользователя"})
 }
+
+// subjectGone — 401 для токена, чей субъект больше не существует. Токен предъявлен и
+// подпись верна, но назвать по нему некого — для клиента это тот же «токен негоден»
+// (RFC 6750 §3.1, error="invalid_token"): войти заново и получить новый.
+func (h *Handler) subjectGone(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("WWW-Authenticate", httpauth.Challenge(httpauth.ErrInvalidToken))
+	writeProblem(w, r, h.log, problem.Problem{Code: problem.CodeUnauthenticated, Detail: "пользователь токена не найден, войдите заново"})
+}

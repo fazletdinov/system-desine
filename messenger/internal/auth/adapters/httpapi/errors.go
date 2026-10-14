@@ -52,6 +52,9 @@ func rejectReason(err error) string {
 
 // paramError — ErrorHandlerFunc сгенерированной обёртки. У регистрации нет параметров
 // пути и строки запроса, но обёртка требует обработчик, и его поведение — как у соседей.
+// Функция повторена в каждом адаптере намеренно: у каждого gen-пакета свои типы ошибок
+// (gen.InvalidParamFormatError и др. — разные типы в chat, user и auth), и общая версия
+// потребовала бы либо дженериков над чужим сгенерированным кодом, либо разбора текста.
 func (h *Handler) paramError(w http.ResponseWriter, r *http.Request, err error) {
 	var (
 		format   *gen.InvalidParamFormatError
