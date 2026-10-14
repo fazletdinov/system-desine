@@ -26,7 +26,7 @@ export interface ContractPipelineState {
   caught: Caught
 }
 
-const YAML = `/chats/{chatId}/messages:
+const YAML = `/v1/chats/{id}/messages:
   post:
     operationId: sendMessage
     requestBody:
@@ -72,19 +72,19 @@ const GEN_TYPES_RENAMED = `type SendMessageRequest struct {
 }`
 
 const GEN_IFACE = `type ServerInterface interface {
-\t// (POST /chats/{chatId}/messages)
-\tSendMessage(w http.ResponseWriter, r *http.Request, chatId openapi_types.UUID)
+\t// (POST /v1/chats/{id}/messages)
+\tSendMessage(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 }`
 
-const HANDLER = `func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request, chatId openapi_types.UUID) {
+const HANDLER = `func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 \tvar req SendMessageRequest
 \t// … httpjson.Decode(r, &req)
-\tcmd := usecase.SendMessageCommand{ChatID: chatId.String(), Text: req.Text}
+\tcmd := usecase.SendMessageCommand{ChatID: id.String(), Text: req.Text}
 \t// … s.send.Execute(ctx, cmd) → 201 Message
 }`
 
 const HANDLER_OLD_FIELD = `cmd := usecase.SendMessageCommand{
-\tChatID: chatId.String(),
+\tChatID: id.String(),
 \tText:   req.Text, // в контракте поля text больше нет
 }`
 
