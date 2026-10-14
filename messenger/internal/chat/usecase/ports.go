@@ -44,7 +44,8 @@ type DirectChatFinder interface {
 type MessageAppender interface {
 	// AppendMessage сохраняет сообщение и новое состояние чата, только если версия
 	// чата в хранилище всё ещё expectedVersion; иначе — domain.ErrConcurrentUpdate.
-	// Если чата нет — domain.ErrChatNotFound.
+	// Если чата нет — domain.ErrChatNotFound. Если сообщение с тем же (чат, автор,
+	// client_message_id) уже есть — *domain.DuplicateMessageError с ним.
 	AppendMessage(ctx context.Context, chat *domain.Chat, msg domain.Message, expectedVersion int64) error
 }
 

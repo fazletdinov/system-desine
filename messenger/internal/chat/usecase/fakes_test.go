@@ -32,6 +32,11 @@ func (g *seqIDs) NewID() string {
 	return fmt.Sprintf("00000000-0000-7000-b000-%012d", g.n.Add(1))
 }
 
+// clientID — client_message_id номер n: его, в отличие от id сообщения, придумывает клиент.
+func clientID(n int) string {
+	return fmt.Sprintf("00000000-0000-7000-e000-%012d", n)
+}
+
 // knownUsers — фейк UserChecker: «существуют» только перечисленные пользователи.
 type knownUsers struct {
 	mu  sync.Mutex
@@ -77,20 +82,23 @@ func (m *missOnce) FindDirectChat(ctx context.Context, a, b domain.UserID) (*dom
 	return m.DirectChatFinder.FindDirectChat(ctx, a, b)
 }
 
-// failingAppender всегда отвечает заданной ошибкой и запоминает id каждого сообщения.
+// failingAppender всегда отвечает заданной ошибкой и запоминает id и client_message_id
+// каждого сообщения.
 // onCall, если задан, вызывается перед ответом: так тест вмешивается в середину
 // попытки, например отменяет контекст запроса.
 type failingAppender struct {
-	err    error
-	onCall func()
-	mu     sync.Mutex
-	ids    []domain.MessageID
+	err     error
+	onCall  func()
+	mu      sync.Mutex
+	ids     []domain.MessageID
+	clients []domain.ClientMessageID
 }
 
 func (f *failingAppender) AppendMessage(_ context.Context, _ *domain.Chat, msg domain.Message, _ int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ids = append(f.ids, msg.ID())
+	f.clients = append(f.clients, msg.ClientID())
 	if f.onCall != nil {
 		f.onCall()
 	}

@@ -23,18 +23,21 @@ const (
 type Code string
 
 const (
-	CodeInvalidInput         Code = "invalid_input"
-	CodeBadJSON              Code = "bad_json"
-	CodeUnsupportedMediaType Code = "unsupported_media_type"
-	CodeBodyTooLarge         Code = "body_too_large"
-	CodeUnauthenticated      Code = "unauthenticated"
-	CodeNotMember            Code = "not_member"
-	CodeNotFound             Code = "not_found"
-	CodeMethodNotAllowed     Code = "method_not_allowed"
-	CodeUsernameTaken        Code = "username_taken"
-	CodeConflict             Code = "conflict"
-	CodeTimeout              Code = "timeout"
-	CodeInternal             Code = "internal"
+	CodeInvalidInput          Code = "invalid_input"
+	CodeBadJSON               Code = "bad_json"
+	CodeUnsupportedMediaType  Code = "unsupported_media_type"
+	CodeBodyTooLarge          Code = "body_too_large"
+	CodeUnauthenticated       Code = "unauthenticated"
+	CodeNotMember             Code = "not_member"
+	CodeNotFound              Code = "not_found"
+	CodeMethodNotAllowed      Code = "method_not_allowed"
+	CodeUsernameTaken         Code = "username_taken"
+	CodeConflict              Code = "conflict"
+	CodeClientMessageIDReused Code = "client_message_id_reused"
+	CodeIdempotencyInProgress Code = "idempotency_in_progress"
+	CodeIdempotencyKeyReused  Code = "idempotency_key_reused"
+	CodeTimeout               Code = "timeout"
+	CodeInternal              Code = "internal"
 )
 
 // title по RFC 9457 не меняется от случая к случаю — поэтому он в реестре, а подробности
@@ -46,18 +49,21 @@ type spec struct {
 
 // #region registry
 var registry = map[Code]spec{
-	CodeInvalidInput:         {http.StatusBadRequest, "Некорректные данные"},
-	CodeBadJSON:              {http.StatusBadRequest, "Некорректный JSON"},
-	CodeUnsupportedMediaType: {http.StatusUnsupportedMediaType, "Неподдерживаемый формат тела"},
-	CodeBodyTooLarge:         {http.StatusRequestEntityTooLarge, "Слишком большое тело запроса"},
-	CodeUnauthenticated:      {http.StatusUnauthorized, "Не удалось определить пользователя"},
-	CodeNotMember:            {http.StatusForbidden, "Нет доступа к чату"},
-	CodeNotFound:             {http.StatusNotFound, "Не найдено"},
-	CodeMethodNotAllowed:     {http.StatusMethodNotAllowed, "Метод не поддерживается"},
-	CodeUsernameTaken:        {http.StatusConflict, "Имя пользователя занято"},
-	CodeConflict:             {http.StatusConflict, "Конфликт изменений"},
-	CodeTimeout:              {http.StatusServiceUnavailable, "Сервер не успел ответить"},
-	CodeInternal:             {http.StatusInternalServerError, "Внутренняя ошибка сервера"},
+	CodeInvalidInput:          {http.StatusBadRequest, "Некорректные данные"},
+	CodeBadJSON:               {http.StatusBadRequest, "Некорректный JSON"},
+	CodeUnsupportedMediaType:  {http.StatusUnsupportedMediaType, "Неподдерживаемый формат тела"},
+	CodeBodyTooLarge:          {http.StatusRequestEntityTooLarge, "Слишком большое тело запроса"},
+	CodeUnauthenticated:       {http.StatusUnauthorized, "Не удалось определить пользователя"},
+	CodeNotMember:             {http.StatusForbidden, "Нет доступа к чату"},
+	CodeNotFound:              {http.StatusNotFound, "Не найдено"},
+	CodeMethodNotAllowed:      {http.StatusMethodNotAllowed, "Метод не поддерживается"},
+	CodeUsernameTaken:         {http.StatusConflict, "Имя пользователя занято"},
+	CodeConflict:              {http.StatusConflict, "Конфликт изменений"},
+	CodeClientMessageIDReused: {http.StatusConflict, "client_message_id уже использован"},
+	CodeIdempotencyInProgress: {http.StatusConflict, "Запрос с этим ключом ещё выполняется"},
+	CodeIdempotencyKeyReused:  {http.StatusUnprocessableEntity, "Ключ идемпотентности использован для другого запроса"},
+	CodeTimeout:               {http.StatusServiceUnavailable, "Сервер не успел ответить"},
+	CodeInternal:              {http.StatusInternalServerError, "Внутренняя ошибка сервера"},
 }
 
 // #endregion registry

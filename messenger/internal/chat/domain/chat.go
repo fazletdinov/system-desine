@@ -133,10 +133,12 @@ func (c *Chat) DirectKey() (key string, ok bool) {
 // #region post
 // Post — единственный способ добавить сообщение. Номер выдаёт агрегат,
 // а не хранилище: правило «seq подряд» — бизнес-правило, ему место в домене.
-func (c *Chat) Post(id MessageID, author UserID, text Text, sentAt time.Time) (Message, error) {
+func (c *Chat) Post(id MessageID, clientID ClientMessageID, author UserID, text Text, sentAt time.Time) (Message, error) {
 	switch {
 	case id.IsZero():
 		return Message{}, invalid("message_id", errNotSet)
+	case clientID.IsZero():
+		return Message{}, invalid("client_message_id", errNotSet)
 	case author.IsZero():
 		return Message{}, invalid("author_id", errNotSet)
 	case text.IsZero():
@@ -153,7 +155,7 @@ func (c *Chat) Post(id MessageID, author UserID, text Text, sentAt time.Time) (M
 	if sentAt.After(c.lastActivityAt) {
 		c.lastActivityAt = sentAt
 	}
-	return Message{id: id, chatID: c.id, authorID: author, text: text, seq: c.lastSeq, sentAt: sentAt}, nil
+	return Message{id: id, clientID: clientID, chatID: c.id, authorID: author, text: text, seq: c.lastSeq, sentAt: sentAt}, nil
 }
 
 // #endregion post

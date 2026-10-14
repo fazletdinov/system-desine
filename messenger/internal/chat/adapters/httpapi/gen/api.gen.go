@@ -53,18 +53,21 @@ func (e CreateChatRequestKind) Valid() bool {
 
 // Defines values for ProblemCode.
 const (
-	ProblemCodeBadJson              ProblemCode = "bad_json"
-	ProblemCodeBodyTooLarge         ProblemCode = "body_too_large"
-	ProblemCodeConflict             ProblemCode = "conflict"
-	ProblemCodeInternal             ProblemCode = "internal"
-	ProblemCodeInvalidInput         ProblemCode = "invalid_input"
-	ProblemCodeMethodNotAllowed     ProblemCode = "method_not_allowed"
-	ProblemCodeNotFound             ProblemCode = "not_found"
-	ProblemCodeNotMember            ProblemCode = "not_member"
-	ProblemCodeTimeout              ProblemCode = "timeout"
-	ProblemCodeUnauthenticated      ProblemCode = "unauthenticated"
-	ProblemCodeUnsupportedMediaType ProblemCode = "unsupported_media_type"
-	ProblemCodeUsernameTaken        ProblemCode = "username_taken"
+	ProblemCodeBadJson               ProblemCode = "bad_json"
+	ProblemCodeBodyTooLarge          ProblemCode = "body_too_large"
+	ProblemCodeClientMessageIdReused ProblemCode = "client_message_id_reused"
+	ProblemCodeConflict              ProblemCode = "conflict"
+	ProblemCodeIdempotencyInProgress ProblemCode = "idempotency_in_progress"
+	ProblemCodeIdempotencyKeyReused  ProblemCode = "idempotency_key_reused"
+	ProblemCodeInternal              ProblemCode = "internal"
+	ProblemCodeInvalidInput          ProblemCode = "invalid_input"
+	ProblemCodeMethodNotAllowed      ProblemCode = "method_not_allowed"
+	ProblemCodeNotFound              ProblemCode = "not_found"
+	ProblemCodeNotMember             ProblemCode = "not_member"
+	ProblemCodeTimeout               ProblemCode = "timeout"
+	ProblemCodeUnauthenticated       ProblemCode = "unauthenticated"
+	ProblemCodeUnsupportedMediaType  ProblemCode = "unsupported_media_type"
+	ProblemCodeUsernameTaken         ProblemCode = "username_taken"
 )
 
 // Valid indicates whether the value is a known member of the ProblemCode enum.
@@ -74,7 +77,13 @@ func (e ProblemCode) Valid() bool {
 		return true
 	case ProblemCodeBodyTooLarge:
 		return true
+	case ProblemCodeClientMessageIdReused:
+		return true
 	case ProblemCodeConflict:
+		return true
+	case ProblemCodeIdempotencyInProgress:
+		return true
+	case ProblemCodeIdempotencyKeyReused:
 		return true
 	case ProblemCodeInternal:
 		return true
@@ -146,12 +155,13 @@ type InvalidParam struct {
 
 // Message defines model for Message.
 type Message struct {
-	AuthorId string    `json:"author_id"`
-	ChatId   string    `json:"chat_id"`
-	Id       string    `json:"id"`
-	SentAt   time.Time `json:"sent_at"`
-	Seq      int64     `json:"seq"`
-	Text     string    `json:"text"`
+	AuthorId        string    `json:"author_id"`
+	ChatId          string    `json:"chat_id"`
+	ClientMessageId string    `json:"client_message_id"`
+	Id              string    `json:"id"`
+	SentAt          time.Time `json:"sent_at"`
+	Seq             int64     `json:"seq"`
+	Text            string    `json:"text"`
 }
 
 // MessagePage Страница истории от новых к старым.
@@ -179,7 +189,9 @@ type ProblemCode string
 
 // SendMessageRequest defines model for SendMessageRequest.
 type SendMessageRequest struct {
-	Text string `json:"text"`
+	// ClientMessageId Генерирует клиент; одинаковый во всех повторах этого сообщения.
+	ClientMessageId string `json:"client_message_id"`
+	Text            string `json:"text"`
 }
 
 // Cursor defines model for Cursor.
@@ -188,14 +200,14 @@ type Cursor = string
 // ID defines model for ID.
 type ID = openapi_types.UUID
 
+// IdempotencyKey defines model for IdempotencyKey.
+type IdempotencyKey = string
+
 // Limit defines model for Limit.
 type Limit = int
 
 // BadRequest Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type BadRequest = Problem
-
-// Conflict Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
-type Conflict = Problem
 
 // Forbidden Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type Forbidden = Problem
@@ -215,6 +227,9 @@ type ServiceUnavailable = Problem
 // Unauthorized Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type Unauthorized = Problem
 
+// UnprocessableEntity Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type UnprocessableEntity = Problem
+
 // UnsupportedMediaType Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type UnsupportedMediaType = Problem
 
@@ -226,6 +241,13 @@ type ListChatsParams struct {
 
 	// Limit Размер страницы, от 1 до 100.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// CreateChatParams defines parameters for CreateChat.
+type CreateChatParams struct {
+	// IdempotencyKey Ключ, который клиент генерирует для одной логической операции (обычно UUID) и
+	// повторяет во всех её попытках. Сервер помнит ключ 24 часа; область ключа — пользователь.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
 // ListMessagesParams defines parameters for ListMessages.
@@ -251,7 +273,7 @@ type ServerInterface interface {
 	ListChats(w http.ResponseWriter, r *http.Request, params ListChatsParams)
 	// CreateChat Создать чат
 	// (POST /v1/chats)
-	CreateChat(w http.ResponseWriter, r *http.Request)
+	CreateChat(w http.ResponseWriter, r *http.Request, params CreateChatParams)
 	// GetChat Чат
 	// (GET /v1/chats/{id})
 	GetChat(w http.ResponseWriter, r *http.Request, id ID)
@@ -321,8 +343,35 @@ func (siw *ServerInterfaceWrapper) ListChats(w http.ResponseWriter, r *http.Requ
 // CreateChat operation middleware
 func (siw *ServerInterfaceWrapper) CreateChat(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateChatParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateChat(w, r)
+		siw.Handler.CreateChat(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

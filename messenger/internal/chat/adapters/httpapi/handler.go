@@ -20,7 +20,7 @@ type chatCreator interface {
 }
 
 type messageSender interface {
-	Execute(ctx context.Context, cmd usecase.SendMessageCommand) (domain.Message, error)
+	Execute(ctx context.Context, cmd usecase.SendMessageCommand) (usecase.SendMessageResult, error)
 }
 
 type messageLister interface {
@@ -86,7 +86,10 @@ func (h *Handler) Register(mux *http.ServeMux, mws ...gen.MiddlewareFunc) {
 
 // #endregion register
 
-func (h *Handler) CreateChat(w http.ResponseWriter, r *http.Request) {
+// CreateChat: params.IdempotencyKey не читаем — заголовок обрабатывает middleware
+// idempotency до вызова обработчика. В контракте он описан для клиентов, а генератор
+// разбирает его, потому что так устроен: все параметры операции попадают в params.
+func (h *Handler) CreateChat(w http.ResponseWriter, r *http.Request, _ gen.CreateChatParams) {
 	creator, ok := h.caller(w, r)
 	if !ok {
 		return
@@ -128,16 +131,22 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request, id gen.ID)
 		writeError(w, r, h.log, err)
 		return
 	}
-	msg, err := h.send.Execute(r.Context(), usecase.SendMessageCommand{
-		ChatID:   id.String(),
-		AuthorID: author.String(),
-		Text:     req.Text,
+	res, err := h.send.Execute(r.Context(), usecase.SendMessageCommand{
+		ChatID:          id.String(),
+		AuthorID:        author.String(),
+		ClientMessageID: req.ClientMessageId,
+		Text:            req.Text,
 	})
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
 	}
-	h.respond(w, r, http.StatusCreated, toMessage(msg))
+	// 200 — повтор: сообщение было сохранено раньше, сейчас ничего не создано.
+	status := http.StatusOK
+	if res.Created {
+		status = http.StatusCreated
+	}
+	h.respond(w, r, status, toMessage(res.Message))
 }
 
 // #endregion send-handler

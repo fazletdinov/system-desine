@@ -14,10 +14,19 @@ import (
 
 // #region store
 type Store struct {
-	mu       sync.RWMutex // защищает все три карты ниже
+	mu       sync.RWMutex // защищает все карты ниже
 	chats    map[domain.ChatID]domain.ChatSnapshot
 	direct   map[string]domain.ChatID // DirectKeyFor(a, b) → id личного чата
 	messages map[domain.ChatID][]domain.Message
+	byClient map[clientKey]domain.Message
+}
+
+// clientKey — естественный ключ сообщения. В Postgres (2a) — уникальный индекс
+// (chat_id, author_id, client_message_id).
+type clientKey struct {
+	chat   domain.ChatID
+	author domain.UserID
+	client domain.ClientMessageID
 }
 
 // #endregion store
@@ -27,6 +36,7 @@ func NewStore() *Store {
 		chats:    make(map[domain.ChatID]domain.ChatSnapshot),
 		direct:   make(map[string]domain.ChatID),
 		messages: make(map[domain.ChatID][]domain.Message),
+		byClient: make(map[clientKey]domain.Message),
 	}
 }
 
@@ -91,12 +101,19 @@ func (s *Store) AppendMessage(ctx context.Context, chat *domain.Chat, msg domain
 	if !ok {
 		return domain.ErrChatNotFound
 	}
+	key := clientKey{chat: chat.ID(), author: msg.AuthorID(), client: msg.ClientID()}
+	// Повтор проверяем раньше версии: сообщение уже сохранено, и версия чата для него
+	// не важна — ответ «конфликт версий» заставил бы use case перечитывать чат впустую.
+	if existing, ok := s.byClient[key]; ok {
+		return &domain.DuplicateMessageError{Existing: existing}
+	}
 	// Проверка версии и запись — под одной блокировкой: между ними никто не вклинится.
 	if stored.Version != expectedVersion {
 		return domain.ErrConcurrentUpdate
 	}
 	s.chats[chat.ID()] = chat.Snapshot()
 	s.messages[chat.ID()] = append(s.messages[chat.ID()], msg)
+	s.byClient[key] = msg
 	return nil
 }
 

@@ -14,6 +14,10 @@ var (
 	ErrNotMember        = errors.New("пользователь не участник чата")
 	ErrConcurrentUpdate = errors.New("чат изменился одновременно с вами")
 	ErrDirectChatExists = errors.New("личный чат для этой пары уже есть")
+	// Повтор — не ошибка клиента: use case вернёт сохранённое сообщение. Переиспользованный
+	// ключ — ошибка: тот же client_message_id пришёл с другим текстом.
+	ErrDuplicateMessage      = errors.New("сообщение с этим client_message_id уже сохранено")
+	ErrClientMessageIDReused = errors.New("client_message_id уже использован для другого сообщения")
 )
 
 // #endregion sentinels
@@ -38,3 +42,16 @@ func invalid(field, reason string) error {
 }
 
 // #endregion validation-error
+
+// #region duplicate
+// DuplicateMessageError — хранилище уже видело этот client_message_id от этого автора
+// в этом чате. Existing — сохранённое тогда сообщение: use case вернёт его клиенту.
+type DuplicateMessageError struct {
+	Existing Message
+}
+
+func (e *DuplicateMessageError) Error() string { return ErrDuplicateMessage.Error() }
+
+func (e *DuplicateMessageError) Is(target error) bool { return target == ErrDuplicateMessage }
+
+// #endregion duplicate

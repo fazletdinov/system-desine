@@ -37,12 +37,13 @@ func toChat(c *domain.Chat) gen.Chat {
 
 func toMessage(m domain.Message) gen.Message {
 	return gen.Message{
-		Id:       m.ID().String(),
-		ChatId:   m.ChatID().String(),
-		AuthorId: m.AuthorID().String(),
-		Text:     m.Text().String(),
-		Seq:      m.Seq(),
-		SentAt:   m.SentAt().UTC(),
+		Id:              m.ID().String(),
+		ClientMessageId: m.ClientID().String(),
+		ChatId:          m.ChatID().String(),
+		AuthorId:        m.AuthorID().String(),
+		Text:            m.Text().String(),
+		Seq:             m.Seq(),
+		SentAt:          m.SentAt().UTC(),
 	}
 }
 

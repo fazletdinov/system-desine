@@ -37,6 +37,8 @@ func problemFor(err error) (problem.Problem, bool) {
 		return problem.Problem{Code: problem.CodeNotMember, Detail: domain.ErrNotMember.Error()}, true
 	case errors.Is(err, domain.ErrConcurrentUpdate):
 		return problem.Problem{Code: problem.CodeConflict, Detail: domain.ErrConcurrentUpdate.Error()}, true
+	case errors.Is(err, domain.ErrClientMessageIDReused):
+		return problem.Problem{Code: problem.CodeClientMessageIDReused, Detail: domain.ErrClientMessageIDReused.Error()}, true
 	default:
 		return problem.Problem{}, false
 	}

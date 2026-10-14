@@ -16,18 +16,21 @@ import (
 
 // Defines values for ProblemCode.
 const (
-	ProblemCodeBadJson              ProblemCode = "bad_json"
-	ProblemCodeBodyTooLarge         ProblemCode = "body_too_large"
-	ProblemCodeConflict             ProblemCode = "conflict"
-	ProblemCodeInternal             ProblemCode = "internal"
-	ProblemCodeInvalidInput         ProblemCode = "invalid_input"
-	ProblemCodeMethodNotAllowed     ProblemCode = "method_not_allowed"
-	ProblemCodeNotFound             ProblemCode = "not_found"
-	ProblemCodeNotMember            ProblemCode = "not_member"
-	ProblemCodeTimeout              ProblemCode = "timeout"
-	ProblemCodeUnauthenticated      ProblemCode = "unauthenticated"
-	ProblemCodeUnsupportedMediaType ProblemCode = "unsupported_media_type"
-	ProblemCodeUsernameTaken        ProblemCode = "username_taken"
+	ProblemCodeBadJson               ProblemCode = "bad_json"
+	ProblemCodeBodyTooLarge          ProblemCode = "body_too_large"
+	ProblemCodeClientMessageIdReused ProblemCode = "client_message_id_reused"
+	ProblemCodeConflict              ProblemCode = "conflict"
+	ProblemCodeIdempotencyInProgress ProblemCode = "idempotency_in_progress"
+	ProblemCodeIdempotencyKeyReused  ProblemCode = "idempotency_key_reused"
+	ProblemCodeInternal              ProblemCode = "internal"
+	ProblemCodeInvalidInput          ProblemCode = "invalid_input"
+	ProblemCodeMethodNotAllowed      ProblemCode = "method_not_allowed"
+	ProblemCodeNotFound              ProblemCode = "not_found"
+	ProblemCodeNotMember             ProblemCode = "not_member"
+	ProblemCodeTimeout               ProblemCode = "timeout"
+	ProblemCodeUnauthenticated       ProblemCode = "unauthenticated"
+	ProblemCodeUnsupportedMediaType  ProblemCode = "unsupported_media_type"
+	ProblemCodeUsernameTaken         ProblemCode = "username_taken"
 )
 
 // Valid indicates whether the value is a known member of the ProblemCode enum.
@@ -37,7 +40,13 @@ func (e ProblemCode) Valid() bool {
 		return true
 	case ProblemCodeBodyTooLarge:
 		return true
+	case ProblemCodeClientMessageIdReused:
+		return true
 	case ProblemCodeConflict:
+		return true
+	case ProblemCodeIdempotencyInProgress:
+		return true
+	case ProblemCodeIdempotencyKeyReused:
 		return true
 	case ProblemCodeInternal:
 		return true

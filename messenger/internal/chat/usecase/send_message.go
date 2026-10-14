@@ -14,9 +14,17 @@ import (
 const MaxSendAttempts = 3
 
 type SendMessageCommand struct {
-	ChatID   string
-	AuthorID string
-	Text     string
+	ChatID          string
+	AuthorID        string
+	ClientMessageID string
+	Text            string
+}
+
+// SendMessageResult.Created == false — это повтор уже сохранённого сообщения:
+// адаптер ответит 200 вместо 201, а клиент получит то же сообщение, что и в первый раз.
+type SendMessageResult struct {
+	Message domain.Message
+	Created bool
 }
 
 type SendMessage struct {
@@ -34,25 +42,29 @@ func NewSendMessage(chats ChatFinder, messages MessageAppender, clock Clock, ids
 }
 
 // #region send-execute
-func (uc *SendMessage) Execute(ctx context.Context, cmd SendMessageCommand) (domain.Message, error) {
+func (uc *SendMessage) Execute(ctx context.Context, cmd SendMessageCommand) (SendMessageResult, error) {
 	chatID, err := domain.ParseChatID(cmd.ChatID)
 	if err != nil {
-		return domain.Message{}, err
+		return SendMessageResult{}, err
 	}
 	author, err := domain.ParseUserID(cmd.AuthorID)
 	if err != nil {
-		return domain.Message{}, err
+		return SendMessageResult{}, err
+	}
+	clientID, err := domain.ParseClientMessageID(cmd.ClientMessageID)
+	if err != nil {
+		return SendMessageResult{}, err
 	}
 	text, err := domain.NewText(cmd.Text)
 	if err != nil {
-		return domain.Message{}, err
+		return SendMessageResult{}, err
 	}
 	// Id и время берём один раз, до цикла: повтор отправляет то же сообщение, а не новое.
 	rawID := uc.ids.NewID()
 	msgID, err := domain.ParseMessageID(rawID)
 	if err != nil {
 		// Без %w: сбой генератора — ошибка сервера, а не ValidationError клиента.
-		return domain.Message{}, fmt.Errorf("send message: генератор выдал не UUID: %q", rawID)
+		return SendMessageResult{}, fmt.Errorf("send message: генератор выдал не UUID: %q", rawID)
 	}
 	sentAt := uc.clock.Now()
 
@@ -63,24 +75,33 @@ func (uc *SendMessage) Execute(ctx context.Context, cmd SendMessageCommand) (dom
 		// — работа впустую. Первую попытку останавливает хранилище.
 		if attempt > 1 {
 			if err := ctx.Err(); err != nil {
-				return domain.Message{}, fmt.Errorf("send message: перед попыткой %d: %w", attempt, err)
+				return SendMessageResult{}, fmt.Errorf("send message: перед попыткой %d: %w", attempt, err)
 			}
 		}
 		chat, err := uc.chats.FindChat(ctx, chatID)
 		if err != nil {
-			return domain.Message{}, fmt.Errorf("send message: %w", err)
+			return SendMessageResult{}, fmt.Errorf("send message: %w", err)
 		}
 		expected := chat.Version()
-		msg, err := chat.Post(msgID, author, text, sentAt)
+		msg, err := chat.Post(msgID, clientID, author, text, sentAt)
 		if err != nil {
-			return domain.Message{}, err
+			return SendMessageResult{}, err
 		}
 		err = uc.messages.AppendMessage(ctx, chat, msg, expected)
 		if err == nil {
-			return msg, nil
+			return SendMessageResult{Message: msg, Created: true}, nil
+		}
+		var dup *domain.DuplicateMessageError
+		if errors.As(err, &dup) {
+			// Тот же ключ и тот же текст — это повтор; тот же ключ с другим текстом —
+			// ошибка клиента: ключ одного сообщения переиспользован для другого.
+			if dup.Existing.Text() != text {
+				return SendMessageResult{}, domain.ErrClientMessageIDReused
+			}
+			return SendMessageResult{Message: dup.Existing}, nil
 		}
 		if !errors.Is(err, domain.ErrConcurrentUpdate) || attempt == MaxSendAttempts {
-			return domain.Message{}, fmt.Errorf("send message (попытка %d): %w", attempt, err)
+			return SendMessageResult{}, fmt.Errorf("send message (попытка %d): %w", attempt, err)
 		}
 	}
 }

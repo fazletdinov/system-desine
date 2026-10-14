@@ -63,11 +63,17 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /v1/chats:
+    # region idempotency
     post:
       tags: [chats]
       operationId: createChat
       summary: Создать чат
-      description: Для пары, у которой личный чат уже есть, возвращает его со статусом 200.
+      description: |
+        Для пары, у которой личный чат уже есть, возвращает его со статусом 200.
+        С заголовком Idempotency-Key повтор того же запроса получает сохранённый ответ
+        первой попытки (с Idempotent-Replayed: true), и чат не создаётся второй раз.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -75,9 +81,10 @@ paths:
             schema: { $ref: '#/components/schemas/CreateChatRequest' }
       responses:
         '201':
-          description: Чат создан
+          description: Чат создан (или повтор ответа о создании)
           headers:
             Location: { $ref: '#/components/headers/Location' }
+            Idempotent-Replayed: { $ref: '#/components/headers/IdempotentReplayed' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Chat' }
@@ -85,15 +92,23 @@ paths:
           description: Личный чат для этой пары уже был
           headers:
             Location: { $ref: '#/components/headers/Location' }
+            Idempotent-Replayed: { $ref: '#/components/headers/IdempotentReplayed' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Chat' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Запрос с этим Idempotency-Key ещё выполняется (idempotency_in_progress) — повторите позже
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    # endregion idempotency
     get:
       tags: [chats]
       operationId: listChats
@@ -142,6 +157,9 @@ paths:
       tags: [chats]
       operationId: sendMessage
       summary: Отправить сообщение
+      description: |
+        Повтор с тем же client_message_id (тот же автор, тот же чат, тот же текст) не создаёт
+        второе сообщение: сервер отвечает 200 и сохранённым тогда сообщением.
       requestBody:
         required: true
         content:
@@ -153,11 +171,22 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
+        '200':
+          description: Повтор уже сохранённого сообщения — то же сообщение, ничего нового не создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: |
+            Чат изменился одновременно с вами (conflict) или client_message_id уже использован
+            для сообщения с другим текстом (client_message_id_reused)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -210,7 +239,20 @@ components:
         собирайте сами — формат может измениться. Без cursor — первая страница.
       schema: { type: string, maxLength: 512 }
     # endregion pagination
+    # region idempotency-components
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Ключ, который клиент генерирует для одной логической операции (обычно UUID) и
+        повторяет во всех её попытках. Сервер помнит ключ 24 часа; область ключа — пользователь.
+      schema: { type: string, minLength: 1, maxLength: 255 }
   headers:
+    IdempotentReplayed:
+      description: true — это сохранённый ответ на первую попытку с тем же Idempotency-Key.
+      schema: { type: string, enum: ['true'] }
+    # endregion idempotency-components
     Location:
       description: Адрес созданного (или найденного) ресурса.
       schema: { type: string }
@@ -237,6 +279,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     Conflict:
       description: Конфликт с текущим состоянием
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnprocessableEntity:
+      description: Idempotency-Key уже использован для другого запроса (idempotency_key_reused)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -283,8 +330,13 @@ components:
     SendMessageRequest:
       type: object
       additionalProperties: false
-      required: [text]
+      required: [client_message_id, text]
       properties:
+        client_message_id:
+          type: string
+          format: uuid
+          x-go-type: string
+          description: Генерирует клиент; одинаковый во всех повторах этого сообщения.
         text: { type: string, minLength: 1, maxLength: 4096 }
     # endregion schemas-request
     User:
@@ -315,9 +367,10 @@ components:
     Message:
       type: object
       additionalProperties: false
-      required: [id, chat_id, author_id, text, seq, sent_at]
+      required: [id, client_message_id, chat_id, author_id, text, seq, sent_at]
       properties:
         id: { type: string, format: uuid, x-go-type: string }
+        client_message_id: { type: string, format: uuid, x-go-type: string }
         chat_id: { type: string, format: uuid, x-go-type: string }
         author_id: { type: string, format: uuid, x-go-type: string }
         text: { type: string }
@@ -377,6 +430,7 @@ components:
         reason: { type: string }
     ProblemCode:
       type: string
-      enum: [bad_json, body_too_large, conflict, internal, invalid_input, method_not_allowed,
-             not_found, not_member, timeout, unauthenticated, unsupported_media_type, username_taken]
+      enum: [bad_json, body_too_large, client_message_id_reused, conflict, idempotency_in_progress,
+             idempotency_key_reused, internal, invalid_input, method_not_allowed, not_found, not_member,
+             timeout, unauthenticated, unsupported_media_type, username_taken]
     # endregion problem-schema

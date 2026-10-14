@@ -39,7 +39,7 @@ func respondAs(contentType string, status int, body string) http.Handler {
 }
 
 func TestWrapChecksResponse(t *testing.T) {
-	const okMessage = `{"id":"m","chat_id":"c","author_id":"a","text":"hi","seq":1,"sent_at":"2026-10-13T12:00:00Z"}`
+	const okMessage = `{"id":"m","client_message_id":"k","chat_id":"c","author_id":"a","text":"hi","seq":1,"sent_at":"2026-10-13T12:00:00Z"}`
 	tests := []struct {
 		name    string
 		status  int

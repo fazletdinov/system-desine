@@ -39,3 +39,16 @@ func TestPercentVBreaksChain(t *testing.T) {
 }
 
 // #endregion errors-tests
+
+// Хранилище отвечает на повтор DuplicateMessageError с сохранённым сообщением; через
+// errors.Is она равна ErrDuplicateMessage — так её узнает и тот, кому сообщение не нужно.
+func TestDuplicateMessageErrorIs(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("append: %w", &domain.DuplicateMessageError{})
+	if !errors.Is(err, domain.ErrDuplicateMessage) {
+		t.Fatalf("errors.Is(%v, ErrDuplicateMessage) = false", err)
+	}
+	if errors.Is(err, domain.ErrClientMessageIDReused) || errors.Is(err, domain.ErrInvalid) {
+		t.Fatal("повтор сообщения — не переиспользованный ключ и не ошибка валидации")
+	}
+}

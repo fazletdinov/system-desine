@@ -19,7 +19,7 @@ func TestListMessagesStableUnderInserts(t *testing.T) {
 	ctx := context.Background()
 	send := func(n int) {
 		t.Helper()
-		if _, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, Text: fmt.Sprintf("сообщение %d", n)}); err != nil {
+		if _, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, ClientMessageID: clientID(n), Text: fmt.Sprintf("сообщение %d", n)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -70,7 +70,7 @@ func TestListMessagesLastPageHasNoCursor(t *testing.T) {
 			e := newEnv(t)
 			c := directChat(t, e)
 			for i := range tt.messages {
-				if _, err := e.send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, Text: fmt.Sprint(i)}); err != nil {
+				if _, err := e.send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, ClientMessageID: clientID(i + 1), Text: fmt.Sprint(i)}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -105,7 +105,7 @@ func TestListChatsPaging(t *testing.T) {
 	foreign := create(usecase.CreateChatCommand{CreatorID: eve, Kind: "direct", MemberIDs: []string{bob}})
 	// Сообщение поднимает самый старый чат наверх.
 	clk.Advance()
-	if _, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: withBob.ID().String(), AuthorID: bob, Text: "привет"}); err != nil {
+	if _, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: withBob.ID().String(), AuthorID: bob, ClientMessageID: clientID(1), Text: "привет"}); err != nil {
 		t.Fatal(err)
 	}
 

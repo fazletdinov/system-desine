@@ -18,7 +18,7 @@ func TestSendMessageCanceledContextWritesNothing(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // клиент ушёл раньше, чем запрос дошёл до use case'а
-	_, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, Text: "привет"})
+	_, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, ClientMessageID: clientID(1), Text: "привет"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("ждали context.Canceled в цепочке, получили %v", err)
 	}
@@ -52,7 +52,7 @@ func TestSendMessageStopsRetryWhenCanceled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = send.Execute(ctx, usecase.SendMessageCommand{ChatID: chat.ID().String(), AuthorID: alice, Text: "привет"})
+	_, err = send.Execute(ctx, usecase.SendMessageCommand{ChatID: chat.ID().String(), AuthorID: alice, ClientMessageID: clientID(1), Text: "привет"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("ждали context.Canceled в цепочке, получили %v", err)
 	}

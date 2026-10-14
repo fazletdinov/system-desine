@@ -13,12 +13,15 @@ import (
 	"time"
 
 	chathttp "messenger/internal/chat/adapters/httpapi"
+	chatgen "messenger/internal/chat/adapters/httpapi/gen"
 	chatmemory "messenger/internal/chat/adapters/memory"
 	"messenger/internal/chat/adapters/userchecker"
 	chatusecase "messenger/internal/chat/usecase"
 	"messenger/internal/platform/clock"
 	"messenger/internal/platform/httpauth"
 	"messenger/internal/platform/httpserver"
+	"messenger/internal/platform/idempotency"
+	idemmemory "messenger/internal/platform/idempotency/memory"
 	"messenger/internal/platform/idgen"
 	"messenger/internal/platform/middleware"
 	"messenger/internal/platform/problem"
@@ -113,7 +116,13 @@ func run(log *slog.Logger) error {
 	}
 	mux := http.NewServeMux()
 	userAPI.Register(mux)
-	chatAPI.Register(mux)
+	// #region idempotency-wiring
+	// Ключ только у создания чата: у сообщений — естественный ключ client_message_id.
+	// Middleware операции работает после маршрутизатора и аутентификации: ему нужны
+	// шаблон маршрута (r.Pattern) и личность — область ключа.
+	idemStore := idemmemory.NewStore()
+	chatAPI.Register(mux, chatgen.MiddlewareFunc(idempotency.Middleware(idemStore, clk, log, "POST /v1/chats")))
+	// #endregion idempotency-wiring
 
 	// #region chain
 	// Первый — самый внешний. Request ID нужен всем, кто пишет в журнал; Recover — внутри

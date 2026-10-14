@@ -26,6 +26,20 @@ func ParseMessageID(s string) (MessageID, error) {
 func (id MessageID) String() string { return id.value }
 func (id MessageID) IsZero() bool   { return id.value == "" }
 
+// ClientMessageID — id, который клиент генерирует сам, до отправки, и повторяет при
+// каждой попытке. По нему сервер узнаёт повтор (как random_id в Telegram, client_msg_id в Slack).
+type ClientMessageID struct{ value string }
+
+func ParseClientMessageID(s string) (ClientMessageID, error) {
+	if !isUUID(s) {
+		return ClientMessageID{}, invalid("client_message_id", "должен быть UUID в нижнем регистре")
+	}
+	return ClientMessageID{value: s}, nil
+}
+
+func (id ClientMessageID) String() string { return id.value }
+func (id ClientMessageID) IsZero() bool   { return id.value == "" }
+
 // UserID — пользователь глазами контекста «чаты»: участник или автор. Свой тип, а не
 // user/domain.UserID: контекст chat не импортирует контекст user (урок 1.1).
 type UserID struct{ value string }

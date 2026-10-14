@@ -183,12 +183,12 @@ func TestSendAndList(t *testing.T) {
 	c := directChat(t, e)
 	ctx := context.Background()
 	for i := 1; i <= 3; i++ {
-		m, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, Text: fmt.Sprintf("сообщение %d", i)})
+		res, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, ClientMessageID: clientID(i), Text: fmt.Sprintf("сообщение %d", i)})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if m.Seq() != int64(i) {
-			t.Fatalf("seq = %d, ждали %d", m.Seq(), i)
+		if !res.Created || res.Message.Seq() != int64(i) {
+			t.Fatalf("seq = %d (created=%v), ждали %d и новое сообщение", res.Message.Seq(), res.Created, i)
 		}
 	}
 	got, err := e.list.Execute(ctx, usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: bob, BeforeSeq: 3, Limit: 10})
@@ -205,7 +205,7 @@ func TestNonMemberCannotSendOrRead(t *testing.T) {
 	e := newEnv(t)
 	c := directChat(t, e)
 	ctx := context.Background()
-	_, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: eve, Text: "привет"})
+	_, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: eve, ClientMessageID: clientID(1), Text: "привет"})
 	if !errors.Is(err, domain.ErrNotMember) {
 		t.Fatalf("send: ждали ErrNotMember, получили %v", err)
 	}
@@ -258,7 +258,9 @@ func TestSendMessageConcurrent(t *testing.T) {
 				if (w+i)%2 == 0 {
 					author = bob
 				}
-				_, err := e.send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: author, Text: "x"})
+				// Ключ у каждой отправки свой: тест — о гонке разных сообщений, а не повторов.
+				cmd := usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: author, ClientMessageID: clientID(w*perWorker + i + 1), Text: "x"}
+				_, err := e.send.Execute(context.Background(), cmd)
 				mu.Lock()
 				switch {
 				case err == nil:
@@ -336,7 +338,7 @@ func TestCreateDirectChatNeedsExactlyOnePeer(t *testing.T) {
 func TestSendToUnknownChat(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
-	_, err := e.send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: "00000000-0000-7000-9000-000000000099", AuthorID: alice, Text: "привет"})
+	_, err := e.send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: "00000000-0000-7000-9000-000000000099", AuthorID: alice, ClientMessageID: clientID(1), Text: "привет"})
 	if !errors.Is(err, domain.ErrChatNotFound) {
 		t.Fatalf("ждали ErrChatNotFound, получили %v", err)
 	}
@@ -430,19 +432,61 @@ func TestSendMessageRetryPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: chat.ID().String(), AuthorID: alice, Text: "привет"})
+			_, err = send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: chat.ID().String(), AuthorID: alice, ClientMessageID: clientID(1), Text: "привет"})
 			if !errors.Is(err, tt.err) {
 				t.Fatalf("ждали %v в цепочке, получили %v", tt.err, err)
 			}
 			if len(appender.ids) != tt.wantCalls {
 				t.Fatalf("попыток записи %d, ждали %d", len(appender.ids), tt.wantCalls)
 			}
-			for _, id := range appender.ids[1:] {
-				if id != appender.ids[0] {
-					t.Fatalf("повтор отправил другое сообщение: %s вместо %s", id, appender.ids[0])
+			for i := range appender.ids[1:] {
+				if appender.ids[i+1] != appender.ids[0] || appender.clients[i+1] != appender.clients[0] {
+					t.Fatalf("повтор отправил другое сообщение: %s/%s вместо %s/%s", appender.ids[i+1], appender.clients[i+1], appender.ids[0], appender.clients[0])
 				}
 			}
 		})
+	}
+}
+
+// Ответ на первую попытку потерялся, клиент повторяет с тем же client_message_id.
+func TestSendMessageRetryReturnsExisting(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	c := directChat(t, e)
+	ctx := context.Background()
+	cmd := usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, ClientMessageID: clientID(1), Text: "дойдёт один раз"}
+	first, err := e.send.Execute(ctx, cmd)
+	if err != nil || !first.Created {
+		t.Fatalf("первая попытка: %+v, %v", first, err)
+	}
+	// Между попытками в чат написал собеседник: версия чата другая, а повтор — тот же.
+	if _, err := e.send.Execute(ctx, usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: bob, ClientMessageID: clientID(2), Text: "привет"}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := e.send.Execute(ctx, cmd)
+	if err != nil || again.Created || again.Message.ID() != first.Message.ID() || again.Message.Seq() != first.Message.Seq() {
+		t.Fatalf("повтор: %+v, %v — ждали то же сообщение и Created=false", again, err)
+	}
+	cmd.Text = "другой текст"
+	if _, err := e.send.Execute(ctx, cmd); !errors.Is(err, domain.ErrClientMessageIDReused) {
+		t.Fatalf("тот же ключ с другим текстом: ждали ErrClientMessageIDReused, получили %v", err)
+	}
+	page, err := e.list.Execute(ctx, usecase.ListMessagesQuery{ChatID: c.ID().String(), ReaderID: alice})
+	if err != nil || len(page.Messages) != 2 {
+		t.Fatalf("в истории %d сообщений, ждали 2 (повторы не сохраняются): %v", len(page.Messages), err)
+	}
+}
+
+func TestSendMessageRejectsBadClientMessageID(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	c := directChat(t, e)
+	for _, in := range []string{"", "не-uuid", "0192F0C1-7E3A-7B4C-8D5E-6F7A8B9C0D1E"} {
+		_, err := e.send.Execute(context.Background(), usecase.SendMessageCommand{ChatID: c.ID().String(), AuthorID: alice, ClientMessageID: in, Text: "привет"})
+		var ve *domain.ValidationError
+		if !errors.As(err, &ve) || ve.Field != "client_message_id" {
+			t.Fatalf("client_message_id %q: ждали ValidationError, получили %v", in, err)
+		}
 	}
 }
 

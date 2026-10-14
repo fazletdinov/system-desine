@@ -39,6 +39,15 @@ func mid(t *testing.T, n int) domain.MessageID {
 	return id
 }
 
+func cmid(t *testing.T, n int) domain.ClientMessageID {
+	t.Helper()
+	id, err := domain.ParseClientMessageID(fmt.Sprintf("00000000-0000-7000-e000-%012d", n))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
 func text(t *testing.T, s string) domain.Text {
 	t.Helper()
 	x, err := domain.NewText(s)
@@ -113,7 +122,7 @@ func TestChatPost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Post(mid(t, 1), uid(t, 3), text(t, "я не участник"), t0); !errors.Is(err, domain.ErrNotMember) {
+	if _, err := c.Post(mid(t, 1), cmid(t, 1), uid(t, 3), text(t, "я не участник"), t0); !errors.Is(err, domain.ErrNotMember) {
 		t.Fatalf("ждали ErrNotMember, получили %v", err)
 	}
 	if c.LastSeq() != 0 || c.Version() != 0 {
@@ -122,14 +131,14 @@ func TestChatPost(t *testing.T) {
 	msk := time.FixedZone("MSK", 3*60*60)
 	for i := 1; i <= 3; i++ {
 		sentAt := t0.In(msk)
-		m, err := c.Post(mid(t, i), uid(t, 1), text(t, "привет"), sentAt)
+		m, err := c.Post(mid(t, i), cmid(t, i), uid(t, 1), text(t, "привет"), sentAt)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if m.Seq() != int64(i) || c.LastSeq() != int64(i) || c.Version() != int64(i) {
 			t.Fatalf("сообщение %d: seq=%d lastSeq=%d version=%d", i, m.Seq(), c.LastSeq(), c.Version())
 		}
-		if m.ID() != mid(t, i) || m.ChatID() != cid(t, 1) || m.AuthorID() != uid(t, 1) || m.Text().String() != "привет" {
+		if m.ID() != mid(t, i) || m.ClientID() != cmid(t, i) || m.ChatID() != cid(t, 1) || m.AuthorID() != uid(t, 1) || m.Text().String() != "привет" {
 			t.Fatalf("сообщение %d: поля не совпадают", i)
 		}
 		if m.SentAt().Location() != time.UTC || !m.SentAt().Equal(sentAt) {
@@ -141,14 +150,17 @@ func TestChatPost(t *testing.T) {
 func TestChatPostRejectsZeroArgs(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		id     domain.MessageID
-		author domain.UserID
-		text   domain.Text
+		name      string
+		id        domain.MessageID
+		clientID  domain.ClientMessageID
+		author    domain.UserID
+		text      domain.Text
+		wantField string
 	}{
-		{name: "нулевой id сообщения", id: domain.MessageID{}, author: uid(t, 1), text: text(t, "привет")},
-		{name: "нулевой автор", id: mid(t, 1), author: domain.UserID{}, text: text(t, "привет")},
-		{name: "нулевой текст", id: mid(t, 1), author: uid(t, 1), text: domain.Text{}},
+		{name: "нулевой id сообщения", id: domain.MessageID{}, clientID: cmid(t, 1), author: uid(t, 1), text: text(t, "привет"), wantField: "message_id"},
+		{name: "нулевой client_message_id", id: mid(t, 1), clientID: domain.ClientMessageID{}, author: uid(t, 1), text: text(t, "привет"), wantField: "client_message_id"},
+		{name: "нулевой автор", id: mid(t, 1), clientID: cmid(t, 1), author: domain.UserID{}, text: text(t, "привет"), wantField: "author_id"},
+		{name: "нулевой текст", id: mid(t, 1), clientID: cmid(t, 1), author: uid(t, 1), text: domain.Text{}, wantField: "text"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -157,8 +169,10 @@ func TestChatPostRejectsZeroArgs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := c.Post(tt.id, tt.author, tt.text, t0); err == nil || errors.Is(err, domain.ErrNotMember) {
-				t.Fatalf("ждали ошибку валидации, получили %v", err)
+			_, err = c.Post(tt.id, tt.clientID, tt.author, tt.text, t0)
+			var ve *domain.ValidationError
+			if !errors.As(err, &ve) || ve.Field != tt.wantField || ve.Reason != "не задано" {
+				t.Fatalf("ждали «%s: не задано», получили %v", tt.wantField, err)
 			}
 			if c.LastSeq() != 0 || c.Version() != 0 {
 				t.Fatal("отклонённое сообщение не должно менять чат")
@@ -260,6 +274,9 @@ func TestParseIDsRejectBadInput(t *testing.T) {
 		if _, err := domain.ParseUserID(in); err == nil {
 			t.Errorf("ParseUserID(%q): ждали ошибку", in)
 		}
+		if _, err := domain.ParseClientMessageID(in); err == nil {
+			t.Errorf("ParseClientMessageID(%q): ждали ошибку", in)
+		}
 	}
 }
 
@@ -287,7 +304,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Post(mid(t, 1), uid(t, 2), text(t, "привет"), t0); err != nil {
+	if _, err := c.Post(mid(t, 1), cmid(t, 1), uid(t, 2), text(t, "привет"), t0); err != nil {
 		t.Fatal(err)
 	}
 	snap := c.Snapshot()
@@ -297,7 +314,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 		t.Fatalf("восстановленный чат отличается: %+v", r.Snapshot())
 	}
 	// Восстановленный чат — рабочий агрегат: следующий seq продолжает счёт.
-	if m, err := r.Post(mid(t, 2), uid(t, 3), text(t, "и тебе"), t0); err != nil || m.Seq() != 2 {
+	if m, err := r.Post(mid(t, 2), cmid(t, 2), uid(t, 3), text(t, "и тебе"), t0); err != nil || m.Seq() != 2 {
 		t.Fatalf("Post после RestoreChat: seq %d, ошибка %v", m.Seq(), err)
 	}
 	snap.Members[0] = uid(t, 9)
@@ -320,7 +337,7 @@ func TestPostMovesLastActivityForwardOnly(t *testing.T) {
 	}
 	post := func(n int, at time.Time) {
 		t.Helper()
-		if _, err := c.Post(mid(t, n), c.Members()[0], text(t, "привет"), at); err != nil {
+		if _, err := c.Post(mid(t, n), cmid(t, n), c.Members()[0], text(t, "привет"), at); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -331,5 +348,19 @@ func TestPostMovesLastActivityForwardOnly(t *testing.T) {
 	}
 	if got := domain.RestoreChat(c.Snapshot()).LastActivityAt(); !got.Equal(c.LastActivityAt()) {
 		t.Fatalf("снимок потерял активность: %v", got)
+	}
+}
+
+func TestParseClientMessageID(t *testing.T) {
+	t.Parallel()
+	const valid = "0192f0c1-7e3a-7b4c-8d5e-6f7a8b9c0d1e"
+	got, err := domain.ParseClientMessageID(valid)
+	if err != nil || got.String() != valid || got.IsZero() {
+		t.Fatalf("ParseClientMessageID(%q) = %q, %v", valid, got, err)
+	}
+	_, err = domain.ParseClientMessageID("не-uuid")
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "client_message_id" {
+		t.Fatalf("ждали ValidationError по client_message_id, получили %v", err)
 	}
 }

@@ -48,6 +48,8 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		{"чаты с одним временем — порядок по id", testListChatsTieBreak},
 		{"limit < 1 у списка чатов", testListChatsLimit},
 		{"одновременная запись", testConcurrentAppend},
+		{"повтор client_message_id", testDuplicateClientMessageID},
+		{"одновременные повторы client_message_id", testConcurrentDuplicateClientMessageID},
 		{"отменённый контекст", testCanceledContext},
 		{"найденный чат — копия", testFindReturnsCopy},
 	}
@@ -85,14 +87,26 @@ func newDirect(t *testing.T, n, a, b int) *domain.Chat {
 	return c
 }
 
+func clientID(t *testing.T, n int) domain.ClientMessageID {
+	t.Helper()
+	return id(t, domain.ParseClientMessageID, "e000", n)
+}
+
 // post добавляет в агрегат сообщение номер n от первого участника, но не сохраняет его.
+// У сообщения n и client_message_id номер n: разные сообщения — разные ключи.
 func post(t *testing.T, c *domain.Chat, n int) domain.Message {
+	t.Helper()
+	return postAs(t, c, n, n, c.Members()[0])
+}
+
+// postAs — то же, но с заданными ключом клиента и автором.
+func postAs(t *testing.T, c *domain.Chat, n, client int, author domain.UserID) domain.Message {
 	t.Helper()
 	text, err := domain.NewText(fmt.Sprintf("сообщение %d", n))
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := c.Post(id(t, domain.ParseMessageID, "a000", n), c.Members()[0], text, t0)
+	m, err := c.Post(id(t, domain.ParseMessageID, "a000", n), clientID(t, client), author, text, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +289,7 @@ func postAt(t *testing.T, s Store, chatID domain.ChatID, n int, at time.Time) {
 		if err != nil {
 			return domain.Message{}, err
 		}
-		return cur.Post(id(t, domain.ParseMessageID, "a000", n), cur.Members()[0], text, at)
+		return cur.Post(id(t, domain.ParseMessageID, "a000", n), clientID(t, n), cur.Members()[0], text, at)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -375,8 +389,10 @@ func raceAppend(t *testing.T, s Store, c *domain.Chat, round int) {
 		t.Fatal(err)
 	}
 	msgIDs := make([]domain.MessageID, writers)
+	clientIDs := make([]domain.ClientMessageID, writers)
 	for w := range writers {
 		msgIDs[w] = id(t, domain.ParseMessageID, "a000", round*writers+w+1)
+		clientIDs[w] = clientID(t, round*writers+w+1)
 	}
 	var (
 		wg sync.WaitGroup
@@ -389,7 +405,7 @@ func raceAppend(t *testing.T, s Store, c *domain.Chat, round int) {
 		wg.Go(func() {
 			<-start
 			err := tryAppend(ctx, s, c.ID(), func(cur *domain.Chat) (domain.Message, error) {
-				return cur.Post(msgIDs[w], author, text, t0)
+				return cur.Post(msgIDs[w], clientIDs[w], author, text, t0)
 			})
 			switch {
 			case err == nil:
@@ -418,6 +434,133 @@ func raceAppend(t *testing.T, s Store, c *domain.Chat, round int) {
 	for i, seq := range got {
 		if seq != int64(i+1) {
 			t.Fatalf("seq с пропуском или повтором: позиция %d, seq %d", i, seq)
+		}
+	}
+}
+
+// appendOnce сохраняет сообщение в свежепрочитанный чат одной попыткой.
+func appendOnce(t *testing.T, s Store, chatID domain.ChatID, msg func(*domain.Chat) domain.Message) error {
+	t.Helper()
+	cur := find(t, s, chatID)
+	v := cur.Version()
+	return s.AppendMessage(context.Background(), cur, msg(cur), v)
+}
+
+// Последовательный повтор: тот же (чат, автор, client_message_id) — дубль с сохранённым
+// сообщением; тот же client_message_id у другого автора или в другом чате — не дубль.
+func testDuplicateClientMessageID(t *testing.T, s Store) {
+	c, other := newDirect(t, 1, 1, 2), newDirect(t, 2, 1, 3)
+	create(t, s, c)
+	create(t, s, other)
+	var first domain.Message
+	if err := appendOnce(t, s, c.ID(), func(cur *domain.Chat) domain.Message {
+		first = postAs(t, cur, 1, 1, user(t, 1))
+		return first
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Повтор: новый id сообщения (так его выдал бы use case на новый запрос), тот же ключ.
+	err := appendOnce(t, s, c.ID(), func(cur *domain.Chat) domain.Message { return postAs(t, cur, 2, 1, user(t, 1)) })
+	var dup *domain.DuplicateMessageError
+	if !errors.As(err, &dup) || !errors.Is(err, domain.ErrDuplicateMessage) {
+		t.Fatalf("повтор: ждали DuplicateMessageError, получили %v", err)
+	}
+	if dup.Existing.ID() != first.ID() || dup.Existing.Seq() != 1 || dup.Existing.ClientID() != clientID(t, 1) {
+		t.Fatalf("повтор вернул не то сообщение: id %s, seq %d", dup.Existing.ID(), dup.Existing.Seq())
+	}
+	if got := find(t, s, c.ID()); got.Version() != 1 || got.LastSeq() != 1 {
+		t.Fatalf("повтор изменил чат: версия %d, lastSeq %d", got.Version(), got.LastSeq())
+	}
+	// Тот же ключ — но другой автор того же чата и тот же автор в другом чате.
+	if err := appendOnce(t, s, c.ID(), func(cur *domain.Chat) domain.Message { return postAs(t, cur, 3, 1, user(t, 2)) }); err != nil {
+		t.Fatalf("другой автор с тем же client_message_id: %v", err)
+	}
+	if err := appendOnce(t, s, other.ID(), func(cur *domain.Chat) domain.Message { return postAs(t, cur, 4, 1, user(t, 1)) }); err != nil {
+		t.Fatalf("другой чат с тем же client_message_id: %v", err)
+	}
+	if got := seqs(t, s, c.ID()); fmt.Sprint(got) != "[1 2]" {
+		t.Fatalf("в истории seq %v, ждали [1 2]", got)
+	}
+}
+
+// Несколько одновременных повторов одного сообщения: сохранено ровно одно, остальные
+// получают DuplicateMessageError с ним же.
+func testConcurrentDuplicateClientMessageID(t *testing.T, s Store) {
+	const n = 50
+	c := newDirect(t, 1, 1, 2)
+	create(t, s, c)
+	key := clientID(t, 1)
+	text, err := domain.NewText("один раз")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// id и find зовут t.Fatal — его нельзя вызывать из чужой горутины, поэтому id готовим
+	// заранее, а чат читаем напрямую через порт.
+	msgIDs := make([]domain.MessageID, n)
+	for i := range n {
+		msgIDs[i] = id(t, domain.ParseMessageID, "a000", i+1)
+	}
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		saved   int
+		dupIDs  = map[domain.MessageID]int{}
+		failure error
+	)
+	start := make(chan struct{})
+	for i := range n {
+		wg.Go(func() {
+			<-start
+			for {
+				cur, err := s.FindChat(context.Background(), c.ID())
+				if err != nil {
+					mu.Lock()
+					failure = err
+					mu.Unlock()
+					return
+				}
+				v := cur.Version()
+				m, err := cur.Post(msgIDs[i], key, cur.Members()[0], text, t0)
+				if err != nil {
+					mu.Lock()
+					failure = err
+					mu.Unlock()
+					return
+				}
+				err = s.AppendMessage(context.Background(), cur, m, v)
+				var dup *domain.DuplicateMessageError
+				mu.Lock()
+				switch {
+				case err == nil:
+					saved++
+				case errors.As(err, &dup):
+					dupIDs[dup.Existing.ID()]++
+				case errors.Is(err, domain.ErrConcurrentUpdate):
+					mu.Unlock()
+					continue // проиграли гонку версий — пробуем снова, как use case
+				default:
+					failure = err
+				}
+				mu.Unlock()
+				return
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	if saved != 1 || len(dupIDs) > 1 {
+		t.Fatalf("сохранено %d, разных «существующих» %d — ждали 1 и не больше 1", saved, len(dupIDs))
+	}
+	msgs, err := s.ListMessagesBefore(context.Background(), c.ID(), 0, domain.ListLimitMax)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("в истории %d сообщений, ждали 1: %v", len(msgs), err)
+	}
+	for existing := range dupIDs {
+		if existing != msgs[0].ID() {
+			t.Fatalf("повторы получили %s, а сохранено %s", existing, msgs[0].ID())
 		}
 	}
 }

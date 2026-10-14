@@ -16,9 +16,12 @@ import (
 	"time"
 
 	"messenger/internal/chat/adapters/httpapi"
+	"messenger/internal/chat/adapters/httpapi/gen"
 	"messenger/internal/chat/domain"
 	"messenger/internal/chat/usecase"
 	"messenger/internal/platform/httpjson"
+	"messenger/internal/platform/idempotency"
+	idemmemory "messenger/internal/platform/idempotency/memory"
 	"messenger/internal/platform/openapitest"
 	"messenger/internal/platform/principal"
 	"messenger/internal/platform/problem"
@@ -30,6 +33,7 @@ const (
 	carolID = "00000000-0000-7000-b000-000000000003"
 	chatID  = "00000000-0000-7000-c000-000000000001"
 	msgID   = "00000000-0000-7000-d000-000000000001"
+	cmsgID  = "00000000-0000-7000-e000-000000000001" // client_message_id: его придумал клиент
 )
 
 // Время не в UTC: маппер обязан привести его к UTC сам.
@@ -45,10 +49,10 @@ func (f fakeCreate) Execute(ctx context.Context, cmd usecase.CreateChatCommand) 
 }
 
 type fakeSend struct {
-	fn func(context.Context, usecase.SendMessageCommand) (domain.Message, error)
+	fn func(context.Context, usecase.SendMessageCommand) (usecase.SendMessageResult, error)
 }
 
-func (f fakeSend) Execute(ctx context.Context, cmd usecase.SendMessageCommand) (domain.Message, error) {
+func (f fakeSend) Execute(ctx context.Context, cmd usecase.SendMessageCommand) (usecase.SendMessageResult, error) {
 	return f.fn(ctx, cmd)
 }
 
@@ -99,6 +103,12 @@ func server(t *testing.T, f fakes) (http.Handler, *bytes.Buffer) {
 // (клиент ушёл), — проверять по схеме нечего.
 func rawServer(t *testing.T, f fakes) (*http.ServeMux, *bytes.Buffer) {
 	t.Helper()
+	return rawServerWith(t, f)
+}
+
+// rawServerWith — то же с middleware операций, как их подключает composition root.
+func rawServerWith(t *testing.T, f fakes, mws ...gen.MiddlewareFunc) (*http.ServeMux, *bytes.Buffer) {
+	t.Helper()
 	if f.create.fn == nil {
 		f.create.fn = func(context.Context, usecase.CreateChatCommand) (usecase.CreateChatResult, error) {
 			t.Fatal("CreateChat не должен вызываться")
@@ -106,9 +116,9 @@ func rawServer(t *testing.T, f fakes) (*http.ServeMux, *bytes.Buffer) {
 		}
 	}
 	if f.send.fn == nil {
-		f.send.fn = func(context.Context, usecase.SendMessageCommand) (domain.Message, error) {
+		f.send.fn = func(context.Context, usecase.SendMessageCommand) (usecase.SendMessageResult, error) {
 			t.Fatal("SendMessage не должен вызываться")
-			return domain.Message{}, nil
+			return usecase.SendMessageResult{}, nil
 		}
 	}
 	if f.list.fn == nil {
@@ -135,7 +145,7 @@ func rawServer(t *testing.T, f fakes) (*http.ServeMux, *bytes.Buffer) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	h.Register(mux)
+	h.Register(mux, mws...)
 	return mux, &logs
 }
 
@@ -176,7 +186,8 @@ func message(t *testing.T) domain.Message {
 	id := must[domain.MessageID](t)(domain.ParseMessageID(msgID))
 	author := must[domain.UserID](t)(domain.ParseUserID(aliceID))
 	text := must[domain.Text](t)(domain.NewText("Привет, Боб!"))
-	return must[domain.Message](t)(directChat(t).Post(id, author, text, t0))
+	clientID := must[domain.ClientMessageID](t)(domain.ParseClientMessageID(cmsgID))
+	return must[domain.Message](t)(directChat(t).Post(id, clientID, author, text, t0))
 }
 
 type request struct {
@@ -303,27 +314,43 @@ func TestCreateChatStatus(t *testing.T) {
 	}
 }
 
-func TestSendMessageCreated(t *testing.T) {
-	var got usecase.SendMessageCommand
-	mux, _ := server(t, fakes{send: fakeSend{fn: func(_ context.Context, cmd usecase.SendMessageCommand) (domain.Message, error) {
-		got = cmd
-		return message(t), nil
-	}}})
+// messageJSON — ответ с сообщением из message(t).
+const messageJSON = `{"id":"` + msgID + `","client_message_id":"` + cmsgID + `","chat_id":"` + chatID + `","author_id":"` + aliceID + `","text":"Привет, Боб!","seq":1,"sent_at":"2026-10-13T12:00:00Z"}`
 
-	w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"Привет, Боб!"}`, userID: aliceID})
+// Первая попытка — 201, повтор с тем же client_message_id — 200 и то же сообщение.
+func TestSendMessageStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		created    bool
+		wantStatus int
+	}{
+		{name: "новое сообщение", created: true, wantStatus: http.StatusCreated},
+		{name: "повтор client_message_id", created: false, wantStatus: http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got usecase.SendMessageCommand
+			mux, _ := server(t, fakes{send: fakeSend{fn: func(_ context.Context, cmd usecase.SendMessageCommand) (usecase.SendMessageResult, error) {
+				got = cmd
+				return usecase.SendMessageResult{Message: message(t), Created: tt.created}, nil
+			}}})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("status %d, want 201; body %s", w.Code, w.Body)
+			w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"client_message_id":"` + cmsgID + `","text":"Привет, Боб!"}`, userID: aliceID})
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
+			}
+			// У сообщения нет своего адреса с GET — значит, и Location ему не на что указывать.
+			if loc := w.Header().Get("Location"); loc != "" {
+				t.Errorf("Location %q у сообщения, want пусто", loc)
+			}
+			want := usecase.SendMessageCommand{ChatID: chatID, AuthorID: aliceID, ClientMessageID: cmsgID, Text: "Привет, Боб!"}
+			if got != want {
+				t.Errorf("команда %+v, want %+v", got, want)
+			}
+			assertJSON(t, w.Body, messageJSON)
+		})
 	}
-	// У сообщения нет своего адреса с GET — значит, и Location ему не на что указывать.
-	if loc := w.Header().Get("Location"); loc != "" {
-		t.Errorf("Location %q у сообщения, want пусто", loc)
-	}
-	want := usecase.SendMessageCommand{ChatID: chatID, AuthorID: aliceID, Text: "Привет, Боб!"}
-	if got != want {
-		t.Errorf("команда %+v, want %+v", got, want)
-	}
-	assertJSON(t, w.Body, `{"id":"`+msgID+`","chat_id":"`+chatID+`","author_id":"`+aliceID+`","text":"Привет, Боб!","seq":1,"sent_at":"2026-10-13T12:00:00Z"}`)
 }
 
 func TestListMessages(t *testing.T) {
@@ -346,7 +373,7 @@ func TestListMessages(t *testing.T) {
 				return usecase.MessagePage{Messages: []domain.Message{message(t)}}
 			},
 			wantQuery: usecase.ListMessagesQuery{ChatID: chatID, ReaderID: bobID, Limit: 10},
-			wantBody:  `{"items":[{"id":"` + msgID + `","chat_id":"` + chatID + `","author_id":"` + aliceID + `","text":"Привет, Боб!","seq":1,"sent_at":"2026-10-13T12:00:00Z"}],"next_cursor":null}`,
+			wantBody:  `{"items":[` + messageJSON + `],"next_cursor":null}`,
 		},
 	}
 	for _, tt := range tests {
@@ -624,14 +651,15 @@ func TestErrorMapping(t *testing.T) {
 		{name: "чат не найден", err: fmt.Errorf("send message: %w", domain.ErrChatNotFound), wantStatus: 404, wantCode: "not_found"},
 		{name: "не участник", err: domain.ErrNotMember, wantStatus: 403, wantCode: "not_member"},
 		{name: "конфликт версий", err: fmt.Errorf("send message (попытка 3): %w", domain.ErrConcurrentUpdate), wantStatus: 409, wantCode: "conflict"},
+		{name: "client_message_id с другим текстом", err: domain.ErrClientMessageIDReused, wantStatus: 409, wantCode: "client_message_id_reused"},
 		{name: "дедлайн", err: fmt.Errorf("send message: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
 		{name: "сбой генератора id — не ошибка клиента", err: errors.New(`send message: генератор выдал не UUID: "x"`), wantStatus: 500, wantCode: "internal"},
 		{name: "прочее", err: errors.New("секрет БД"), wantStatus: 500, wantCode: "internal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mux, _ := server(t, fakes{send: fakeSend{fn: func(context.Context, usecase.SendMessageCommand) (domain.Message, error) {
-				return domain.Message{}, tt.err
+			mux, _ := server(t, fakes{send: fakeSend{fn: func(context.Context, usecase.SendMessageCommand) (usecase.SendMessageResult, error) {
+				return usecase.SendMessageResult{}, tt.err
 			}}})
 
 			w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"a"}`, userID: aliceID})
@@ -667,8 +695,8 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 
 func TestClientGoneWritesNothing(t *testing.T) {
 	// Use case, как и настоящий, возвращает ошибку своего ctx — контекста запроса.
-	mux, logs := rawServer(t, fakes{send: fakeSend{fn: func(ctx context.Context, _ usecase.SendMessageCommand) (domain.Message, error) {
-		return domain.Message{}, fmt.Errorf("send message: %w", ctx.Err())
+	mux, logs := rawServer(t, fakes{send: fakeSend{fn: func(ctx context.Context, _ usecase.SendMessageCommand) (usecase.SendMessageResult, error) {
+		return usecase.SendMessageResult{}, fmt.Errorf("send message: %w", ctx.Err())
 	}}})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // клиент закрыл соединение
@@ -691,10 +719,10 @@ func TestClientGoneWritesNothing(t *testing.T) {
 // от внутреннего контекста сервера — это сбой, и молчать нельзя: иначе клиент получит
 // пустой 200.
 func TestInternalCanceledIsServerError(t *testing.T) {
-	mux, logs := server(t, fakes{send: fakeSend{fn: func(context.Context, usecase.SendMessageCommand) (domain.Message, error) {
+	mux, logs := server(t, fakes{send: fakeSend{fn: func(context.Context, usecase.SendMessageCommand) (usecase.SendMessageResult, error) {
 		inner, cancel := context.WithCancel(context.Background())
 		cancel()
-		return domain.Message{}, fmt.Errorf("send message: %w", inner.Err())
+		return usecase.SendMessageResult{}, fmt.Errorf("send message: %w", inner.Err())
 	}}})
 
 	w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"a"}`, userID: aliceID})
@@ -830,5 +858,56 @@ func TestDecodeErrorsHideInternals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type fixedClock struct{}
+
+func (fixedClock) Now() time.Time { return t0 }
+
+// Idempotency-Key через настоящий middleware, подключённый так же, как в main: повтор
+// POST /v1/chats не создаёт второй чат и получает тот же ответ; другое тело с тем же
+// ключом — 422. Все ответы сверяются с контрактом.
+func TestCreateChatIdempotencyKey(t *testing.T) {
+	var calls int
+	mw := idempotency.Middleware(idemmemory.NewStore(), fixedClock{}, slog.New(slog.DiscardHandler), "POST /v1/chats")
+	raw, _ := rawServerWith(t, fakes{create: fakeCreate{fn: func(context.Context, usecase.CreateChatCommand) (usecase.CreateChatResult, error) {
+		calls++
+		return usecase.CreateChatResult{Chat: groupChat(t), Created: true}, nil
+	}}}, gen.MiddlewareFunc(mw))
+	mux := openapitest.New(t).Wrap(raw)
+	post := func(key, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/chats", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set(idempotency.Header, key)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, asUser(r, aliceID))
+		return w
+	}
+	const body = `{"kind":"group","title":"Команда","member_ids":["` + bobID + `","` + carolID + `"]}`
+
+	first := post("key-1", body)
+	again := post("key-1", body)
+
+	if first.Code != http.StatusCreated || again.Code != http.StatusCreated || calls != 1 {
+		t.Fatalf("ответы %d и %d, вызовов use case %d — ждали 201, 201 и 1", first.Code, again.Code, calls)
+	}
+	if again.Body.String() != first.Body.String() || again.Header().Get("Location") != first.Header().Get("Location") {
+		t.Fatalf("повтор отличается от первого ответа:\n%s\n%s", first.Body, again.Body)
+	}
+	if again.Header().Get(idempotency.ReplayedHeader) != "true" || first.Header().Get(idempotency.ReplayedHeader) != "" {
+		t.Fatalf("Idempotent-Replayed: первый %q, повтор %q", first.Header().Get(idempotency.ReplayedHeader), again.Header().Get(idempotency.ReplayedHeader))
+	}
+	other := post("key-1", strings.Replace(body, "Команда", "Другая", 1))
+	if other.Code != http.StatusUnprocessableEntity || calls != 1 {
+		t.Fatalf("тот же ключ, другое тело: %d, вызовов %d — ждали 422 и 1", other.Code, calls)
+	}
+	if b := decodeError(t, other); b.Code != "idempotency_key_reused" {
+		t.Errorf("code %q, want idempotency_key_reused", b.Code)
+	}
+	bad := post(strings.Repeat("k", idempotency.KeyMaxLen+1), body)
+	if b := decodeError(t, bad); bad.Code != http.StatusBadRequest || b.field() != idempotency.Header {
+		t.Errorf("длинный ключ: %d, field %q — want 400 Idempotency-Key", bad.Code, b.field())
 	}
 }
