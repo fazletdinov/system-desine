@@ -174,3 +174,32 @@ func TestUserConstructorsRejectNil(t *testing.T) {
 		})
 	}
 }
+
+func TestFindByUsername(t *testing.T) {
+	t.Parallel()
+	store := memory.NewStore()
+	u, err := newRegister(t, store, &seqIDs{}).Execute(context.Background(), usecase.RegisterUserCommand{Username: "alice", DisplayName: "Алиса"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	find, err := usecase.NewFindByUsername(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	got, err := find.Execute(ctx, usecase.FindByUsernameQuery{Username: "alice"})
+	if err != nil || got != u {
+		t.Fatalf("найден %+v, %v; ждали alice", got, err)
+	}
+	if _, err := find.Execute(ctx, usecase.FindByUsernameQuery{Username: "nobody"}); !errors.Is(err, domain.ErrUserNotFound) {
+		t.Fatalf("неизвестное имя: ждали ErrUserNotFound, получили %v", err)
+	}
+	_, err = find.Execute(ctx, usecase.FindByUsernameQuery{Username: "Не Имя!"})
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "username" {
+		t.Fatalf("некорректное имя: ждали ValidationError по username, получили %v", err)
+	}
+	if _, err := usecase.NewFindByUsername(nil); err == nil {
+		t.Fatal("NewFindByUsername(nil): ждали ошибку")
+	}
+}

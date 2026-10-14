@@ -151,3 +151,17 @@ func TestUncovered(t *testing.T) {
 		t.Errorf("после ответа операция всё ещё непокрыта: %v", after)
 	}
 }
+
+// /v1/users/me подходит и под шаблон /v1/users/{id}. Сверять ответ нужно с операцией
+// getMe: у двух операций разные наборы ответов, и проверка по чужой пропустила бы ошибку.
+func TestLiteralPathWinsOverParam(t *testing.T) {
+	v := openapitest.New(t)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/users/me", nil)
+
+	v.Wrap(respondAs(problemType, http.StatusUnauthorized, `{"type":"https://messenger.example/problems/unauthenticated","title":"Не аутентифицирован","status":401,"instance":"/v1/users/me","code":"unauthenticated"}`)).ServeHTTP(httptest.NewRecorder(), r)
+
+	after := v.Uncovered()
+	if slices.Contains(after, "GET /v1/users/me") || !slices.Contains(after, "GET /v1/users/{id}") {
+		t.Errorf("/v1/users/me сопоставлен не с getMe: непокрыты %v", after)
+	}
+}

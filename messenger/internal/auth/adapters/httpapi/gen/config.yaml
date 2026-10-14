@@ -1,0 +1,8 @@
+# Генерируем только операции своего контекста: контекст auth не должен видеть DTO других.
+package: gen
+output: api.gen.go
+generate:
+  std-http-server: true
+  models: true
+output-options:
+  include-tags: [auth]

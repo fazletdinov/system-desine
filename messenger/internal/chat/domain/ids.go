@@ -1,11 +1,14 @@
 package domain
 
+import "messenger/internal/kernel/ident"
+
 // ChatID, MessageID и UserID — обёртки-структуры по образцу user/domain.UserID:
-// получить значение можно только через Parse…, а не приведением строки.
+// получить значение можно только через Parse…, а не приведением строки. Формат id —
+// общее знание всех контекстов, поэтому проверка одна: kernel/ident (правило трёх).
 type ChatID struct{ value string }
 
 func ParseChatID(s string) (ChatID, error) {
-	if !isUUID(s) {
+	if !ident.IsUUID(s) {
 		return ChatID{}, invalid("chat_id", "должен быть UUID в нижнем регистре")
 	}
 	return ChatID{value: s}, nil
@@ -17,7 +20,7 @@ func (id ChatID) IsZero() bool   { return id.value == "" }
 type MessageID struct{ value string }
 
 func ParseMessageID(s string) (MessageID, error) {
-	if !isUUID(s) {
+	if !ident.IsUUID(s) {
 		return MessageID{}, invalid("message_id", "должен быть UUID в нижнем регистре")
 	}
 	return MessageID{value: s}, nil
@@ -31,7 +34,7 @@ func (id MessageID) IsZero() bool   { return id.value == "" }
 type ClientMessageID struct{ value string }
 
 func ParseClientMessageID(s string) (ClientMessageID, error) {
-	if !isUUID(s) {
+	if !ident.IsUUID(s) {
 		return ClientMessageID{}, invalid("client_message_id", "должен быть UUID в нижнем регистре")
 	}
 	return ClientMessageID{value: s}, nil
@@ -45,7 +48,7 @@ func (id ClientMessageID) IsZero() bool   { return id.value == "" }
 type UserID struct{ value string }
 
 func ParseUserID(s string) (UserID, error) {
-	if !isUUID(s) {
+	if !ident.IsUUID(s) {
 		return UserID{}, invalid("user_id", "должен быть UUID в нижнем регистре")
 	}
 	return UserID{value: s}, nil
@@ -53,26 +56,3 @@ func ParseUserID(s string) (UserID, error) {
 
 func (id UserID) String() string { return id.value }
 func (id UserID) IsZero() bool   { return id.value == "" }
-
-// isUUID — копия из user/domain — сознательная: контексты не делят код, чтобы в модуле 6
-// разойтись в разные сервисы. Третья копия — сигнал вынести в общий пакет (правило трёх).
-func isUUID(s string) bool {
-	const uuidLen = 36
-	if len(s) != uuidLen {
-		return false
-	}
-	for i := range len(s) {
-		c := s[i]
-		switch i {
-		case 8, 13, 18, 23:
-			if c != '-' {
-				return false
-			}
-		default:
-			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-				return false
-			}
-		}
-	}
-	return true
-}

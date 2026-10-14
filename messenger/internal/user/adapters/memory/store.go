@@ -54,3 +54,16 @@ func (s *Store) FindUser(ctx context.Context, id domain.UserID) (domain.User, er
 	}
 	return user, nil
 }
+
+func (s *Store) FindUserByUsername(ctx context.Context, username domain.Username) (domain.User, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.User{}, fmt.Errorf("memory: %w", err)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	id, ok := s.byUsername[username.String()]
+	if !ok {
+		return domain.User{}, domain.ErrUserNotFound
+	}
+	return s.byID[id], nil
+}

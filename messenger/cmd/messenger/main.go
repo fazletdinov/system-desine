@@ -12,6 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"messenger/internal/auth/adapters/argon2id"
+	authhttp "messenger/internal/auth/adapters/httpapi"
+	authmemory "messenger/internal/auth/adapters/memory"
+	"messenger/internal/auth/adapters/userbridge"
+	authusecase "messenger/internal/auth/usecase"
 	chathttp "messenger/internal/chat/adapters/httpapi"
 	chatgen "messenger/internal/chat/adapters/httpapi/gen"
 	chatmemory "messenger/internal/chat/adapters/memory"
@@ -73,6 +78,26 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("сборка: %w", err)
 	}
+	// #region auth-wiring
+	// Регистрация — в контексте auth: он создаёт профиль в user через мост userbridge
+	// (антикоррупционный слой) и хранит учётные данные у себя (ADR-0004).
+	findByUsername, err := userusecase.NewFindByUsername(users)
+	if err != nil {
+		return fmt.Errorf("сборка: %w", err)
+	}
+	bridge, err := userbridge.New(registerUser, findByUsername)
+	if err != nil {
+		return fmt.Errorf("сборка: %w", err)
+	}
+	hasher, err := argon2id.New(argon2id.OWASPMinimum)
+	if err != nil {
+		return fmt.Errorf("сборка: %w", err)
+	}
+	signUp, err := authusecase.NewSignUp(hasher, bridge, authmemory.NewStore())
+	if err != nil {
+		return fmt.Errorf("сборка: %w", err)
+	}
+	// #endregion auth-wiring
 	// Мост между контекстами: chat спрашивает о пользователях через свой порт.
 	checker, err := userchecker.New(getUser)
 	if err != nil {
@@ -100,7 +125,11 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("сборка: %w", err)
 	}
 
-	userAPI, err := userhttp.New(registerUser, getUser, log)
+	authAPI, err := authhttp.New(signUp, log)
+	if err != nil {
+		return fmt.Errorf("сборка: %w", err)
+	}
+	userAPI, err := userhttp.New(getUser, log)
 	if err != nil {
 		return fmt.Errorf("сборка: %w", err)
 	}
@@ -115,6 +144,7 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("сборка: %w", err)
 	}
 	mux := http.NewServeMux()
+	authAPI.Register(mux)
 	userAPI.Register(mux)
 	// #region idempotency-wiring
 	// Ключ только у создания чата: у сообщений — естественный ключ client_message_id.

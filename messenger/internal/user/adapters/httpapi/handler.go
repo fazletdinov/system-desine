@@ -12,33 +12,24 @@ import (
 	"messenger/internal/user/usecase"
 )
 
-// Узкие порты на use case'ы объявлены здесь, у потребителя: обработчику нужен
-// один метод Execute, а в тестах его подменяет фейк.
-
-type userRegistrar interface {
-	Execute(ctx context.Context, cmd usecase.RegisterUserCommand) (domain.User, error)
-}
-
+// Узкий порт на use case объявлен здесь, у потребителя: обработчику нужен
+// один метод Execute, а в тестах его подменяет фейк. Регистрация — в контексте auth.
 type userGetter interface {
 	Execute(ctx context.Context, q usecase.GetUserQuery) (domain.User, error)
 }
 
 // Handler — ведущий адаптер контекста user: переводит HTTP в вызовы use case'ов и обратно.
 type Handler struct {
-	register userRegistrar
-	get      userGetter
-	log      *slog.Logger
+	get userGetter
+	log *slog.Logger
 }
 
-func New(register userRegistrar, get userGetter, log *slog.Logger) (*Handler, error) {
-	if register == nil || get == nil || log == nil {
+func New(get userGetter, log *slog.Logger) (*Handler, error) {
+	if get == nil || log == nil {
 		return nil, errors.New("user httpapi: nil-зависимость")
 	}
-	return &Handler{register: register, get: get, log: log}, nil
+	return &Handler{get: get, log: log}, nil
 }
-
-// usersPath — адрес коллекции пользователей; адрес пользователя — usersPath + "/" + id.
-const usersPath = "/v1/users"
 
 // Компилятор сверяет обработчик с контрактом: метода нет или сигнатура другая —
 // сборка падает, а не клиент в проде.
@@ -55,28 +46,25 @@ func (h *Handler) Register(mux *http.ServeMux, mws ...gen.MiddlewareFunc) {
 	})
 }
 
-func (h *Handler) RegisterUser(w http.ResponseWriter, r *http.Request) {
-	var req gen.RegisterUserRequest
-	if err := httpjson.Decode(w, r, &req); err != nil {
-		writeError(w, r, h.log, err)
+// #region get-me
+// GetMe — профиль вызывающего. Это тот же GetUser, только id берётся не из пути,
+// а из личности, которую установила аутентификация: клиенту не нужно знать свой id.
+func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.caller(w, r)
+	if !ok {
 		return
 	}
-	user, err := h.register.Execute(r.Context(), usecase.RegisterUserCommand{
-		Username:    req.Username,
-		DisplayName: req.DisplayName,
-	})
-	if err != nil {
-		writeError(w, r, h.log, err)
-		return
-	}
-	// Location — адрес созданного ресурса (RFC 9110, §9.3.3 и §15.3.2): без него клиент
-	// по стандарту счёл бы созданным сам /v1/users. GET по этому адресу вернёт то же тело.
-	w.Header().Set("Location", usersPath+"/"+user.ID().String())
-	h.respond(w, r, http.StatusCreated, toUser(user))
+	h.getUser(w, r, id)
 }
 
+// #endregion get-me
+
 func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	user, err := h.get.Execute(r.Context(), usecase.GetUserQuery{ID: id.String()})
+	h.getUser(w, r, id.String())
+}
+
+func (h *Handler) getUser(w http.ResponseWriter, r *http.Request, id string) {
+	user, err := h.get.Execute(r.Context(), usecase.GetUserQuery{ID: id})
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

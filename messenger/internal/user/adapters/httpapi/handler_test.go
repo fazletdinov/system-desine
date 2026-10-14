@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/openapitest"
+	"messenger/internal/platform/principal"
 	"messenger/internal/platform/problem"
 	"messenger/internal/user/adapters/httpapi"
 	"messenger/internal/user/domain"
@@ -24,16 +24,8 @@ import (
 
 const aliceID = "00000000-0000-7000-b000-000000000001"
 
-// Фейки use case'ов — структуры с полями-функциями: каждый тест задаёт только то
+// Фейк use case'а — структура с полем-функцией: каждый тест задаёт только то
 // поведение, которое проверяет, без библиотек моков.
-type fakeRegister struct {
-	fn func(context.Context, usecase.RegisterUserCommand) (domain.User, error)
-}
-
-func (f fakeRegister) Execute(ctx context.Context, cmd usecase.RegisterUserCommand) (domain.User, error) {
-	return f.fn(ctx, cmd)
-}
-
 type fakeGet struct {
 	fn func(context.Context, usecase.GetUserQuery) (domain.User, error)
 }
@@ -63,21 +55,15 @@ func alice(t *testing.T) domain.User {
 
 // server собирает настоящий ServeMux с обработчиком, пишет лог в буфер и сверяет
 // каждый ответ с контрактом api/openapi.yaml.
-func server(t *testing.T, reg fakeRegister, get fakeGet) (http.Handler, *bytes.Buffer) {
+func server(t *testing.T, get fakeGet) (http.Handler, *bytes.Buffer) {
 	t.Helper()
-	mux, logs := rawServer(t, reg, get)
+	mux, logs := rawServer(t, get)
 	return openapitest.New(t).Wrap(mux), logs
 }
 
 // rawServer — без проверки по контракту: только для случая, когда ответа нет вовсе.
-func rawServer(t *testing.T, reg fakeRegister, get fakeGet) (*http.ServeMux, *bytes.Buffer) {
+func rawServer(t *testing.T, get fakeGet) (*http.ServeMux, *bytes.Buffer) {
 	t.Helper()
-	if reg.fn == nil {
-		reg.fn = func(context.Context, usecase.RegisterUserCommand) (domain.User, error) {
-			t.Fatal("RegisterUser не должен вызываться")
-			return domain.User{}, nil
-		}
-	}
 	if get.fn == nil {
 		get.fn = func(context.Context, usecase.GetUserQuery) (domain.User, error) {
 			t.Fatal("GetUser не должен вызываться")
@@ -85,7 +71,7 @@ func rawServer(t *testing.T, reg fakeRegister, get fakeGet) (*http.ServeMux, *by
 		}
 	}
 	var logs bytes.Buffer
-	h, err := httpapi.New(reg, get, slog.New(slog.NewJSONHandler(&logs, nil)))
+	h, err := httpapi.New(get, slog.New(slog.NewJSONHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,9 +100,18 @@ func (b problemBody) field() string {
 	return b.InvalidParams[0].Name
 }
 
-func do(t *testing.T, mux http.Handler, method, target, body string) *httptest.ResponseRecorder {
-	r := httptest.NewRequestWithContext(t.Context(), method, target, strings.NewReader(body))
-	r.Header.Set("Content-Type", "application/json")
+func do(t *testing.T, mux http.Handler, method, target string) *httptest.ResponseRecorder {
+	return doAs(t, mux, "", method, target)
+}
+
+// doAs — запрос от имени userID: личность кладём в контекст так же, как это делает
+// middleware аутентификации. Пустой userID — анонимный запрос.
+func doAs(t *testing.T, mux http.Handler, userID, method, target string) *httptest.ResponseRecorder {
+	ctx := t.Context()
+	if userID != "" {
+		ctx = principal.WithUserID(ctx, userID)
+	}
+	r := httptest.NewRequestWithContext(ctx, method, target, nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	return w
@@ -150,35 +145,14 @@ func decodeError(t *testing.T, w *httptest.ResponseRecorder) problemBody {
 	return b
 }
 
-func TestRegisterUserCreated(t *testing.T) {
-	var got usecase.RegisterUserCommand
-	mux, _ := server(t, fakeRegister{fn: func(_ context.Context, cmd usecase.RegisterUserCommand) (domain.User, error) {
-		got = cmd
-		return alice(t), nil
-	}}, fakeGet{})
-
-	w := do(t, mux, http.MethodPost, "/v1/users", `{"username":"alice","display_name":"Алиса"}`)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("status %d, want 201; body %s", w.Code, w.Body)
-	}
-	if loc := w.Header().Get("Location"); loc != "/v1/users/"+aliceID {
-		t.Errorf("Location %q, want /v1/users/%s", loc, aliceID)
-	}
-	if got != (usecase.RegisterUserCommand{Username: "alice", DisplayName: "Алиса"}) {
-		t.Errorf("команда %+v", got)
-	}
-	assertJSON(t, w.Body, `{"id":"`+aliceID+`","username":"alice","display_name":"Алиса","created_at":"2026-10-13T12:04:05Z"}`)
-}
-
 func TestGetUserOK(t *testing.T) {
 	var got usecase.GetUserQuery
-	mux, _ := server(t, fakeRegister{}, fakeGet{fn: func(_ context.Context, q usecase.GetUserQuery) (domain.User, error) {
+	mux, _ := server(t, fakeGet{fn: func(_ context.Context, q usecase.GetUserQuery) (domain.User, error) {
 		got = q
 		return alice(t), nil
 	}})
 
-	w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID, "")
+	w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d, want 200; body %s", w.Code, w.Body)
@@ -189,9 +163,9 @@ func TestGetUserOK(t *testing.T) {
 }
 
 func TestGetUserBadID(t *testing.T) {
-	mux, _ := server(t, fakeRegister{}, fakeGet{}) // до use case дело не доходит
+	mux, _ := server(t, fakeGet{}) // до use case дело не доходит
 
-	w := do(t, mux, http.MethodGet, "/v1/users/alice", "")
+	w := do(t, mux, http.MethodGet, "/v1/users/alice")
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
@@ -202,39 +176,28 @@ func TestGetUserBadID(t *testing.T) {
 	}
 }
 
-// TestErrorMapping — по строке на каждую строку таблицы «ошибка → статус». Каждую
-// ошибку возвращает операция, которая и правда может её вернуть: проверка по контракту
-// не пропустит, например, 404 у регистрации — в контракте его нет.
+// TestErrorMapping — по строке на каждую строку таблицы «ошибка → статус».
+// Регистрация ушла в контекст auth, и её ошибки проверяет его адаптер.
 func TestErrorMapping(t *testing.T) {
-	const (
-		register = http.MethodPost + " /v1/users"
-		get      = http.MethodGet + " /v1/users/" + aliceID
-	)
 	tests := []struct {
 		name       string
-		route      string
 		err        error
 		wantStatus int
 		wantCode   string
 		wantField  string
 	}{
-		{name: "валидация", route: register, err: &domain.ValidationError{Field: "username", Reason: "только a–z, 0–9 и _"}, wantStatus: 400, wantCode: "invalid_input", wantField: "username"},
-		{name: "валидация, обёрнутая", route: register, err: fmt.Errorf("register user: %w", &domain.ValidationError{Field: "display_name", Reason: "пусто"}), wantStatus: 400, wantCode: "invalid_input", wantField: "display_name"},
-		{name: "не найден", route: get, err: fmt.Errorf("get user: %w", domain.ErrUserNotFound), wantStatus: 404, wantCode: "not_found"},
-		{name: "имя занято", route: register, err: fmt.Errorf("register user: %w", domain.ErrUsernameTaken), wantStatus: 409, wantCode: "username_taken"},
-		{name: "дедлайн", route: register, err: fmt.Errorf("register user: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
-		{name: "прочее", route: get, err: errors.New("секрет БД: pq: connection refused"), wantStatus: 500, wantCode: "internal"},
+		{name: "валидация, обёрнутая", err: fmt.Errorf("get user: %w", &domain.ValidationError{Field: "user_id", Reason: "должен быть UUID"}), wantStatus: 400, wantCode: "invalid_input", wantField: "user_id"},
+		{name: "не найден", err: fmt.Errorf("get user: %w", domain.ErrUserNotFound), wantStatus: 404, wantCode: "not_found"},
+		{name: "дедлайн", err: fmt.Errorf("get user: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
+		{name: "прочее", err: errors.New("секрет БД: pq: connection refused"), wantStatus: 500, wantCode: "internal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mux, _ := server(t, fakeRegister{fn: func(context.Context, usecase.RegisterUserCommand) (domain.User, error) {
-				return domain.User{}, tt.err
-			}}, fakeGet{fn: func(context.Context, usecase.GetUserQuery) (domain.User, error) {
+			mux, _ := server(t, fakeGet{fn: func(context.Context, usecase.GetUserQuery) (domain.User, error) {
 				return domain.User{}, tt.err
 			}})
-			method, target, _ := strings.Cut(tt.route, " ")
 
-			w := do(t, mux, method, target, `{"username":"alice","display_name":"Алиса"}`)
+			w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID)
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
@@ -252,11 +215,11 @@ func TestErrorMapping(t *testing.T) {
 }
 
 func TestInternalErrorHidesDetails(t *testing.T) {
-	mux, logs := server(t, fakeRegister{}, fakeGet{fn: func(context.Context, usecase.GetUserQuery) (domain.User, error) {
+	mux, logs := server(t, fakeGet{fn: func(context.Context, usecase.GetUserQuery) (domain.User, error) {
 		return domain.User{}, errors.New("секрет БД: pq: password authentication failed")
 	}})
 
-	w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID, "")
+	w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d, want 500", w.Code)
@@ -274,13 +237,12 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 
 func TestClientGoneWritesNothing(t *testing.T) {
 	// Use case, как и настоящий, возвращает ошибку своего ctx — контекста запроса.
-	mux, logs := rawServer(t, fakeRegister{fn: func(ctx context.Context, _ usecase.RegisterUserCommand) (domain.User, error) {
-		return domain.User{}, fmt.Errorf("register user: %w", ctx.Err())
-	}}, fakeGet{})
+	mux, logs := rawServer(t, fakeGet{fn: func(ctx context.Context, _ usecase.GetUserQuery) (domain.User, error) {
+		return domain.User{}, fmt.Errorf("get user: %w", ctx.Err())
+	}})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // клиент закрыл соединение
-	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/users", strings.NewReader(`{"username":"alice","display_name":"Алиса"}`))
-	r.Header.Set("Content-Type", "application/json")
+	r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/users/"+aliceID, nil)
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, r)
@@ -293,32 +255,41 @@ func TestClientGoneWritesNothing(t *testing.T) {
 	}
 }
 
-func TestDecodeErrors(t *testing.T) {
-	tests := []struct {
-		name        string
-		contentType string
-		body        string
-		wantStatus  int
-		wantCode    string
-	}{
-		{name: "битый JSON", contentType: "application/json", body: `{"username":`, wantStatus: 400, wantCode: "bad_json"},
-		{name: "неизвестное поле", contentType: "application/json", body: `{"username":"a","is_admin":true}`, wantStatus: 400, wantCode: "bad_json"},
-		{name: "больше 1 МиБ", contentType: "application/json", body: `{"username":"` + strings.Repeat("a", httpjson.MaxBodyBytes) + `"}`, wantStatus: 413, wantCode: "body_too_large"},
-		{name: "не JSON", contentType: "application/x-www-form-urlencoded", body: `username=alice`, wantStatus: 415, wantCode: "unsupported_media_type"},
+func TestGetMe(t *testing.T) {
+	var got usecase.GetUserQuery
+	mux, _ := server(t, fakeGet{fn: func(_ context.Context, q usecase.GetUserQuery) (domain.User, error) {
+		got = q
+		return alice(t), nil
+	}})
+
+	w := doAs(t, mux, aliceID, http.MethodGet, "/v1/users/me")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200; body %s", w.Code, w.Body)
+	}
+	// «me» — не id из пути: id берётся из личности вызывающего.
+	if got.ID != aliceID {
+		t.Errorf("запрошен %q, want %q", got.ID, aliceID)
+	}
+	assertJSON(t, w.Body, `{"id":"`+aliceID+`","username":"alice","display_name":"Алиса","created_at":"2026-10-13T12:04:05Z"}`)
+}
+
+func TestGetMeWithoutIdentity(t *testing.T) {
+	tests := []struct{ name, userID string }{
+		{name: "личности нет", userID: ""},
+		{name: "личность не UUID", userID: "alice"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mux, _ := server(t, fakeRegister{}, fakeGet{})
-			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/users", strings.NewReader(tt.body))
-			r.Header.Set("Content-Type", tt.contentType)
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, r)
+			mux, _ := server(t, fakeGet{}) // до use case дело не доходит
 
-			if w.Code != tt.wantStatus {
-				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
+			w := doAs(t, mux, tt.userID, http.MethodGet, "/v1/users/me")
+
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status %d, want 401; body %s", w.Code, w.Body)
 			}
-			if b := decodeError(t, w); b.Code != tt.wantCode {
-				t.Errorf("code %q, want %q", b.Code, tt.wantCode)
+			if b := decodeError(t, w); b.Code != "unauthenticated" {
+				t.Errorf("code %q, want unauthenticated", b.Code)
 			}
 		})
 	}
@@ -326,15 +297,10 @@ func TestDecodeErrors(t *testing.T) {
 
 func TestNewNilDependencies(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
-	reg := fakeRegister{}
-	get := fakeGet{}
-	if _, err := httpapi.New(nil, get, log); err == nil {
-		t.Error("New(nil register): want error")
-	}
-	if _, err := httpapi.New(reg, nil, log); err == nil {
+	if _, err := httpapi.New(nil, log); err == nil {
 		t.Error("New(nil get): want error")
 	}
-	if _, err := httpapi.New(reg, get, nil); err == nil {
+	if _, err := httpapi.New(fakeGet{}, nil); err == nil {
 		t.Error("New(nil log): want error")
 	}
 }

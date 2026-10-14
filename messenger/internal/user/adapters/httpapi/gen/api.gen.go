@@ -92,12 +92,6 @@ type Problem struct {
 // ProblemCode defines model for ProblemCode.
 type ProblemCode string
 
-// RegisterUserRequest defines model for RegisterUserRequest.
-type RegisterUserRequest struct {
-	DisplayName string `json:"display_name"`
-	Username    string `json:"username"`
-}
-
 // User defines model for User.
 type User struct {
 	CreatedAt   time.Time `json:"created_at"`
@@ -112,17 +106,11 @@ type ID = openapi_types.UUID
 // BadRequest Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type BadRequest = Problem
 
-// Conflict Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
-type Conflict = Problem
-
 // InternalError Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type InternalError = Problem
 
 // NotFound Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type NotFound = Problem
-
-// PayloadTooLarge Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
-type PayloadTooLarge = Problem
 
 // ServiceUnavailable Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type ServiceUnavailable = Problem
@@ -130,17 +118,11 @@ type ServiceUnavailable = Problem
 // Unauthorized Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type Unauthorized = Problem
 
-// UnsupportedMediaType Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
-type UnsupportedMediaType = Problem
-
-// RegisterUserJSONRequestBody defines body for RegisterUser for application/json ContentType.
-type RegisterUserJSONRequestBody = RegisterUserRequest
-
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// RegisterUser Зарегистрировать пользователя
-	// (POST /v1/users)
-	RegisterUser(w http.ResponseWriter, r *http.Request)
+	// GetMe Мой профиль
+	// (GET /v1/users/me)
+	GetMe(w http.ResponseWriter, r *http.Request)
 	// GetUser Профиль пользователя
 	// (GET /v1/users/{id})
 	GetUser(w http.ResponseWriter, r *http.Request, id ID)
@@ -155,11 +137,11 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
-// RegisterUser operation middleware
-func (siw *ServerInterfaceWrapper) RegisterUser(w http.ResponseWriter, r *http.Request) {
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RegisterUser(w, r)
+		siw.Handler.GetMe(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -315,7 +297,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/users", wrapper.RegisterUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/users/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/users/{id}", wrapper.GetUser)
 
 	return m

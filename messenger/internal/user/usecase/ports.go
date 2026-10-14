@@ -27,3 +27,8 @@ type UserFinder interface {
 	// FindUser возвращает domain.ErrUserNotFound, если пользователя нет.
 	FindUser(ctx context.Context, id domain.UserID) (domain.User, error)
 }
+
+type UserByUsernameFinder interface {
+	// FindUserByUsername возвращает domain.ErrUserNotFound, если имени нет.
+	FindUserByUsername(ctx context.Context, username domain.Username) (domain.User, error)
+}

@@ -12,6 +12,8 @@ info:
 servers:
   - url: http://127.0.0.1:8080
 tags:
+  - name: auth
+    description: Регистрация и вход
   - name: users
     description: Пользователи
   - name: chats
@@ -19,17 +21,21 @@ tags:
 security:
   - userIdHeader: []
 paths:
+  # region signup-path
   /v1/users:
     post:
-      tags: [users]
-      operationId: registerUser
-      summary: Зарегистрировать пользователя
+      tags: [auth]
+      operationId: signUp
+      summary: Зарегистрироваться
+      description: |
+        Создаёт профиль и учётные данные. Пароль — от 15 до 128 символов (кодовых точек
+        Unicode), без требований к составу (NIST SP 800-63B-4, §3.1.1.2).
       security: []
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/RegisterUserRequest' }
+            schema: { $ref: '#/components/schemas/SignUpRequest' }
       responses:
         '201':
           description: Пользователь создан
@@ -42,6 +48,22 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  # endregion signup-path
+  /v1/users/me:
+    get:
+      tags: [users]
+      operationId: getMe
+      summary: Мой профиль
+      description: Профиль того, кто вызывает, — без знания своего id.
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /v1/users/{id}:
@@ -309,13 +331,22 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
     # region schemas-request
-    RegisterUserRequest:
+    SignUpRequest:
       type: object
       additionalProperties: false
-      required: [username, display_name]
+      required: [username, display_name, password]
       properties:
         username: { type: string, minLength: 3, maxLength: 32, pattern: '^[a-z0-9_]+$' }
         display_name: { type: string, minLength: 1, maxLength: 64 }
+        password:
+          type: string
+          minLength: 15
+          maxLength: 128
+          format: password
+          writeOnly: true
+          # Генератор делает writeOnly-поле указателем (в ответе его нет); в запросе оно обязательно.
+          x-go-type-skip-optional-pointer: true
+          description: Хранится только хеш Argon2id; в ответах и журналах не появляется.
     CreateChatRequest:
       type: object
       additionalProperties: false

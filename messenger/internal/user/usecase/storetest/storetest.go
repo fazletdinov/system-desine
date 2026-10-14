@@ -19,6 +19,7 @@ import (
 type Store interface {
 	usecase.UserCreator
 	usecase.UserFinder
+	usecase.UserByUsernameFinder
 }
 
 var t0 = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
@@ -32,6 +33,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		fn   func(t *testing.T, s Store)
 	}{
 		{"создание и поиск", testCreateAndFind},
+		{"поиск по имени", testFindByUsername},
 		{"занятое имя", testUsernameTaken},
 		{"отменённый контекст", testCanceledContext},
 		{"одновременная регистрация одного имени", testConcurrentSameUsername},
@@ -85,6 +87,21 @@ func testCreateAndFind(t *testing.T, s Store) {
 	}
 }
 
+func testFindByUsername(t *testing.T, s Store) {
+	ctx := context.Background()
+	u := newUser(t, 1, "alice")
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.FindUserByUsername(ctx, u.Username())
+	if err != nil || !sameUser(got, u) {
+		t.Fatalf("FindUserByUsername: %+v, %v — ждали сохранённого пользователя", got, err)
+	}
+	if _, err := s.FindUserByUsername(ctx, newUser(t, 2, "nobody").Username()); !errors.Is(err, domain.ErrUserNotFound) {
+		t.Fatalf("неизвестное имя: ждали ErrUserNotFound, получили %v", err)
+	}
+}
+
 func testUsernameTaken(t *testing.T, s Store) {
 	ctx := context.Background()
 	first := newUser(t, 1, "alice")
@@ -128,6 +145,9 @@ func testCanceledContext(t *testing.T, s Store) {
 		}
 		if _, err := s.FindUser(done.ctx, stored.ID()); !errors.Is(err, done.want) {
 			t.Errorf("FindUser, %s: ждали %v, получили %v", done.name, done.want, err)
+		}
+		if _, err := s.FindUserByUsername(done.ctx, stored.Username()); !errors.Is(err, done.want) {
+			t.Errorf("FindUserByUsername, %s: ждали %v, получили %v", done.name, done.want, err)
 		}
 	}
 	if _, err := s.FindUser(context.Background(), fresh.ID()); !errors.Is(err, domain.ErrUserNotFound) {

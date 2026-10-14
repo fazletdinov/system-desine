@@ -21,16 +21,16 @@ export interface LoginTimingState {
 
 export const LOGIN_HIGHLIGHT_IDS: readonly string[] = ['text', 'time', 'response', 'uniform']
 
-// Порядок величины на машине автора; точные цифры меряются в уроке.
+// Замер урока 1.13: BenchmarkHashOWASP — 17 мс на хеш (Argon2id m=19 МиБ, t=2, p=1, i5-12400).
 const FAST_MS = 1
-const HASH_MS = 50
-const SAFE_WRONG_MS = 52
+const HASH_MS = 17
+const SAFE_WRONG_MS = 18
 
 const NOT_FOUND: LoginResponse = { status: 404, code: 'user_not_found', text: 'Пользователь не найден' }
 const BAD_PASSWORD: LoginResponse = { status: 401, code: 'invalid_password', text: 'Неверный пароль' }
 const UNIFORM: LoginResponse = { status: 401, code: 'invalid_credentials', text: 'Неверный логин или пароль' }
 
-const MARK = 'на машине автора; меряется в уроке'
+const MARK = 'замер урока на машине автора'
 
 interface Frame {
   state: LoginTimingState
@@ -66,7 +66,7 @@ const FRAMES: readonly Frame[] = [
     state: { impl: 'naive', attempt: 'wrong-password', response: BAD_PASSWORD, elapsedMs: HASH_MS, steps: [`1 мс против ${HASH_MS} мс — разница в ${HASH_MS} раз`, 'Вторая утечка: время'] },
     highlight: 'time',
     caption: [
-      { text: 'Даже если унифицировать текст, остаётся вторая утечка — время. Один ответ быстрый, другой в десятки раз медленнее, и разницу видно по секундомеру. Это ' },
+      { text: 'Даже если унифицировать текст, остаётся вторая утечка — время. Один ответ быстрый, другой на порядок медленнее, и разницу видно по секундомеру. Это ' },
       term('атака по времени', 'timing-attack'),
       { text: ': секрет определяется не из ответа, а из того, сколько на него ушло.' },
     ],
