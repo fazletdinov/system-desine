@@ -58,22 +58,6 @@ MESSENGER_JWT_KEY_FILE=jwt.pem MESSENGER_ADDR=:8080 go run ./cmd/messenger   # �
 
 API описан контрактом `messenger/api/openapi.yaml` (contract-first, ADR-0006): типы запросов и ответов и интерфейсы обработчиков сгенерированы из него в пакеты `internal/*/adapters/httpapi/gen`. После правки контракта — `go generate ./...` из `messenger/`; сгенерированные файлы коммитятся, а `npm run check:messenger` падает, если они отстали от контракта.
 
-Проверка — из `course/`: `npm run check:labs` (gofmt, `go vet`, `go test -race` по `labs/` и `docker compose config`).
-
-Код лабораторных попадает в уроки только импортом региона: в Go-файле регион размечен `// #region имя` … `// #endregion имя`, в уроке — `<<< @/../labs/0b/cmd/tcpecho/main.go#server{go}`. Так урок всегда показывает тот код, который проверен тестами. Вывод команд в уроках — реальный, с пометкой «у вас числа будут другими, порядок — такой».
-
-## Мессенджер
-
-Сквозной проект курса лежит в `messenger/` — отдельный Go-модуль (`messenger/go.mod`, Go 1.26). Код раскладывается по контекстам (`internal/user`, `internal/chat`) и слоям `domain` ← `usecase` ← `adapters` ← `cmd`; правило зависимостей проверяет линтер `depguard` (настройка — `messenger/.golangci.yml`, решения — `messenger/docs/adr/`).
-
-```bash
-cd messenger
-go run ./cmd/messenger                    # HTTP-сервер на 127.0.0.1:8080
-MESSENGER_ADDR=:8080 go run ./cmd/messenger  # слушать все интерфейсы — явное решение
-```
-
-По умолчанию сервер слушает только loopback: пока вместо аутентификации заглушка `X-User-ID`, сборку не должно быть видно из сети (ADR-0002). Данные живут в памяти и пропадают при остановке. Сценарий с `curl` — в уроке 1.7.
-
 Проверка — из `course/`: `npm run check:messenger` — `gofmt`, свежесть `go generate`, `go vet`, `golangci-lint run`, `go test -race` по `messenger/` и ссылки `<<< @/../messenger/…#регион` во всех уроках (нет файла, нет региона или строка с `<<<`, которую не разобрать, — ошибка). Нужен **golangci-lint v2** (`version: "2"` в конфиге; v1 его не прочитает), например `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`; скрипт ищет его сначала в `~/go/bin`, потом в `PATH`.
 
 Каждый урок модуля 1 заканчивается тегом `m01-lNN` (сейчас — от `m01-l01` до `m01-l14`) — состоянием кода после урока: `git checkout m01-l03` показывает код после урока 1.3, а `git -c core.quotePath=false diff --stat m01-l02 m01-l03 -- messenger` — что в нём изменилось. На каждом теге `go build ./...` и `go test -race ./...` проходят.
