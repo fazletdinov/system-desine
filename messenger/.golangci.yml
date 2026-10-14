@@ -18,8 +18,15 @@ linters:
           files: ["**/internal/*/domain/**", "!$test"]
           allow:
             - $gostd
+            - messenger/internal/kernel/ident
           deny:
-            - pkg: messenger/internal
+            - pkg: messenger/internal/user
+              desc: "домен не зависит от других пакетов проекта (урок 1.1, правило зависимостей)"
+            - pkg: messenger/internal/chat
+              desc: "домен не зависит от других пакетов проекта (урок 1.1, правило зависимостей)"
+            - pkg: messenger/internal/auth
+              desc: "домен не зависит от других пакетов проекта (урок 1.1, правило зависимостей)"
+            - pkg: messenger/internal/platform
               desc: "домен не зависит от других пакетов проекта (урок 1.1, правило зависимостей)"
             - pkg: net/http
               desc: "домен не знает про транспорт: HTTP — дело адаптера"
@@ -44,10 +51,15 @@ linters:
             - messenger/internal/user/usecase
             - messenger/internal/chat/domain
             - messenger/internal/chat/usecase
+            - messenger/internal/auth/domain
+            - messenger/internal/auth/usecase
+            - messenger/internal/kernel/ident
           deny:
             - pkg: messenger/internal/user/adapters
               desc: "use case зависит от порта, а не от адаптера"
             - pkg: messenger/internal/chat/adapters
+              desc: "use case зависит от порта, а не от адаптера"
+            - pkg: messenger/internal/auth/adapters
               desc: "use case зависит от порта, а не от адаптера"
             - pkg: messenger/internal/platform
               desc: "время и id приходят через порты Clock и IDGenerator"
@@ -60,10 +72,17 @@ linters:
         adapters:
           list-mode: lax
           files: ["**/internal/*/adapters/**", "!$test"]
+          # Исключение для сгенерированного кода: адаптер может импортировать gen своего пакета.
+          allow:
+            - messenger/internal/user/adapters/httpapi/gen
+            - messenger/internal/chat/adapters/httpapi/gen
+            - messenger/internal/auth/adapters/httpapi/gen
           deny:
             - pkg: messenger/internal/user/adapters
               desc: "адаптеры не знают друг о друге: связь — через use case"
             - pkg: messenger/internal/chat/adapters
+              desc: "адаптеры не знают друг о друге: связь — через use case"
+            - pkg: messenger/internal/auth/adapters
               desc: "адаптеры не знают друг о друге: связь — через use case"
         #region chat-context-rule
         chat-context:
@@ -72,6 +91,8 @@ linters:
           deny:
             - pkg: messenger/internal/user
               desc: "контекст chat не зависит от user: порт UserChecker и адаптер userchecker"
+            - pkg: messenger/internal/auth
+              desc: "контекст chat не знает про auth: кто вызывает — из platform/principal"
         #endregion chat-context-rule
         user-context:
           list-mode: lax
@@ -79,6 +100,16 @@ linters:
           deny:
             - pkg: messenger/internal/chat
               desc: "контекст user не знает про чаты"
+            - pkg: messenger/internal/auth
+              desc: "контекст user не знает про auth: кто вызывает — из platform/principal"
+        auth-context:
+          list-mode: lax
+          files: ["**/internal/auth/**", "!**/internal/auth/adapters/userbridge/**"]
+          deny:
+            - pkg: messenger/internal/user
+              desc: "auth не зависит от user: порты ProfileRegistrar и UserLookup, адаптер userbridge"
+            - pkg: messenger/internal/chat
+              desc: "auth не знает про чаты"
         platform:
           list-mode: lax
           files: ["**/internal/platform/**"]
@@ -87,6 +118,13 @@ linters:
               desc: "platform — общие технические пакеты, без бизнес-контекстов"
             - pkg: messenger/internal/chat
               desc: "platform — общие технические пакеты, без бизнес-контекстов"
+            - pkg: messenger/internal/auth
+              desc: "platform — общие технические пакеты, без бизнес-контекстов"
+        kernel:
+          list-mode: strict
+          files: ["**/internal/kernel/**", "!$test"]
+          allow:
+            - $gostd
 
 formatters:
   enable:
