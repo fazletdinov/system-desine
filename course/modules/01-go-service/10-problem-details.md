@@ -79,13 +79,30 @@ push:        400 Bad Request, тело — строка "token is required"
 
 **`code` — машинный ключ для `switch`.** Позвольте, но ведь `type` и есть машинный идентификатор? Да, и формально его достаточно. Но сравните, что пишет клиент:
 
+<!-- go-check -->
+
 ```go
-switch p.Type {
-case "https://messenger.example/problems/not_member": // …
+package client
+
+// apiProblem — тело ошибки, которое клиент разобрал из ответа.
+type apiProblem struct{ Type, Code string }
+
+// По type: код клиента знает адрес документации.
+func isNotMemberByType(p apiProblem) bool {
+	switch p.Type {
+	case "https://messenger.example/problems/not_member":
+		return true
+	}
+	return false
 }
-// против
-switch p.Code {
-case "not_member": // …
+
+// По code: короткий стабильный ключ.
+func isNotMemberByCode(p apiProblem) bool {
+	switch p.Code {
+	case "not_member":
+		return true
+	}
+	return false
 }
 ```
 
