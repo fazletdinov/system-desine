@@ -17,6 +17,7 @@ import (
 	"messenger/internal/chat/domain"
 	"messenger/internal/chat/usecase"
 	"messenger/internal/platform/httpjson"
+	"messenger/internal/platform/principal"
 )
 
 const (
@@ -130,15 +131,22 @@ func message(t *testing.T) domain.Message {
 
 type request struct {
 	method, target, body string
-	userID               string // пусто — без заголовка X-User-ID
+	userID               string // пусто — личности в контексте нет
+}
+
+// asUser кладёт личность в контекст так же, как это делает middleware аутентификации:
+// адаптер не знает, откуда она взялась, — заголовок, токен или тест.
+func asUser(r *http.Request, userID string) *http.Request {
+	if userID == "" {
+		return r
+	}
+	return r.WithContext(principal.WithUserID(r.Context(), userID))
 }
 
 func do(t *testing.T, mux http.Handler, req request) *httptest.ResponseRecorder {
 	r := httptest.NewRequestWithContext(t.Context(), req.method, req.target, strings.NewReader(req.body))
 	r.Header.Set("Content-Type", "application/json")
-	if req.userID != "" {
-		r.Header.Set(httpapi.UserIDHeader, req.userID)
-	}
+	r = asUser(r, req.userID)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	return w
@@ -197,7 +205,7 @@ func TestCreateChatStatus(t *testing.T) {
 				return usecase.CreateChatResult{Chat: tt.chat(t), Created: tt.created}, nil
 			}}})
 
-			w := do(t, mux, request{method: http.MethodPost, target: "/chats", body: tt.body, userID: aliceID})
+			w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats", body: tt.body, userID: aliceID})
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
@@ -206,7 +214,11 @@ func TestCreateChatStatus(t *testing.T) {
 				t.Errorf("body\n%s\nwant\n%s", w.Body, tt.wantBody)
 			}
 			if got.CreatorID != aliceID {
-				t.Errorf("CreatorID %q, want из X-User-ID %q", got.CreatorID, aliceID)
+				t.Errorf("CreatorID %q, want из principal %q", got.CreatorID, aliceID)
+			}
+			// И при 201, и при 200 (личный чат уже был) — адрес чата.
+			if loc := w.Header().Get("Location"); loc != "/v1/chats/"+chatID {
+				t.Errorf("Location %q, want /v1/chats/%s", loc, chatID)
 			}
 		})
 	}
@@ -219,10 +231,14 @@ func TestSendMessageCreated(t *testing.T) {
 		return message(t), nil
 	}}})
 
-	w := do(t, mux, request{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: `{"text":"Привет, Боб!"}`, userID: aliceID})
+	w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"Привет, Боб!"}`, userID: aliceID})
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status %d, want 201; body %s", w.Code, w.Body)
+	}
+	// У сообщения нет своего адреса с GET — значит, и Location ему не на что указывать.
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Errorf("Location %q у сообщения, want пусто", loc)
 	}
 	want := usecase.SendMessageCommand{ChatID: chatID, AuthorID: aliceID, Text: "Привет, Боб!"}
 	if got != want {
@@ -263,7 +279,7 @@ func TestListMessages(t *testing.T) {
 				return tt.msgs(t), nil
 			}}})
 
-			w := do(t, mux, request{method: http.MethodGet, target: "/chats/" + chatID + "/messages" + tt.query, userID: bobID})
+			w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages" + tt.query, userID: bobID})
 
 			if w.Code != http.StatusOK {
 				t.Fatalf("status %d, want 200; body %s", w.Code, w.Body)
@@ -291,7 +307,7 @@ func TestListMessagesBadQuery(t *testing.T) {
 		t.Run(tt.query, func(t *testing.T) {
 			mux, _ := server(t, fakes{})
 
-			w := do(t, mux, request{method: http.MethodGet, target: "/chats/" + chatID + "/messages" + tt.query, userID: bobID})
+			w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages" + tt.query, userID: bobID})
 
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)
@@ -327,7 +343,7 @@ func TestErrorMapping(t *testing.T) {
 				return domain.Message{}, tt.err
 			}}})
 
-			w := do(t, mux, request{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: `{"text":"a"}`, userID: aliceID})
+			w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"a"}`, userID: aliceID})
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
@@ -345,7 +361,7 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 		return nil, errors.New("секрет БД: pq: password authentication failed for user messenger")
 	}}})
 
-	w := do(t, mux, request{method: http.MethodGet, target: "/chats/" + chatID + "/messages", userID: bobID})
+	w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages", userID: bobID})
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d, want 500", w.Code)
@@ -365,9 +381,9 @@ func TestClientGoneWritesNothing(t *testing.T) {
 	}}})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // клиент закрыл соединение
-	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/chats/"+chatID+"/messages", strings.NewReader(`{"text":"a"}`))
+	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/chats/"+chatID+"/messages", strings.NewReader(`{"text":"a"}`))
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set(httpapi.UserIDHeader, aliceID)
+	r = asUser(r, aliceID)
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, r)
@@ -382,21 +398,23 @@ func TestClientGoneWritesNothing(t *testing.T) {
 
 func TestUnauthenticated(t *testing.T) {
 	routes := []request{
-		{method: http.MethodPost, target: "/chats", body: `{"kind":"direct","member_ids":["` + bobID + `"]}`},
-		{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: `{"text":"a"}`},
-		{method: http.MethodGet, target: "/chats/" + chatID + "/messages"},
+		{method: http.MethodPost, target: "/v1/chats", body: `{"kind":"direct","member_ids":["` + bobID + `"]}`},
+		{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: `{"text":"a"}`},
+		{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages"},
 	}
-	headers := map[string]string{
-		"нет заголовка":           "",
+	// Личность в контексте, какой её положил бы middleware. Он сам отсекает пустой
+	// заголовок, но адаптер не должен на это полагаться: формат id проверяет он.
+	identities := map[string]string{
+		"нет личности":            "",
 		"не UUID":                 "alice",
 		"UUID в верхнем регистре": strings.ToUpper(aliceID),
 		"одни пробелы":            "   ",
 	}
 	for _, route := range routes {
-		for name, header := range headers {
+		for name, identity := range identities {
 			t.Run(route.method+" "+route.target+"/"+name, func(t *testing.T) {
 				mux, _ := server(t, fakes{}) // use case'ы не должны вызываться вовсе
-				route.userID = header
+				route.userID = identity
 
 				w := do(t, mux, route)
 
@@ -408,20 +426,6 @@ func TestUnauthenticated(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestUserIDHeaderTrimmed(t *testing.T) {
-	var got string
-	mux, _ := server(t, fakes{send: fakeSend{fn: func(_ context.Context, cmd usecase.SendMessageCommand) (domain.Message, error) {
-		got = cmd.AuthorID
-		return message(t), nil
-	}}})
-
-	w := do(t, mux, request{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: `{"text":"a"}`, userID: "  " + aliceID + " "})
-
-	if w.Code != http.StatusCreated || got != aliceID {
-		t.Errorf("status %d author %q, want 201 %q", w.Code, got, aliceID)
 	}
 }
 
@@ -440,7 +444,7 @@ func TestDecodeErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mux, _ := server(t, fakes{})
 
-			w := do(t, mux, request{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: tt.body, userID: aliceID})
+			w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: tt.body, userID: aliceID})
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
@@ -454,9 +458,9 @@ func TestDecodeErrors(t *testing.T) {
 
 func TestUnsupportedMediaType(t *testing.T) {
 	mux, _ := server(t, fakes{})
-	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/chats/"+chatID+"/messages", strings.NewReader(`text=a`))
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/chats/"+chatID+"/messages", strings.NewReader(`text=a`))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.Header.Set(httpapi.UserIDHeader, aliceID)
+	r = asUser(r, aliceID)
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, r)
@@ -466,32 +470,6 @@ func TestUnsupportedMediaType(t *testing.T) {
 	}
 	if b := decodeError(t, w); b.Error.Code != "unsupported_media_type" {
 		t.Errorf("code %q, want unsupported_media_type", b.Error.Code)
-	}
-}
-
-// TestMethodNotAllowed фиксирует поведение самого ServeMux (Go 1.22+): путь есть,
-// метода нет — 405 и заголовок Allow со списком разрешённых методов.
-func TestMethodNotAllowed(t *testing.T) {
-	tests := []struct {
-		target    string
-		wantAllow string
-	}{
-		{target: "/chats", wantAllow: "POST"},
-		{target: "/chats/" + chatID + "/messages", wantAllow: "GET, HEAD, POST"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.target, func(t *testing.T) {
-			mux, _ := server(t, fakes{})
-
-			w := do(t, mux, request{method: http.MethodPut, target: tt.target, userID: aliceID})
-
-			if w.Code != http.StatusMethodNotAllowed {
-				t.Fatalf("status %d, want 405", w.Code)
-			}
-			if got := w.Header().Get("Allow"); got != tt.wantAllow {
-				t.Errorf("Allow %q, want %q", got, tt.wantAllow)
-			}
-		})
 	}
 }
 
@@ -519,7 +497,7 @@ func TestDecodeErrorsHideInternals(t *testing.T) {
 		t.Run(body, func(t *testing.T) {
 			mux, _ := server(t, fakes{})
 
-			w := do(t, mux, request{method: http.MethodPost, target: "/chats/" + chatID + "/messages", body: body, userID: aliceID})
+			w := do(t, mux, request{method: http.MethodPost, target: "/v1/chats/" + chatID + "/messages", body: body, userID: aliceID})
 
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status %d, want 400; body %s", w.Code, w.Body)

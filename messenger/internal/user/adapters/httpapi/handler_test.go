@@ -115,10 +115,13 @@ func TestRegisterUserCreated(t *testing.T) {
 		return alice(t), nil
 	}}, fakeGet{})
 
-	w := do(t, mux, http.MethodPost, "/users", `{"username":"alice","display_name":"Алиса"}`)
+	w := do(t, mux, http.MethodPost, "/v1/users", `{"username":"alice","display_name":"Алиса"}`)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status %d, want 201; body %s", w.Code, w.Body)
+	}
+	if loc := w.Header().Get("Location"); loc != "/v1/users/"+aliceID {
+		t.Errorf("Location %q, want /v1/users/%s", loc, aliceID)
 	}
 	if got != (usecase.RegisterUserCommand{Username: "alice", DisplayName: "Алиса"}) {
 		t.Errorf("команда %+v", got)
@@ -136,7 +139,7 @@ func TestGetUserOK(t *testing.T) {
 		return alice(t), nil
 	}})
 
-	w := do(t, mux, http.MethodGet, "/users/"+aliceID, "")
+	w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID, "")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d, want 200; body %s", w.Code, w.Body)
@@ -168,7 +171,7 @@ func TestErrorMapping(t *testing.T) {
 				return domain.User{}, tt.err
 			}}, fakeGet{})
 
-			w := do(t, mux, http.MethodPost, "/users", `{"username":"alice","display_name":"Алиса"}`)
+			w := do(t, mux, http.MethodPost, "/v1/users", `{"username":"alice","display_name":"Алиса"}`)
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
@@ -189,7 +192,7 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 		return domain.User{}, errors.New("секрет БД: pq: password authentication failed")
 	}})
 
-	w := do(t, mux, http.MethodGet, "/users/"+aliceID, "")
+	w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID, "")
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d, want 500", w.Code)
@@ -200,7 +203,7 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 	if !strings.Contains(logs.String(), "секрет БД") || !strings.Contains(logs.String(), `"level":"ERROR"`) {
 		t.Errorf("в логе нет деталей на уровне ERROR: %s", logs)
 	}
-	if !strings.Contains(logs.String(), `"path":"/users/`+aliceID+`"`) {
+	if !strings.Contains(logs.String(), `"path":"/v1/users/`+aliceID+`"`) {
 		t.Errorf("в логе нет пути запроса: %s", logs)
 	}
 }
@@ -212,7 +215,7 @@ func TestClientGoneWritesNothing(t *testing.T) {
 	}}, fakeGet{})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // клиент закрыл соединение
-	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/users", strings.NewReader(`{"username":"alice","display_name":"Алиса"}`))
+	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/users", strings.NewReader(`{"username":"alice","display_name":"Алиса"}`))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -242,7 +245,7 @@ func TestDecodeErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mux, _ := server(t, fakeRegister{}, fakeGet{})
-			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/users", strings.NewReader(tt.body))
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/users", strings.NewReader(tt.body))
 			r.Header.Set("Content-Type", tt.contentType)
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, r)

@@ -17,8 +17,11 @@ import (
 	"messenger/internal/chat/adapters/userchecker"
 	chatusecase "messenger/internal/chat/usecase"
 	"messenger/internal/platform/clock"
+	"messenger/internal/platform/httpauth"
+	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/httpserver"
 	"messenger/internal/platform/idgen"
+	"messenger/internal/platform/middleware"
 	userhttp "messenger/internal/user/adapters/httpapi"
 	usermemory "messenger/internal/user/adapters/memory"
 	userusecase "messenger/internal/user/usecase"
@@ -32,6 +35,10 @@ const (
 	// до SIGKILL: сервер должен успеть закончить сам, а не быть убитым посреди ответа.
 	shutdownTimeout = 10 * time.Second
 )
+
+// publicRoutes — маршруты, открытые без аутентификации: метод и путь без параметров.
+// Всё остальное закрыто: забытый здесь маршрут получит 401, а не откроется всем.
+var publicRoutes = []string{"POST /v1/users"}
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -94,7 +101,19 @@ func run(log *slog.Logger) error {
 	userAPI.Register(mux)
 	chatAPI.Register(mux)
 
-	srv := httpserver.New(addr, mux, log)
+	// #region chain
+	// Первый — самый внешний. Request ID нужен всем, кто пишет в журнал; Recover — внутри
+	// AccessLog, чтобы паника попала в журнал как 500; аутентификация — до маршрутизатора.
+	handler := middleware.Chain(
+		middleware.RouteErrors(mux, routeError(log)),
+		middleware.RequestID(ids),
+		middleware.AccessLog(log),
+		middleware.Recover(log, internalError(log)),
+		httpauth.Middleware(httpauth.HeaderStub{}, publicRoutes, unauthenticated(log)),
+	)
+	// #endregion chain
+
+	srv := httpserver.New(addr, handler, log)
 	log.Info("слушаю", "addr", addr)
 	if err := httpserver.Run(ctx, srv, shutdownTimeout); err != nil {
 		return err
@@ -104,3 +123,38 @@ func run(log *slog.Logger) error {
 }
 
 // #endregion wiring
+
+// Ответы конвейера — в том же формате, что ошибки адаптеров: {"error":{"code","message"}}.
+// Middleware формата не знают, поэтому функции ответа собираются здесь.
+
+func routeError(log *slog.Logger) func(http.ResponseWriter, *http.Request, int) {
+	return func(w http.ResponseWriter, r *http.Request, status int) {
+		if status == http.StatusMethodNotAllowed {
+			writeError(log, w, r, status, "method_not_allowed", "метод не поддерживается для этого пути")
+			return
+		}
+		// Пустой шаблон без Allow — «не найдено». Даже редирект на очищенный путь
+		// (/v1//x → /v1/x) ServeMux отдаёт с пустым шаблоном, только когда и там пусто.
+		writeError(log, w, r, http.StatusNotFound, "not_found", "маршрут не найден")
+	}
+}
+
+func internalError(log *slog.Logger) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeError(log, w, r, http.StatusInternalServerError, "internal", "внутренняя ошибка сервера")
+	}
+}
+
+// unauthenticated не различает причины отказа: клиенту хватит «представьтесь», а
+// подробности помогли бы только подбирать учётные данные.
+func unauthenticated(log *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
+	return func(w http.ResponseWriter, r *http.Request, _ error) {
+		writeError(log, w, r, http.StatusUnauthorized, "unauthenticated", "нужен заголовок "+httpauth.UserIDHeader)
+	}
+}
+
+func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	if err := httpjson.WriteError(w, status, code, msg, ""); err != nil {
+		log.Error("запись ответа", "path", r.URL.Path, "err", err)
+	}
+}

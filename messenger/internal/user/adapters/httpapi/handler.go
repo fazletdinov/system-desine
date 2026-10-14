@@ -36,11 +36,14 @@ func New(register userRegistrar, get userGetter, log *slog.Logger) (*Handler, er
 	return &Handler{register: register, get: get, log: log}, nil
 }
 
+// usersPath — адрес коллекции пользователей; адрес пользователя — usersPath + "/" + id.
+const usersPath = "/v1/users"
+
 // Register вешает маршруты на переданный mux, а не на http.DefaultServeMux:
 // какой mux и с какими middleware — решает composition root.
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /users", h.registerUser)
-	mux.HandleFunc("GET /users/{id}", h.getUser)
+	mux.HandleFunc("POST /v1/users", h.registerUser)
+	mux.HandleFunc("GET /v1/users/{id}", h.getUser)
 }
 
 func (h *Handler) registerUser(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +60,9 @@ func (h *Handler) registerUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.log, err)
 		return
 	}
+	// Location — адрес созданного ресурса (RFC 9110, §9.3.3 и §15.3.2): без него клиент
+	// по стандарту счёл бы созданным сам /v1/users. GET по этому адресу вернёт то же тело.
+	w.Header().Set("Location", usersPath+"/"+user.ID().String())
 	h.respond(w, r, http.StatusCreated, toUserResponse(user))
 }
 
