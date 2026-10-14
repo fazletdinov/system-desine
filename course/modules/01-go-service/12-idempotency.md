@@ -200,7 +200,7 @@ Middleware включается только для маршрутов из сп
 
 У `createChat` появились параметр-заголовок, `Idempotent-Replayed` в успешных ответах, `409` и `422`. Генератор добавил в обработчик `CreateChat` параметр `gen.CreateChatParams` с полем `IdempotencyKey` — обработчик его не читает: заголовок разбирает middleware до вызова. В схемах `SendMessageRequest` и `Message` появилось обязательное поле `client_message_id`, у `sendMessage` — ответ `200`, в `ProblemCode` — три новых кода.
 
-<<< @/../messenger/cmd/messenger/main.go#idempotency-wiring{go}
+<<< @/../messenger/cmd/messenger/app.go#idempotency-wiring{go}
 
 Это **несовместимое** изменение контракта: клиент без `client_message_id` теперь получит `400`. Как и в уроке 1.11, нам это можно, потому что внешних клиентов нет. В живом API поле сначала сделали бы необязательным (без него — старое поведение), дождались обновления клиентов и только потом объявили обязательным.
 

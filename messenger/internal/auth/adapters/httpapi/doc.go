@@ -1,2 +1,2 @@
-// Package httpapi — HTTP-адаптер контекста auth: регистрация (а в уроке 1.14 — вход).
+// Package httpapi — HTTP-адаптер контекста auth: регистрация и вход (выдача токена).
 package httpapi

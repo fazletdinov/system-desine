@@ -22,6 +22,7 @@ const (
 	ProblemCodeIdempotencyInProgress ProblemCode = "idempotency_in_progress"
 	ProblemCodeIdempotencyKeyReused  ProblemCode = "idempotency_key_reused"
 	ProblemCodeInternal              ProblemCode = "internal"
+	ProblemCodeInvalidCredentials    ProblemCode = "invalid_credentials"
 	ProblemCodeInvalidInput          ProblemCode = "invalid_input"
 	ProblemCodeMethodNotAllowed      ProblemCode = "method_not_allowed"
 	ProblemCodeNotFound              ProblemCode = "not_found"
@@ -49,6 +50,8 @@ func (e ProblemCode) Valid() bool {
 		return true
 	case ProblemCodeInternal:
 		return true
+	case ProblemCodeInvalidCredentials:
+		return true
 	case ProblemCodeInvalidInput:
 		return true
 	case ProblemCodeMethodNotAllowed:
@@ -68,6 +71,28 @@ func (e ProblemCode) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Defines values for TokenResponseTokenType.
+const (
+	Bearer TokenResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the TokenResponseTokenType enum.
+func (e TokenResponseTokenType) Valid() bool {
+	switch e {
+	case Bearer:
+		return true
+	default:
+		return false
+	}
+}
+
+// CreateTokenRequest defines model for CreateTokenRequest.
+type CreateTokenRequest struct {
+	// Password Сравнивается с хешем; в ответах и журналах не появляется.
+	Password string `json:"password,omitempty"`
+	Username string `json:"username"`
 }
 
 // InvalidParam defines model for InvalidParam.
@@ -100,6 +125,19 @@ type SignUpRequest struct {
 	Username string `json:"username"`
 }
 
+// TokenResponse defines model for TokenResponse.
+type TokenResponse struct {
+	// AccessToken JWT; предъявлять в заголовке Authorization: Bearer.
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Секунды до истечения токена.
+	ExpiresIn int                    `json:"expires_in"`
+	TokenType TokenResponseTokenType `json:"token_type"`
+}
+
+// TokenResponseTokenType defines model for TokenResponse.TokenType.
+type TokenResponseTokenType string
+
 // User defines model for User.
 type User struct {
 	CreatedAt   time.Time `json:"created_at"`
@@ -126,14 +164,23 @@ type PayloadTooLarge = Problem
 // ServiceUnavailable Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type ServiceUnavailable = Problem
 
+// Unauthorized Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
+type Unauthorized = Problem
+
 // UnsupportedMediaType Ошибка в формате RFC 9457 с расширениями code, request_id, invalid_params.
 type UnsupportedMediaType = Problem
+
+// CreateTokenJSONRequestBody defines body for CreateToken for application/json ContentType.
+type CreateTokenJSONRequestBody = CreateTokenRequest
 
 // SignUpJSONRequestBody defines body for SignUp for application/json ContentType.
 type SignUpJSONRequestBody = SignUpRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CreateToken Войти — получить токен доступа
+	// (POST /v1/tokens)
+	CreateToken(w http.ResponseWriter, r *http.Request)
 	// SignUp Зарегистрироваться
 	// (POST /v1/users)
 	SignUp(w http.ResponseWriter, r *http.Request)
@@ -147,6 +194,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// CreateToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // SignUp operation middleware
 func (siw *ServerInterfaceWrapper) SignUp(w http.ResponseWriter, r *http.Request) {
@@ -283,6 +344,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/users", wrapper.SignUp)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tokens", wrapper.CreateToken)
 
 	return m
 }

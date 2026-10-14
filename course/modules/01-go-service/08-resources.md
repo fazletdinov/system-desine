@@ -257,7 +257,7 @@ Middleware аутентификации узнал, что запрос прис
 
 ### Сборка конвейера
 
-<<< @/../messenger/cmd/messenger/main.go#chain{go}
+<<< @/../messenger/cmd/messenger/app.go#chain{go}
 
 Это главное изменение корня композиции. Рядом с `run` появились список `publicRoutes` и три функции ответа: `routeError`, `internalError` и `unauthenticated` пишут ошибки через тот же `httpjson.WriteError`, что и адаптеры. Сами middleware формата ошибок не знают — их пакет `platform/middleware` не импортирует ни `httpjson`, ни контексты, — и получают функцию ответа параметром. Поэтому в уроке 1.10, когда формат ошибок сменится на problem details, поменяются три функции в `main.go`, а не пакет middleware.
 
@@ -277,7 +277,13 @@ Middleware аутентификации узнал, что запрос прис
 
 ### Заглушка аутентификации
 
-<<< @/../messenger/internal/platform/httpauth/httpauth.go#header-stub{go}
+<Callout type="idea" title="Заглушки больше нет">
+
+Код заглушки `HeaderStub` удалён в уроке 1.14: её место заняла проверка токена `Bearer`. Ниже — нынешняя реализация того же порта `Authenticator`; заглушка была устроена так же, только вместо проверки токена читала заголовок `X-User-ID` (её код — `git show m01-l13:messenger/internal/platform/httpauth/httpauth.go`).
+
+</Callout>
+
+<<< @/../messenger/internal/platform/httpauth/httpauth.go#bearer{go}
 
 Интерфейс `Authenticator` с одним методом `Authenticate(r) (userID, error)` — порт, а `HeaderStub` — его временная реализация. Порт объявлен в `httpauth`, рядом с потребителем — middleware. Middleware не знает, как узнаётся личность: он спрашивает, получает id или ошибку и в первом случае кладёт id в контекст через `principal.WithUserID`, а во втором зовёт `unauthorized`.
 

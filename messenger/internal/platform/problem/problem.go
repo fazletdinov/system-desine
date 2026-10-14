@@ -28,6 +28,7 @@ const (
 	CodeUnsupportedMediaType  Code = "unsupported_media_type"
 	CodeBodyTooLarge          Code = "body_too_large"
 	CodeUnauthenticated       Code = "unauthenticated"
+	CodeInvalidCredentials    Code = "invalid_credentials"
 	CodeNotMember             Code = "not_member"
 	CodeNotFound              Code = "not_found"
 	CodeMethodNotAllowed      Code = "method_not_allowed"
@@ -54,6 +55,7 @@ var registry = map[Code]spec{
 	CodeUnsupportedMediaType:  {http.StatusUnsupportedMediaType, "Неподдерживаемый формат тела"},
 	CodeBodyTooLarge:          {http.StatusRequestEntityTooLarge, "Слишком большое тело запроса"},
 	CodeUnauthenticated:       {http.StatusUnauthorized, "Не удалось определить пользователя"},
+	CodeInvalidCredentials:    {http.StatusUnauthorized, "Неверное имя пользователя или пароль"},
 	CodeNotMember:             {http.StatusForbidden, "Нет доступа к чату"},
 	CodeNotFound:              {http.StatusNotFound, "Не найдено"},
 	CodeMethodNotAllowed:      {http.StatusMethodNotAllowed, "Метод не поддерживается"},

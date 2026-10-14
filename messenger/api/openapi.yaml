@@ -18,8 +18,10 @@ tags:
     description: Пользователи
   - name: chats
     description: Чаты и сообщения
+# Закрыто по умолчанию: операция без своего security требует токен. Открытые —
+# регистрация и вход — объявляют security: [] явно.
 security:
-  - userIdHeader: []
+  - bearerAuth: []
 paths:
   # region signup-path
   /v1/users:
@@ -51,6 +53,43 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
   # endregion signup-path
+  # region token-path
+  /v1/tokens:
+    post:
+      tags: [auth]
+      operationId: createToken
+      summary: Войти — получить токен доступа
+      description: |
+        Обменивает имя и пароль на JWT (EdDSA, срок 15 минут). Форма ответа — как у
+        RFC 6749 §5.1, но это не OAuth 2.0: нет клиентов, грантов и scope.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTokenRequest' }
+      responses:
+        '200':
+          description: Токен выдан
+          headers:
+            Cache-Control:
+              description: Токен — секрет; ответ нельзя класть ни в какой кэш.
+              required: true
+              schema: { type: string, enum: [no-store] }
+            Pragma:
+              description: То же для кэшей HTTP/1.0.
+              required: true
+              schema: { type: string, enum: [no-cache] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  # endregion token-path
   /v1/users/me:
     get:
       tags: [users]
@@ -235,12 +274,16 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
   # endregion messages-paths
 components:
+  # region security
   securitySchemes:
-    userIdHeader:
-      type: apiKey
-      in: header
-      name: X-User-ID
-      description: Временная заглушка до JWT (ADR-0002) — любой может представиться кем угодно.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Authorization: Bearer <access_token из POST /v1/tokens> (RFC 6750). Подпись EdDSA,
+        срок 15 минут; ADR-0003.
+  # endregion security
   parameters:
     ID:
       name: id
@@ -285,7 +328,16 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     Unauthorized:
-      description: Не удалось определить пользователя
+      description: |
+        Не удалось определить пользователя (unauthenticated) или неверные имя и пароль
+        при входе (invalid_credentials).
+      headers:
+        WWW-Authenticate:
+          description: |
+            Как аутентифицироваться (RFC 9110 §11.6.1, RFC 6750 §3): Bearer realm="messenger";
+            с error="invalid_token", если токен предъявлен, но не прошёл проверку.
+          required: true
+          schema: { type: string }
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -369,7 +421,29 @@ components:
           x-go-type: string
           description: Генерирует клиент; одинаковый во всех повторах этого сообщения.
         text: { type: string, minLength: 1, maxLength: 4096 }
+    CreateTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          x-go-type-skip-optional-pointer: true
+          # Без minLength: при входе политику не применяем — иначе после её ужесточения
+          # старые пароли перестали бы подходить, а отказ рассказал бы правила.
+          description: Сравнивается с хешем; в ответах и журналах не появляется.
     # endregion schemas-request
+    TokenResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string, description: 'JWT; предъявлять в заголовке Authorization: Bearer.' }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, minimum: 0, description: Секунды до истечения токена. }
     User:
       type: object
       additionalProperties: false
@@ -462,6 +536,6 @@ components:
     ProblemCode:
       type: string
       enum: [bad_json, body_too_large, client_message_id_reused, conflict, idempotency_in_progress,
-             idempotency_key_reused, internal, invalid_input, method_not_allowed, not_found, not_member,
-             timeout, unauthenticated, unsupported_media_type, username_taken]
+             idempotency_key_reused, internal, invalid_credentials, invalid_input, method_not_allowed,
+             not_found, not_member, timeout, unauthenticated, unsupported_media_type, username_taken]
     # endregion problem-schema

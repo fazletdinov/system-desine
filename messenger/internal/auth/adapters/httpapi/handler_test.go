@@ -18,6 +18,7 @@ import (
 	"messenger/internal/auth/domain"
 	"messenger/internal/auth/usecase"
 	"messenger/internal/platform/httpjson"
+	"messenger/internal/platform/middleware"
 	"messenger/internal/platform/openapitest"
 	"messenger/internal/platform/problem"
 )
@@ -48,8 +49,27 @@ func alice(t *testing.T) usecase.Profile {
 	return usecase.Profile{ID: id, Username: "alice", DisplayName: "Алиса", CreatedAt: created}
 }
 
+type fakeLogin struct {
+	fn func(context.Context, usecase.LoginCommand) (usecase.Token, error)
+}
+
+func (f fakeLogin) Execute(ctx context.Context, cmd usecase.LoginCommand) (usecase.Token, error) {
+	return f.fn(ctx, cmd)
+}
+
+type fixedClock struct{ t time.Time }
+
+func (c fixedClock) Now() time.Time { return c.t }
+
+var now = time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+
 // server собирает настоящий ServeMux, пишет лог в буфер и сверяет каждый ответ с контрактом.
 func server(t *testing.T, signUp fakeSignUp) (http.Handler, *bytes.Buffer) {
+	t.Helper()
+	return newServer(t, signUp, fakeLogin{})
+}
+
+func newServer(t *testing.T, signUp fakeSignUp, login fakeLogin) (http.Handler, *bytes.Buffer) {
 	t.Helper()
 	if signUp.fn == nil {
 		signUp.fn = func(context.Context, usecase.SignUpCommand) (usecase.Profile, error) {
@@ -57,8 +77,14 @@ func server(t *testing.T, signUp fakeSignUp) (http.Handler, *bytes.Buffer) {
 			return usecase.Profile{}, nil
 		}
 	}
+	if login.fn == nil {
+		login.fn = func(context.Context, usecase.LoginCommand) (usecase.Token, error) {
+			t.Fatal("Login не должен вызываться")
+			return usecase.Token{}, nil
+		}
+	}
 	var logs bytes.Buffer
-	h, err := httpapi.New(signUp, slog.New(slog.NewJSONHandler(&logs, nil)))
+	h, err := httpapi.New(signUp, login, fixedClock{now}, slog.New(slog.NewJSONHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,10 +246,167 @@ func TestPasswordNeverLogged(t *testing.T) {
 }
 
 func TestNewNilDependencies(t *testing.T) {
-	if _, err := httpapi.New(nil, slog.New(slog.DiscardHandler)); err == nil {
+	log := slog.New(slog.DiscardHandler)
+	if _, err := httpapi.New(nil, fakeLogin{}, fixedClock{}, log); err == nil {
 		t.Error("New(nil signUp): want error")
 	}
-	if _, err := httpapi.New(fakeSignUp{}, nil); err == nil {
+	if _, err := httpapi.New(fakeSignUp{}, nil, fixedClock{}, log); err == nil {
+		t.Error("New(nil login): want error")
+	}
+	if _, err := httpapi.New(fakeSignUp{}, fakeLogin{}, nil, log); err == nil {
+		t.Error("New(nil clock): want error")
+	}
+	if _, err := httpapi.New(fakeSignUp{}, fakeLogin{}, fixedClock{}, nil); err == nil {
 		t.Error("New(nil log): want error")
+	}
+}
+
+const loginBody = `{"username":"alice","password":"` + secret + `"}`
+
+func postToken(t *testing.T, h http.Handler, requestID, body string) *httptest.ResponseRecorder {
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/tokens", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	if requestID != "" {
+		r.Header.Set(middleware.RequestIDHeader, requestID)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+func TestCreateTokenIssued(t *testing.T) {
+	var got usecase.LoginCommand
+	h, _ := newServer(t, fakeSignUp{}, fakeLogin{fn: func(_ context.Context, cmd usecase.LoginCommand) (usecase.Token, error) {
+		got = cmd
+		return usecase.Token{Value: "header.payload.signature", ExpiresAt: now.Add(15 * time.Minute)}, nil
+	}})
+
+	w := postToken(t, h, "", loginBody)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200; body %s", w.Code, w.Body)
+	}
+	if got != (usecase.LoginCommand{Username: "alice", Password: secret}) {
+		t.Errorf("команда %+v", got)
+	}
+	// Токен — секрет: ни один кэш по дороге не должен его сохранить (RFC 6749 §5.1).
+	if cc, pragma := w.Header().Get("Cache-Control"), w.Header().Get("Pragma"); cc != "no-store" || pragma != "no-cache" {
+		t.Errorf("Cache-Control %q, Pragma %q", cc, pragma)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"access_token": "header.payload.signature", "token_type": "Bearer", "expires_in": float64(900)}
+	if !reflect.DeepEqual(body, want) {
+		t.Errorf("тело %s", w.Body)
+	}
+}
+
+type logRecord struct {
+	Level     string `json:"level"`
+	Msg       string `json:"msg"`
+	Reason    string `json:"reason"`
+	RequestID string `json:"request_id"`
+}
+
+func records(t *testing.T, logs *bytes.Buffer) []logRecord {
+	t.Helper()
+	var out []logRecord
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var rec logRecord
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("строка журнала %q: %v", line, err)
+		}
+		out = append(out, rec)
+	}
+	return out
+}
+
+// #region rejected-test
+// Любая причина отказа — один и тот же ответ клиенту; различает их только журнал.
+func TestCreateTokenRejected(t *testing.T) {
+	reasons := []error{domain.ErrNoSuchUser, domain.ErrNoCredentials, domain.ErrWrongPassword, domain.ErrPasswordTooLong}
+	var firstBody map[string]any
+	seen := map[string]bool{}
+	for i, reason := range reasons {
+		t.Run(reason.Error(), func(t *testing.T) {
+			h, logs := newServer(t, fakeSignUp{}, fakeLogin{fn: func(context.Context, usecase.LoginCommand) (usecase.Token, error) {
+				return usecase.Token{}, fmt.Errorf("login: %w: %w", domain.ErrInvalidCredentials, reason)
+			}})
+			requestID := fmt.Sprintf("req-%d", i)
+
+			// Свой X-Request-ID корректен, поэтому генератор id middleware не понадобится.
+			w := postToken(t, middleware.RequestID(nil)(h), requestID, loginBody)
+
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status %d, want 401; body %s", w.Code, w.Body)
+			}
+			if got := w.Header().Get("WWW-Authenticate"); got != `Bearer realm="messenger"` {
+				t.Errorf("WWW-Authenticate %q", got)
+			}
+			if b := decodeError(t, w); b.Code != "invalid_credentials" {
+				t.Errorf("code %q", b.Code)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			delete(body, "request_id")
+			if firstBody == nil {
+				firstBody = body
+			} else if !reflect.DeepEqual(body, firstBody) {
+				t.Errorf("ответ отличается от первого: %v против %v", body, firstBody)
+			}
+			if strings.Contains(logs.String(), secret) || strings.Contains(w.Body.String(), reason.Error()) {
+				t.Fatalf("утечка\nжурнал: %s\nответ: %s", logs, w.Body)
+			}
+			recs := records(t, logs)
+			if len(recs) != 1 || recs[0].Msg != "вход отклонён" || recs[0].Level != "INFO" || recs[0].RequestID != requestID || recs[0].Reason == "" {
+				t.Fatalf("журнал: %+v", recs)
+			}
+			seen[recs[0].Reason] = true
+		})
+	}
+	if len(seen) != len(reasons) {
+		t.Errorf("причины в журнале не различаются: %v", seen)
+	}
+}
+
+// #endregion rejected-test
+
+func TestCreateTokenErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "дедлайн", body: loginBody, err: fmt.Errorf("login: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
+		{name: "сбой выпуска токена", body: loginBody, err: errors.New("login: выпуск токена: бум"), wantStatus: 500, wantCode: "internal"},
+		{name: "неизвестное поле", body: `{"username":"alice","password":"` + secret + `","scope":"admin"}`, wantStatus: 400, wantCode: "bad_json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, logs := newServer(t, fakeSignUp{}, fakeLogin{fn: func(context.Context, usecase.LoginCommand) (usecase.Token, error) {
+				return usecase.Token{}, tt.err
+			}})
+
+			w := postToken(t, h, "", tt.body)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("status %d, want %d; body %s", w.Code, tt.wantStatus, w.Body)
+			}
+			if b := decodeError(t, w); b.Code != tt.wantCode {
+				t.Errorf("code %q, want %q", b.Code, tt.wantCode)
+			}
+			if strings.Contains(logs.String(), secret) {
+				t.Fatalf("пароль в журнале: %s", logs)
+			}
+		})
 	}
 }

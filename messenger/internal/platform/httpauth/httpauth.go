@@ -1,7 +1,9 @@
 package httpauth
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -40,20 +42,48 @@ func Middleware(a Authenticator, public []string, unauthorized func(w http.Respo
 	}
 }
 
-// #region header-stub
-// HeaderStub — заглушка до JWT (ADR-0002): верит заголовку X-User-ID, который присылает
-// клиент, то есть любой может назваться кем угодно. Годится только для локального стенда.
-// Урок 1.14 заменяет её проверкой токена; хендлеры при этом не меняются.
-type HeaderStub struct{}
+// #region bearer
+// ErrInvalidToken — токен предъявлен, но не прошёл проверку.
+var ErrInvalidToken = errors.New("токен не прошёл проверку")
 
-const UserIDHeader = "X-User-ID"
+// TokenVerifier — порт проверки токена, объявлен здесь, у потребителя. Реализация —
+// auth/adapters/jwt; её подставляет composition root.
+type TokenVerifier interface {
+	Verify(ctx context.Context, token string) (userID string, err error)
+}
 
-func (HeaderStub) Authenticate(r *http.Request) (string, error) {
-	id := strings.TrimSpace(r.Header.Get(UserIDHeader))
-	if id == "" {
+// Bearer — аутентификация по заголовку Authorization: Bearer <токен> (RFC 6750).
+type Bearer struct{ verifier TokenVerifier }
+
+func NewBearer(v TokenVerifier) (*Bearer, error) {
+	if v == nil {
+		return nil, errors.New("httpauth: nil-зависимость")
+	}
+	return &Bearer{verifier: v}, nil
+}
+
+func (b *Bearer) Authenticate(r *http.Request) (string, error) {
+	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	// Схема в HTTP нечувствительна к регистру (RFC 9110 §11.1). Другая схема (Basic) —
+	// для нас то же, что отсутствие данных: их нечем проверить.
+	if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(token) == "" {
 		return "", ErrNoCredentials
+	}
+	id, err := b.verifier.Verify(r.Context(), strings.TrimSpace(token))
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrInvalidToken, err)
 	}
 	return id, nil
 }
 
-// #endregion header-stub
+// Challenge — значение WWW-Authenticate для ответа 401 (RFC 6750 §3): error="invalid_token",
+// если токен был, но не прошёл; без error — если токена не было вовсе. Почему именно
+// не прошёл — клиенту не сообщаем: это подсказка атакующему.
+func Challenge(err error) string {
+	if errors.Is(err, ErrInvalidToken) {
+		return `Bearer realm="messenger", error="invalid_token"`
+	}
+	return `Bearer realm="messenger"`
+}
+
+// #endregion bearer

@@ -301,7 +301,7 @@ Use case'ам чатов нужно действующее лицо: кто со
 
 ### Сборка
 
-<<< @/../messenger/cmd/messenger/main.go#wiring{go}
+<<< @/../messenger/cmd/messenger/app.go#wiring{go}
 
 Одно хранилище `chats` передаётся в `NewCreateChat` дважды — как `ChatCreator` и как `DirectChatFinder`: узкие порты из урока 1.4 позволяют одной реализации закрывать несколько. Маршруты регистрируются на свой `mux`, а не на глобальный `http.DefaultServeMux`.
 

@@ -768,6 +768,9 @@ func TestUnauthenticated(t *testing.T) {
 				if b := decodeError(t, w); b.Code != "unauthenticated" {
 					t.Errorf("code %q, want unauthenticated", b.Code)
 				}
+				if got := w.Header().Get("WWW-Authenticate"); got != `Bearer realm="messenger"` {
+					t.Errorf("WWW-Authenticate %q", got)
+				}
 			})
 		}
 	}

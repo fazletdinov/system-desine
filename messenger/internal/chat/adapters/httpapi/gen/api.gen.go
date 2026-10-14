@@ -60,6 +60,7 @@ const (
 	ProblemCodeIdempotencyInProgress ProblemCode = "idempotency_in_progress"
 	ProblemCodeIdempotencyKeyReused  ProblemCode = "idempotency_key_reused"
 	ProblemCodeInternal              ProblemCode = "internal"
+	ProblemCodeInvalidCredentials    ProblemCode = "invalid_credentials"
 	ProblemCodeInvalidInput          ProblemCode = "invalid_input"
 	ProblemCodeMethodNotAllowed      ProblemCode = "method_not_allowed"
 	ProblemCodeNotFound              ProblemCode = "not_found"
@@ -86,6 +87,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeIdempotencyKeyReused:
 		return true
 	case ProblemCodeInternal:
+		return true
+	case ProblemCodeInvalidCredentials:
 		return true
 	case ProblemCodeInvalidInput:
 		return true

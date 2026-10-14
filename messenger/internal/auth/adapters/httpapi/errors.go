@@ -33,6 +33,23 @@ func problemFor(err error) (problem.Problem, bool) {
 	}
 }
 
+// rejectReason — короткое имя причины отказа во входе для журнала: по нему удобно
+// считать и искать (сколько входов отклонено из-за несуществующих имён — признак перебора).
+func rejectReason(err error) string {
+	switch {
+	case errors.Is(err, domain.ErrNoSuchUser):
+		return "no_such_user"
+	case errors.Is(err, domain.ErrNoCredentials):
+		return "no_credentials"
+	case errors.Is(err, domain.ErrWrongPassword):
+		return "wrong_password"
+	case errors.Is(err, domain.ErrPasswordTooLong):
+		return "password_too_long"
+	default:
+		return "unknown"
+	}
+}
+
 // paramError — ErrorHandlerFunc сгенерированной обёртки. У регистрации нет параметров
 // пути и строки запроса, но обёртка требует обработчик, и его поведение — как у соседей.
 func (h *Handler) paramError(w http.ResponseWriter, r *http.Request, err error) {

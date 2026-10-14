@@ -158,7 +158,14 @@ func TestLiteralPathWinsOverParam(t *testing.T) {
 	v := openapitest.New(t)
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/users/me", nil)
 
-	v.Wrap(respondAs(problemType, http.StatusUnauthorized, `{"type":"https://messenger.example/problems/unauthenticated","title":"Не аутентифицирован","status":401,"instance":"/v1/users/me","code":"unauthenticated"}`)).ServeHTTP(httptest.NewRecorder(), r)
+	unauthorized := respondAs(problemType, http.StatusUnauthorized, `{"type":"https://messenger.example/problems/unauthenticated","title":"Не аутентифицирован","status":401,"instance":"/v1/users/me","code":"unauthenticated"}`)
+	// У 401 по контракту обязателен WWW-Authenticate (RFC 9110 §15.5.2).
+	withChallenge := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="messenger"`)
+		unauthorized.ServeHTTP(w, r)
+	})
+
+	v.Wrap(withChallenge).ServeHTTP(httptest.NewRecorder(), r)
 
 	after := v.Uncovered()
 	if slices.Contains(after, "GET /v1/users/me") || !slices.Contains(after, "GET /v1/users/{id}") {
