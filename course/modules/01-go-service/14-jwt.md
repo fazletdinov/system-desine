@@ -417,7 +417,7 @@ $ curl -s -X POST localhost:8080/v1/tokens -H 'Content-Type: application/json' -
 `grep` по журналу на пароль и на `eyJ` (начало любого JWT) не нашёл ничего: ни пароли, ни токены в журнал не попадают. Сценарий с чатами — тот же, что в уроках 1.11 и 1.12, только с `-H "Authorization: Bearer $TOKEN"` вместо `X-User-ID`. Важная разница видна в ответе на отправку сообщения:
 
 ```text
-$ curl -s -X POST localhost:8080/v1/chats/$CHAT/messages -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d "{\"client_message_id\":\"$(uuidgen)\",\"text\":\"Привет, Боб!\"}" | jq -c '{author_id, seq, text}'
+$ curl -s -X POST localhost:8080/v1/chats/$CHAT/messages -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d "{\"client_message_id\":\"$(uuidgen | tr A-F a-f)\",\"text\":\"Привет, Боб!\"}" | jq -c '{author_id, seq, text}'
 {"author_id":"01a13ab5-2069-79a1-bbf3-ad2a297c9974","seq":1,"text":"Привет, Боб!"}
 $ curl -s "localhost:8080/v1/chats/$CHAT/messages" -H "Authorization: Bearer $EVE_TOKEN" | jq -c '{status, code}'
 {"status":403,"code":"not_member"}
@@ -620,4 +620,4 @@ git -c core.quotePath=false diff --stat m01-l13 m01-l14 -- messenger
 
 </Callout>
 
-Это последний урок части 1b. Дальше — часть 1c: Docker и CI.
+Это последний урок части 1b. Дальше — часть 1c: Docker и CI; она появится позже, к ней будет ссылка из [оглавления модуля](./index).

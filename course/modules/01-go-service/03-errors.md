@@ -75,7 +75,7 @@ func ReadConfig(path string) ([]byte, error) {
 
 **Через `errors.Is`:** `errors.Is(err, domain.ErrChatNotFound)`. Функция сравнивает с целью и саму ошибку, и все ошибки, вложенные в неё. Это единственный способ, который переживает обёртку. Правило простое: сигнальные ошибки проверяются только через `errors.Is`.
 
-Зачем `ErrInvalid` и `ErrConcurrentUpdate`, `ErrDirectChatExists`, если пока их никто не возвращает? Сигнальные ошибки — часть <T id="ubiquitous-language">единого языка (ubiquitous language)</T> домена (урок [1.2](./02-domain)): «чат не найден», «чат изменился одновременно с вами» — это события предметной области, а не детали хранения. Хранилище вернёт `ErrChatNotFound` и `ErrConcurrentUpdate` в уроке 1.4, а use case создания личного чата будет ловить `ErrDirectChatExists`, когда два запроса создают чат для одной пары одновременно.
+Зачем `ErrInvalid` и `ErrConcurrentUpdate`, `ErrDirectChatExists`, если пока их никто не возвращает? Сигнальные ошибки — часть <T id="ubiquitous-language">единого языка (ubiquitous language)</T> домена (урок [1.2](./02-domain)): «чат не найден», «чат изменился одновременно с вами» — это события предметной области, а не детали хранения. Хранилище вернёт `ErrChatNotFound` и `ErrConcurrentUpdate` в уроке 1.4, а use case создания личного чата будет ловить `ErrDirectChatExists`, когда два запроса создают чат для одной пары одновременно. Последние две ошибки в списке — `ErrDuplicateMessage` и `ErrClientMessageIDReused` — появятся в уроке 1.12 вместе с защитой от повторной отправки; фрагмент показывает файл в его нынешнем виде.
 
 ## <Part kind="theory" /> Обёртка ошибки: %w против %v
 
