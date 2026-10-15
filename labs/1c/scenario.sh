@@ -55,7 +55,28 @@ set -e
 echo "$err" | grep -Eq 'oom_kill=[1-9]' || fail "oom_kill не отмечен: $err"
 echo "ок 5: OOM-kill по memory.max, код выхода 137"
 
-# Ни одна группа не осталась после запусков — в том числе после OOM-kill.
+# Проверка очистки (не эксперимент урока): SIGINT родителю, как Ctrl+C, не оставляет
+# группу — родитель убивает ребёнка и удаляет cgroup. set -m: без управления заданиями
+# bash запускает фоновую команду с игнорируемым SIGINT, и проверка ничего бы не проверяла.
+set -m
+minicontainer run /rootfs sleep 60 2>/dev/null &
+parent=$!
+for _ in $(seq 1 50); do
+	[ -d "/sys/fs/cgroup/minicontainer-$parent" ] && break
+	sleep 0.1
+done
+[ -d "/sys/fs/cgroup/minicontainer-$parent" ] || fail "группа minicontainer-$parent не появилась"
+kill -INT "$parent"
+set +e
+wait "$parent"
+code=$?
+set -e
+set +m
+[ "$code" -eq 137 ] || fail "после SIGINT код выхода $code, ждали 137 (ребёнок убит SIGKILL)"
+[ ! -d "/sys/fs/cgroup/minicontainer-$parent" ] || fail "после SIGINT осталась группа minicontainer-$parent"
+echo "ок: SIGINT родителю — контейнер остановлен, группа удалена"
+
+# Ни одна группа не осталась после запусков — в том числе после OOM-kill и SIGINT.
 if ls -d /sys/fs/cgroup/minicontainer-* >/dev/null 2>&1; then
 	fail "остались группы: $(ls -d /sys/fs/cgroup/minicontainer-*)"
 fi

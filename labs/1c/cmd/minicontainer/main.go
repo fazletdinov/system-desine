@@ -6,10 +6,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"syscall"
 )
@@ -72,7 +74,14 @@ func run(args []string) (int, error) {
 	// Дескриптор только для чтения: ошибка Close ничего не теряет.
 	defer func() { _ = dir.Close() }()
 
-	cmd := exec.Command("/proc/self/exe", append([]string{"child", cfg.Hostname, rootfs}, cfg.Argv...)...)
+	// Ctrl+C и docker stop не должны убить родителя раньше ребёнка: тогда отложенное
+	// удаление группы не выполнится и она останется в /sys/fs/cgroup. Родитель ловит
+	// сигнал сам и убивает ребёнка SIGKILL (Cancel по умолчанию у CommandContext):
+	// ребёнок — init своего PID namespace, и SIGINT/SIGTERM без обработчика ядро ему
+	// не доставит.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	cmd := exec.CommandContext(ctx, "/proc/self/exe", append([]string{"child", cfg.Hostname, rootfs}, cfg.Argv...)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		// Пять новых namespaces: имя хоста, номера процессов, точки монтирования,
@@ -88,6 +97,9 @@ func run(args []string) (int, error) {
 	var exitErr *exec.ExitError
 	if runErr != nil && !errors.As(runErr, &exitErr) {
 		return 1, fmt.Errorf("запуск: %w", runErr)
+	}
+	if ctx.Err() != nil {
+		fmt.Fprintln(os.Stderr, "minicontainer: получен сигнал остановки — контейнер убит SIGKILL")
 	}
 	report(cg)
 	return exitCode(cmd.ProcessState), nil
