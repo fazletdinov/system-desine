@@ -18,8 +18,22 @@ npm run typecheck  # vue-tsc
 npm run build      # сборка; падает на неизвестном термине <T id="...">
 npm run check:go   # компилирует Go-фрагменты уроков, помеченные <!-- go-check -->
 npm run check:labs # gofmt, go vet, go test -race лабораторных и compose config
-npm run check:messenger # gofmt, go vet, golangci-lint, go test -race мессенджера и ссылки <<< в уроках
+npm run check:messenger # gofmt, свежесть go generate, go vet, golangci-lint, go test -race мессенджера и ссылки <<< в уроках
+npm run check:refs      # только ссылки <<< @/../…#регион во всех уроках (файл и регион существуют)
+npm run check:images    # образ мессенджера: размер, пользователь, trivy, smoke-тест; варианты naive/alpine/scratch урока 1.16 (Docker, минуты и сеть)
+npm run check:workflows # actionlint по .github/workflows
+npm run check:base      # сборка курса под подпутём /check-base/, как на GitHub Pages: нет ссылок мимо базового пути
 ```
+
+Курс публикуется на GitHub Pages (workflow `pages`) после публикации репозитория; адрес появится здесь вместе с первым прогоном.
+
+## CI
+
+Workflow лежат в `.github/workflows/` (урок 1.18 — `ci.yml`, урок 1.19 — `release.yml` и `pages.yml`; обновления зависимостей — `.github/dependabot.yml`). Все действия закреплены полным SHA.
+
+- `ci` — на каждый pull request и push в `main`. Фильтр путей (`changes`) запускает только затронутые ворота: мессенджер — `golangci-lint`, `go test -race` с покрытием, свежесть `go generate`, `govulncheck`; курс — `npm test`, `typecheck`, `check:go`, `check:refs`, сборка; лабы — `check-labs`; образ — сборка, `trivy`, smoke-тест; workflow — `actionlint`. На push в `main` проверяется всё. Итоговая джоба `ci-ok` — единственная обязательная проверка в защите ветки: она красная, если любые ворота упали или отменены, и зелёная, если они прошли или пропущены фильтром.
+- `release` — после зелёного `ci` на `main` и на тег `v*`: мультиархитектурный образ в GHCR с SBOM и подписанной аттестацией происхождения (provenance).
+- `pages` — сборка курса под адресом GitHub Pages и публикация.
 
 ## Лабораторные
 
@@ -39,7 +53,16 @@ labs/0b/netem.sh off
 docker compose -f labs/0b/compose.yaml down
 ```
 
-Проверка — из `course/`: `npm run check:labs` (gofmt, `go vet`, `go test -race` по `labs/` и `docker compose config`).
+Лабораторная модуля 1c — `labs/1c/`: `minicontainer`, учебный контейнер на Go (namespaces UTS, PID, mount, net, IPC, `pivot_root` в rootfs busybox, лимиты cgroup v2), и `hog`, который занимает память для опыта с `memory.max`. Окружение — привилегированный контейнер с `cgroup: private`; `labs/1c/scenario.sh` проводит пять экспериментов урока 1.15 с проверками, команды — в `labs/1c/README.md`.
+
+```bash
+cd labs/1c
+docker compose build
+docker compose run --rm lab        # оболочка внутри окружения лабы; дальше — minicontainer run …
+docker compose run --rm -T lab /lab/scenario.sh
+```
+
+Проверка — из `course/`: `npm run check:labs` (gofmt, `go vet`, `go test -race` по `labs/`, `docker compose config` и сценарий 1c).
 
 Код лабораторных попадает в уроки только импортом региона: в Go-файле регион размечен `// #region имя` … `// #endregion имя`, в уроке — `<<< @/../labs/0b/cmd/tcpecho/main.go#server{go}`. Так урок всегда показывает тот код, который проверен тестами. Вывод команд в уроках — реальный, с пометкой «у вас числа будут другими, порядок — такой».
 
@@ -54,13 +77,22 @@ MESSENGER_JWT_KEY_FILE=jwt.pem go run ./cmd/messenger                        # H
 MESSENGER_JWT_KEY_FILE=jwt.pem MESSENGER_ADDR=:8080 go run ./cmd/messenger   # слушать все интерфейсы — явное решение
 ```
 
-Без `MESSENGER_JWT_KEY_FILE` сервер не стартует. `keygen` не перезаписывает существующий файл: новый ключ сделал бы недействительными все выданные токены. Файлы `*.pem` в git не попадают (`messenger/.gitignore`). Клиент регистрируется (`POST /v1/users` с паролем), получает токен (`POST /v1/tokens`) и передаёт его в `Authorization: Bearer …`. Данные живут в памяти и пропадают при остановке; по умолчанию сервер слушает только loopback. Сквозной сценарий с `curl` — в уроке 1.14.
+Без `MESSENGER_JWT_KEY_FILE` сервер не стартует. Сроки задаются окружением: `MESSENGER_REQUEST_TIMEOUT` (по умолчанию 10 с), `MESSENGER_SHUTDOWN_TIMEOUT` (10 с) и `MESSENGER_DRAIN_DELAY` (5 с) — при старте проверяется, что дренаж и остановка вместе укладываются в 30 с до SIGKILL. `keygen` не перезаписывает существующий файл: новый ключ сделал бы недействительными все выданные токены. Файлы `*.pem` в git не попадают (`messenger/.gitignore`). Клиент регистрируется (`POST /v1/users` с паролем), получает токен (`POST /v1/tokens`) и передаёт его в `Authorization: Bearer …`. Данные живут в памяти и пропадают при остановке; по умолчанию сервер слушает только loopback. Сквозной сценарий с `curl` — в уроке 1.14.
 
 API описан контрактом `messenger/api/openapi.yaml` (contract-first, ADR-0006): типы запросов и ответов и интерфейсы обработчиков сгенерированы из него в пакеты `internal/*/adapters/httpapi/gen`. После правки контракта — `go generate ./...` из `messenger/`; сгенерированные файлы коммитятся, а `npm run check:messenger` падает, если они отстали от контракта.
 
+### В Docker
+
+```bash
+cd messenger
+go run ./cmd/keygen -out jwt.pem && docker compose up --build   # http://127.0.0.1:8080
+```
+
+Образ — multi-stage сборка на distroless (`messenger/Dockerfile`, урок 1.16), процесс работает от UID 65532 с файловой системой только для чтения, без capabilities, с лимитами 256 МБ памяти и 1 CPU (`messenger/compose.yaml`, урок 1.17). Ключ подписи приходит секретом-файлом в `/run/secrets/jwt_key`, а не переменной окружения. На Docker Desktop файл `0600` читается процессом контейнера; на «голом» Docker Engine (Linux без Desktop) — нет, и сервер падает с `permission denied`: для учебного ключа `chmod 0444 jwt.pem`, почему — в уроке 1.17. Пробы: `/livez` (процесс жив) и `/readyz` (готов принимать трафик; по SIGTERM сразу 503, затем дренаж и остановка). `HEALTHCHECK` образа вызывает `messenger healthcheck`. Порт опубликован только на loopback хоста.
+
 Проверка — из `course/`: `npm run check:messenger` — `gofmt`, свежесть `go generate`, `go vet`, `golangci-lint run`, `go test -race` по `messenger/` и ссылки `<<< @/../messenger/…#регион` во всех уроках (нет файла, нет региона или строка с `<<<`, которую не разобрать, — ошибка). Нужен **golangci-lint v2** (`version: "2"` в конфиге; v1 его не прочитает), например `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`; скрипт ищет его сначала в `~/go/bin`, потом в `PATH`.
 
-Каждый урок модуля 1 заканчивается тегом `m01-lNN` (сейчас — от `m01-l01` до `m01-l14`) — состоянием кода после урока: `git checkout m01-l03` показывает код после урока 1.3, а `git -c core.quotePath=false diff --stat m01-l02 m01-l03 -- messenger` — что в нём изменилось. На каждом теге `go build ./...` и `go test -race ./...` проходят.
+Каждый урок модуля 1 заканчивается тегом `m01-lNN` (сейчас — от `m01-l01` до `m01-l20`) — состоянием кода после урока: `git checkout m01-l03` показывает код после урока 1.3, а `git -c core.quotePath=false diff --stat m01-l02 m01-l03 -- messenger` — что в нём изменилось. На каждом теге `go build ./...` и `go test -race ./...` проходят в `messenger/` и `labs/`.
 
 ## Как добавить урок
 

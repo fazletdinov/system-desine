@@ -624,4 +624,4 @@ git -c core.quotePath=false diff --stat m01-l13 m01-l14 -- messenger
 
 </Callout>
 
-Это последний урок части 1b. Дальше — часть 1c: Docker и CI; она появится позже, к ней будет ссылка из [оглавления модуля](./index).
+Это последний урок части 1b. Дальше — часть 1c: Docker и CI, она начинается с урока [1.15](./15-container-internals).
