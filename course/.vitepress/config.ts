@@ -11,13 +11,20 @@ const MODULES_DIR = fileURLToPath(new URL('../modules', import.meta.url))
 const GLOSSARY_FILE = fileURLToPath(new URL('../glossary/terms.yaml', import.meta.url))
 const KNOWN_TERMS: ReadonlySet<string> = new Set(Object.keys(loadGlossaryFile(GLOSSARY_FILE)))
 
+// На GitHub Pages курс живёт по адресу https://<owner>.github.io/<repo>/: все ссылки
+// и ассеты должны начинаться с /<repo>/. Локально (npm run dev) — с корня.
+const BASE = process.env.COURSE_BASE ?? '/'
+if (!BASE.startsWith('/') || !BASE.endsWith('/')) throw new Error(`COURSE_BASE должен начинаться и заканчиваться на «/»: ${BASE}`)
+
 export default defineConfig({
   lang: 'ru-RU',
   appearance: 'dark',
   title: 'System Design на практике',
   description: 'Курс по проектированию высоконагруженных систем на Go: пошаговые визуализации и сквозной проект-мессенджер',
+  base: BASE,
   cleanUrls: true,
-  head: [['link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }]],
+  // VitePress не добавляет base к ссылкам в head сам.
+  head: [['link', { rel: 'icon', href: `${BASE}favicon.svg`, type: 'image/svg+xml' }]],
   srcExclude: ['**/README.md'],
   // mermaid тянет CommonJS-зависимости (fastdom и др.); без пребандлинга dev-сервер падает на импорте.
   vite: {

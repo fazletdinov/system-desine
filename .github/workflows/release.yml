@@ -1,0 +1,115 @@
+name: release
+
+# Публикуем только проверенное: после зелёного ci на main и на тег релиза.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    # workflow_run приходит и на упавший ci, и на ci из PR — их пропускаем.
+    if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # пуш в GHCR тем же GITHUB_TOKEN, без личного токена
+      id-token: write # OIDC-токен для keyless-подписи аттестации (Sigstore)
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # workflow_run видит последний коммит main, а собирать надо проверенный. На теге
+          # выражение пустое, и checkout берёт сам тег: он нужен metadata-action для semver.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Ветка для metadata-action
+        if: github.event_name == 'workflow_run'
+        # Checkout по SHA оставляет HEAD отсоединённым и без единой ссылки, а
+        # metadata-action с context: git берёт ref из локального git и без ветки падает
+        # («Cannot infer ref from detached HEAD»). Ветка — main: только её пропускает
+        # фильтр branches выше.
+        run: git switch --create main
+      - name: Имя образа
+        env:
+          OWNER: ${{ github.repository_owner }}
+        # Имена в GHCR — только в нижнем регистре, а логин владельца может быть любым.
+        run: echo "IMAGE=ghcr.io/${OWNER,,}/messenger" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # region release-tags
+      # context: git — теги и метки из реально собранного коммита (head_sha), а не из
+      # github.sha события workflow_run.
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        env:
+          # GHCR показывает описание мультиархитектурного образа из аннотации индекса,
+          # а не из метки манифеста.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          context: git
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          # Без этого metadata-action подставит имя и описание репозитория поверх LABEL
+          # из Dockerfile; source, revision, version и created он ставит сам.
+          labels: |
+            org.opencontainers.image.title=messenger
+            org.opencontainers.image.description=Мессенджер курса «System Design на практике»: монолит v0
+          annotations: |
+            org.opencontainers.image.title=messenger
+            org.opencontainers.image.description=Мессенджер курса «System Design на практике»: монолит v0
+          # Первый по приоритету тег становится версией образа (VERSION и метка version):
+          # на main это sha-…, а не «main», который через минуту укажет на другой коммит.
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=main,priority=50,enable=${{ github.event_name == 'workflow_run' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+      # endregion release-tags
+      # region release-build
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: build
+        with:
+          context: messenger
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          # Кэш ci (только amd64) и свой — с arm64-слоями прошлых релизов.
+          cache-from: |
+            type=gha,scope=messenger
+            type=gha,scope=messenger-release
+          cache-to: type=gha,mode=max,scope=messenger-release
+          # SBOM и provenance BuildKit кладёт в индекс образа как аттестации.
+          sbom: true
+          provenance: mode=max
+      # endregion release-build
+      # region attest
+      # Аттестация GitHub: подписанное через Sigstore утверждение «этот digest собран
+      # этим workflow из этого коммита». Проверка — gh attestation verify.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          # Запись хранения (storage record) доступна только репозиториям организаций и
+          # требует ещё права artifact-metadata: write — нам не нужна.
+          create-storage-record: false
+      # endregion attest

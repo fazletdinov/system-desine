@@ -1,0 +1,41 @@
+# region dependabot
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories: ["/messenger", "/labs"]
+    schedule:
+      interval: weekly
+    # Не брать версии моложе двух недель: у свежего релиза ещё не нашли регрессии и
+    # не успели отозвать скомпрометированный (то же правило, что для ручных обновлений).
+    cooldown:
+      default-days: 14
+    groups:
+      go-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /course
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      npm-minor:
+        update-types: [minor, patch]
+  # Обновляет SHA закреплённых actions вместе с комментарием версии.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        update-types: [minor, patch]
+  # Обновляет digest базовых образов: закрепление по digest без этого — замороженные уязвимости.
+  - package-ecosystem: docker
+    directories: ["/messenger", "/labs/0b", "/labs/1c"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+# endregion dependabot
