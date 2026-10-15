@@ -18,6 +18,9 @@ import (
 const shutdownTimeout = 10 * time.Second
 
 func main() {
+	if code, handled := subcommand(os.Args[1:], os.Stdout, os.Stderr); handled {
+		os.Exit(code)
+	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	// os.Exit не выполняет defer, поэтому вся работа — в run: её defer'ы отработают
 	// до того, как main выйдет с кодом 1.
@@ -40,7 +43,7 @@ func run(log *slog.Logger) error {
 	defer stop()
 
 	srv := httpserver.New(cfg.Addr, handler, log)
-	log.Info("слушаю", "addr", cfg.Addr)
+	log.Info("слушаю", "addr", cfg.Addr, "version", version)
 	if err := httpserver.Run(ctx, srv, shutdownTimeout); err != nil {
 		return err
 	}
