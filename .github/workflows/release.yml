@@ -17,8 +17,11 @@ concurrency:
 
 jobs:
   image:
-    # workflow_run приходит и на упавший ci, и на ci из PR — их пропускаем.
-    if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    # workflow_run приходит и на упавший ci, и на ci из PR — их пропускаем. И на ci
+    # устаревшего коммита: OIDC-токен (а с ним сертификат и provenance аттестации) несёт
+    # github.sha — последний коммит main, и подпись назвала бы не тот коммит, что собран.
+    # Новый коммит опубликует его собственный прогон ci.
+    if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_sha == github.sha)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
