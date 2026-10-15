@@ -10,7 +10,8 @@
     "typecheck": "vue-tsc --noEmit",
     "check:go": "node scripts/check-go-snippets.ts",
     "check:labs": "node scripts/check-labs.ts",
-    "check:messenger": "node scripts/check-messenger.ts"
+    "check:messenger": "node scripts/check-messenger.ts",
+    "check:refs": "node scripts/check-refs.ts"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "5.3.0",
