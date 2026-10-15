@@ -779,7 +779,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - `cpu`: в каждом периоде `used ≤ quotaUs`; при спросе 100 % все периоды `throttled`; итоговая доля CPU = 50 %;
 - подписи содержат термины `cgroup`, `oom-kill` (memory) и `cpu-throttling` (cpu).
 
-- [ ] **Step 3: `graceful-shutdown` (1.17)** — варианты `exec-form` и `shell-form`.
+- [ ] **Step 3: `graceful-shutdown` (1.17)** — варианты `exec-form` и `wrapper-script`.
 
 Кадр: `{ t: number /* секунды от SIGTERM */, process: 'running' | 'draining' | 'shutting-down' | 'exited' | 'killed', readyz: 200 | 503 | null, inLb: boolean, inflight: number, newRequests: 'served' | 'refused' | 'none', signalAt: 'pid1-app' | 'pid1-sh' }`.
 
@@ -789,13 +789,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 3. t=5 конец дренажа → `shutting-down`: новые соединения не принимаются, `inflight` уменьшается;
 4. t≈6 последний запрос ответил → `exited`, код 0.
 
-`shell-form` (`ENTRYPOINT messenger` в shell-форме → PID 1 — `/bin/sh -c`):
-1. t=0 SIGTERM пришёл `sh`; `sh` как PID 1 его не пересылает → приложение ничего не знает, `readyz` 200;
+`wrapper-script` (`ENTRYPOINT ["/start.sh"]`, где скрипт запускает `messenger` **без** `exec` → PID 1 — `sh`, приложение — его ребёнок):
+1. t=0 SIGTERM пришёл `sh`; `sh` как PID 1 без своего обработчика его игнорирует и детям не пересылает → приложение ничего не знает, `readyz` 200;
 2. t=10 (`docker stop` по умолчанию ждёт 10 с) → SIGKILL, `process: killed`, `inflight` обрывается (клиенты получают сброс соединения).
 
 Тесты:
 - `exec-form`: `readyz === 503` с первого кадра; `inLb` становится `false` раньше, чем `process === 'shutting-down'`; последний кадр `exited`; `t` последнего < 30;
-- `shell-form`: `readyz` остаётся 200 до `killed`; последний кадр `killed` при `t === 10`;
+- `wrapper-script`: `readyz` остаётся 200 до `killed`; последний кадр `killed` при `t === 10`;
 - подписи содержат `graceful-shutdown`, `readiness-probe`, `pid-1`.
 
 - [ ] **Step 4: `gomemlimit` (1.17)** — варианты `without` и `with`.
@@ -809,16 +809,18 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 Числа — модель, в подписи один раз сказано, что это упрощение (`Callout` не нужен — достаточно слов «упрощённая модель» в первой подписи).
 
-- [ ] **Step 5: `ci-graph` (1.18)** — варианты `aggregate` и `no-aggregate`.
+- [ ] **Step 5: `ci-graph` (1.18)** — варианты `aggregate` и `on-paths`.
+
+Факт GitHub (Docs, «Troubleshooting required status checks»): джоба, пропущенная по условию `if:`, отчитывается как **Success**; а workflow, пропущенный целиком фильтром `on.<event>.paths`/`branches` или `[skip ci]`, не создаёт проверок вовсе — обязательные проверки остаются **Pending** и блокируют PR.
 
 Кадр: `{ jobs: { id: string, status: 'pending' | 'running' | 'success' | 'failure' | 'skipped' }[], required: string[], pr: 'waiting' | 'mergeable' | 'blocked' }`. Джобы как в `ci.yml` задачи 9: `changes`, `messenger-lint`, `messenger-test`, `messenger-generate`, `messenger-vuln`, `course`, `labs`, `image`, `workflows`, `ci-ok`. Сценарий: PR меняет только урок (`course/**`).
 
 `aggregate` (обязательная — `ci-ok`): `changes` → все `messenger-*`, `labs`, `image`, `workflows` — `skipped`, `course` — `running` → `success` → `ci-ok` `success` → `pr: mergeable`.
-`no-aggregate` (обязательные — все джобы по отдельности): те же пропуски, но GitHub ждёт статус пропущенной обязательной джобы, которая в этом прогоне не появилась; последний кадр `pr: waiting` (подпись: «Expected — Waiting for status to be reported», как пишет GitHub).
+`on-paths` (фильтр на уровне workflow: `on.pull_request.paths: ['messenger/**']`, обязательные — джобы мессенджера): PR меняет только урок → workflow не запускается вовсе, джобы остаются `pending` во всех кадрах, последний кадр `pr: waiting` (подпись: «Expected — Waiting for status to be reported», как пишет GitHub). Поэтому фильтр — на уровне джоб (`paths-filter` + `if:`), а не `on.paths`.
 
 Тесты:
 - `aggregate`: последний кадр `mergeable`; `required` = `['ci-ok']`; ни одна `messenger-*` не `running` ни в одном кадре;
-- `no-aggregate`: последний кадр `waiting`, а не `mergeable`;
+- `on-paths`: ни одна джоба не выходит из `pending`; последний кадр `waiting`, а не `mergeable`;
 - `ci-ok` в `aggregate` становится `success` только после того, как все остальные — `success` или `skipped`;
 - подписи содержат `required-check`, `ci-job`, `monorepo`.
 
@@ -3245,7 +3247,7 @@ curl -s localhost:8080/livez; curl -s localhost:8080/readyz
 
 - сквозной сценарий урока 1.14 через `curl` против контейнера (регистрация, вход, чат, сообщение) — реальный вывод;
 - остановка: `time docker compose stop` и `docker compose logs messenger | tail -5` — видны «останавливаюсь: /readyz отвечает 503», «сервер остановлен», время ≈ `DRAIN_DELAY`;
-- PID 1 и сигналы: `docker compose exec` невозможен (нет shell) — показать `docker top messenger-messenger-1` и `docker inspect -f '{{.Config.Entrypoint}}'`; для контраста собрать временный образ с shell-формой (`ENTRYPOINT /messenger` на базе `busybox:1.37@sha256:…` + бинарь, файл в `course/modules/01-go-service/examples/dockerfiles/shell-form.Dockerfile`) и показать, что `docker stop` ждёт 10 с и завершает кодом 137;
+- PID 1 и сигналы: `docker compose exec` невозможен (нет shell) — показать `docker top messenger-messenger-1` и `docker inspect -f '{{.Config.Entrypoint}}'`; для контраста собрать временный образ на базе `busybox:1.37@sha256:…` + бинарь с обёрткой `start.sh`, которая запускает `/messenger` без `exec` (файлы `course/modules/01-go-service/examples/dockerfiles/wrapper.Dockerfile` и `start.sh`), и показать, что `docker stop` ждёт 10 с и завершает кодом 137. Там же измерить и честно описать shell-форму `ENTRYPOINT /messenger`: многие `sh` (dash, busybox ash) выполняют последнюю простую команду через `exec`, и тогда приложение всё-таки становится PID 1 — проверить на этом образе и написать, что получилось;
 - ловушка `127.0.0.1`: `docker run … -e MESSENGER_ADDR=127.0.0.1:8080 …` → `curl` с хоста: `connection reset`/`empty reply`, внутри — работает (через healthcheck: контейнер healthy, а снаружи недоступен);
 - лимиты: `docker stats --no-stream`, `cat /sys/fs/cgroup/…/memory.max` через `nsenter` (как в 1.15) — `268435456`; `GOMAXPROCS`: в стартовом журнале его нет — показать через временный запуск `docker run --rm --cpus 1 --entrypoint /messenger messenger:local version` не поможет; вместо этого — короткая программа в уроке (`<!-- go-check -->`) с `runtime.GOMAXPROCS(0)` и прогон её в контейнере `golang:1.26.9-trixie` с `--cpus 1` (реальный вывод `1`) и без (`= числу ядер VM`).
 - `docker compose down`.
@@ -3261,7 +3263,7 @@ curl -s localhost:8080/livez; curl -s localhost:8080/readyz
 `17-service-in-container.md`, `title: "1.17. Сервис в контейнере: пробы, сигналы, лимиты"`. Разделы:
 - **Проблема** — выкатка новой версии теряет запросы: старый процесс убит посреди ответа, новый получает трафик раньше, чем готов; контейнер «Up», а сервис не отвечает; OOM-kill без видимой причины.
 - **Теория:**
-  - PID 1: обработчики сигналов по умолчанию к нему не применяются, сироты и зомби; exec-форма против shell-формы `ENTRYPOINT`/`CMD`; `tini` и `docker run --init` — когда нужны (дочерние процессы), почему нам нет;
+  - PID 1: ядро не применяет к нему действия сигналов по умолчанию (сигнал без обработчика игнорируется), сироты и зомби; **но Go-рантайм ставит свои обработчики**: Go-программа без `signal.Notify` на SIGTERM в роли PID 1 не зависает, а сразу завершается с кодом 2 (`runtime.dieFromSignal`, сверить по исходникам Go 1.26) — без `Shutdown` и дренажа; застревает сигнал в `sh`-обёртке без `exec` и в программах на других языках; exec-форма против shell-формы `ENTRYPOINT`/`CMD`; `tini` и `docker run --init` — когда нужны (дочерние процессы), почему нам нет;
   - жизненный цикл остановки в Docker и Kubernetes: SIGTERM → grace period → SIGKILL; `docker stop -t`, `stop_grace_period`, `terminationGracePeriodSeconds`, `preStop`;
   - пробы: liveness, readiness, startup; что проверяет каждая и чего не должна; каскадный рестарт как антипример; дренаж и почему `DrainDelay` > 0 (балансировщик узнаёт со следующей пробой; в Kubernetes ещё и задержка обновления Endpoints); HEALTHCHECK в Docker и чем он отличается от проб Kubernetes (Kubernetes его игнорирует);
   - таймауты: четыре таймаута `http.Server` (схема по времени: соединение → заголовки → тело → обработчик → запись → keep-alive), таймаут запроса на контексте, их соотношение (`WriteTimeout` > таймаут запроса); почему не `http.TimeoutHandler`; что Timeout не умеет (остановить обработчик, не смотрящий на ctx);
@@ -3569,9 +3571,11 @@ jobs:
   # endregion gates
 
   # region ci-ok
-  # Единственная обязательная проверка в ruleset. Джобы, пропущенные фильтром, GitHub
-  # не отчитывает вовсе, и обязательная проверка на них ждала бы вечно. ci-ok
-  # запускается всегда и падает, только если какая-то джоба упала или отменена.
+  # Единственная обязательная проверка в ruleset. Джоба, пропущенная по if:, для
+  # GitHub — успех; поэтому список обязательных проверок по отдельным джобам принял бы
+  # «всё пропущено» (например, упала changes или прогон отменили) за зелёный PR и
+  # требовал бы правки ruleset при каждом переименовании джобы. ci-ok запускается
+  # всегда и падает, если хоть одна джоба упала или отменена.
   ci-ok:
     if: always()
     needs: [changes, messenger-lint, messenger-test, messenger-generate, messenger-vuln, course, labs, image, workflows]
@@ -3599,7 +3603,7 @@ Run: `npm run check:workflows` — Expected: без замечаний. `shellch
 
 - [ ] **Step 3: ADR-0009**
 
-`0009-ci-агрегирующая-проверка-и-закрепление-по-sha.md`: контекст (монорепо, одиночный разработчик + будущие PR от ботов, публичный репозиторий); решения — фильтр путей + агрегирующая `ci-ok` как единственная обязательная; actions по полному SHA + Dependabot для обновления; минимальные `permissions`; `pull_request`, а не `pull_request_target`; Go `1.26.x`; варианты — без фильтра (всё всегда), фильтр через `on.paths` (почему ломает обязательные проверки), матрица по каталогам, отдельные workflow на каталог; последствия.
+`0009-ci-агрегирующая-проверка-и-закрепление-по-sha.md`: контекст (монорепо, одиночный разработчик + будущие PR от ботов, публичный репозиторий); решения — фильтр путей + агрегирующая `ci-ok` как единственная обязательная; actions по полному SHA + Dependabot для обновления; минимальные `permissions`; `pull_request`, а не `pull_request_target`; Go `1.26.x`; варианты — без фильтра (всё всегда), фильтр через `on.paths` (пропущенный workflow оставляет обязательные проверки в Pending), обязательные проверки по каждой джобе (пропуск по `if:` считается успехом, имена джоб зашиты в ruleset), матрица по каталогам, отдельные workflow на каталог; последствия. Факты о поведении пропусков — сверить с GitHub Docs «Troubleshooting required status checks» и сослаться.
 
 - [ ] **Step 4: Урок 1.18 (контракт)**
 
@@ -3609,14 +3613,14 @@ Run: `npm run check:workflows` — Expected: без замечаний. `shellch
   - CI и CD: что проверяем на каждом изменении и почему быстро;
   - GitHub Actions: событие → workflow → джобы (параллельно, `needs`) → шаги; раннер (свежая VM на каждую джобу, ubuntu-24.04, что там предустановлено); `uses` против `run`; контексты и выражения; `env`, `outputs`, артефакты, кэш (`setup-go`/`setup-node`, `type=gha` у buildx);
   - ворота качества мессенджера — таблица: что ловит каждая (lint, `-race`, generate, govulncheck, сборка + trivy + smoke, тесты курса, лабы, actionlint);
-  - монорепо и фильтр путей; почему `on.paths` и обязательные проверки несовместимы; агрегирующая джоба;
+  - монорепо и фильтр путей; пропуск по `if:` = Success, пропуск workflow по `on.paths` = Pending навсегда (GitHub Docs, «Troubleshooting required status checks»); зачем агрегирующая джоба: одно стабильное имя в ruleset и «упала/отменена хоть одна джоба → красный», включая падение самой `changes`;
   - безопасность pipeline: `GITHUB_TOKEN` и `permissions`; `pull_request` против `pull_request_target` (PR из форка, «pwn request»); подстановка `${{ }}` в `run:` как инъекция (и почему мы передаём через `env`); закрепление по SHA — инцидент tj-actions/changed-files (март 2025, CVE-2025-30066): что произошло, кого задело, что спасло; `persist-credentials: false`;
   - защита ветки: ruleset (обязательные проверки, запрет force-push, PR), secret scanning и push protection, CodeQL default setup — что включаем руками в задаче 13 и почему это часть CI;
   - `<Deep>` — «Почему CI должен быть быстрым и детерминированным»: исследования DORA (lead time, частота выкатки), flaky-тесты и доверие к красному статусу, `-count=1`, закреплённые версии инструментов.
 - **Визуализация** — `<CiGraph />`, `<SupplyChainSandbox />`.
 - **Код** — регионы `filter`, `gates`, `image`, `ci-ok` из `ci.yml`; разбор каждого блока; `npm run check:workflows` с реальным выводом.
 - **Что изменилось в репозитории** — `ci.yml`, ADR-0009, `check:workflows`; тег `m01-l18`. Отдельно: «первый прогон на GitHub — после публикации репозитория» (шаги для ученика: `gh repo create`, `git push`, вкладка Actions, настройка ruleset; ссылка на 1.19).
-- **Типичные ошибки** — `uses: …@main`; `permissions: write-all` «чтобы заработало»; секрет в `echo`; обязательная проверка на джобе с фильтром; кэш, ключ которого не зависит от `go.sum`; тесты без `-race` в CI; `pull_request_target` с checkout кода PR.
+- **Типичные ошибки** — `uses: …@main`; `permissions: write-all` «чтобы заработало»; секрет в `echo`; фильтр путей через `on.paths` в workflow с обязательными проверками; кэш, ключ которого не зависит от `go.sum`; тесты без `-race` в CI; `pull_request_target` с checkout кода PR.
 - **Компромисс** — полнота против скорости: что гонять на PR, что на main, что ночью (здесь — всё на PR, потому что быстро; когда станет медленно — матрица и шардирование).
 - **Самопроверка** — 6–8. **Источники** — GitHub Docs (Actions: workflow syntax, security hardening, `GITHUB_TOKEN` permissions, rulesets, required status checks), advisory GHSA для tj-actions/changed-files (CVE-2025-30066), OpenSSF Scorecard (Pinned-Dependencies, Token-Permissions), документация govulncheck, trivy, actionlint; «Accelerate» (Forsgren, Humble, Kim).
 
