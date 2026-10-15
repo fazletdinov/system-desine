@@ -1,0 +1,44 @@
+name: messenger
+
+services:
+  messenger:
+    build:
+      context: .
+      args:
+        VERSION: compose
+    image: messenger:local
+    # region service
+    # Порт — только на loopback хоста: снаружи сервис доступен через шлюз (модуль 6),
+    # а не напрямую.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      MESSENGER_JWT_KEY_FILE: /run/secrets/jwt_key
+      # Мягкий лимит GC ~90 % от mem_limit: рантайм Go не читает memory.max сам,
+      # и без этой строки куча растёт до OOM-kill (урок 1.17).
+      GOMEMLIMIT: 230MiB
+    secrets:
+      - jwt_key
+    # Безопасность запуска: файловая система только для чтения, ни одной capability,
+    # запрет повышать привилегии через setuid. Мессенджеру ничего из этого не нужно.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    user: "65532:65532"
+    mem_limit: 256m
+    cpus: 1
+    # Столько же, сколько Kubernetes ждёт по умолчанию: дренаж + остановка укладываются.
+    stop_grace_period: 30s
+    # endregion service
+    # healthcheck не задаём: он есть в образе (HEALTHCHECK в Dockerfile).
+
+# region secrets
+# Ключ — файлом, а не переменной окружения: окружение видно в docker inspect и
+# /proc/<pid>/environ. Ключ создаёт go run ./cmd/keygen -out jwt.pem.
+secrets:
+  jwt_key:
+    file: ./jwt.pem
+# endregion secrets
