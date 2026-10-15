@@ -211,9 +211,19 @@ func newApp(cfg config, log *slog.Logger) (*app, error) {
 	if err != nil {
 		return nil, fmt.Errorf("сборка: %w", err)
 	}
-	root := http.NewServeMux()
-	probes.Register(root, methodNotAllowed(log))
-	root.Handle("/", api)
+	probeMux := http.NewServeMux()
+	probes.Register(probeMux, methodNotAllowed(log))
+	// Развилка — по точному пути, а не общим ServeMux с маршрутом "/": такой mux
+	// отвечает голым 307 на любой «нечистый» путь (/v1//x) ещё до цепочки — без
+	// request ID, журнала и problem+json. Всё, что не проба, целиком решает API.
+	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case health.LivePath, health.ReadyPath:
+			probeMux.ServeHTTP(w, r)
+		default:
+			api.ServeHTTP(w, r)
+		}
+	})
 	return &app{handler: root, probes: probes}, nil
 	// #endregion root-mux
 }
@@ -316,8 +326,9 @@ func routeError(log *slog.Logger) func(http.ResponseWriter, *http.Request, int) 
 			methodNotAllowed(log)(w, r)
 			return
 		}
-		// Пустой шаблон без Allow — «не найдено». Даже редирект на очищенный путь
-		// (/v1//x → /v1/x) ServeMux отдаёт с пустым шаблоном, только когда и там пусто.
+		// Пустой шаблон без Allow — «не найдено». На «нечистый» путь ServeMux API отвечает
+		// редиректом, только если маршрут есть по очищенному пути (/v1//chats → /v1/chats);
+		// если и там пусто (/v1//x), шаблон пустой — и сюда приходит 404.
 		writeProblem(log, w, r, problem.Problem{Code: problem.CodeNotFound, Detail: "маршрут не найден"})
 	}
 }

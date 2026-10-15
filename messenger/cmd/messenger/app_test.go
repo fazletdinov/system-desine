@@ -439,3 +439,39 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 }
+
+// TestUncleanPathIsAPIError — пути с «//», «/./», «/../» отвечает API, а не ServeMux перед
+// ним: 404 problem+json с request ID, а не голый 307 без журнала (урок 1.7: /v1//x → 404).
+func TestUncleanPathIsAPIError(t *testing.T) {
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &syncBuffer{}
+	a, err := newApp(config{SigningKey: key, HasherParams: fastHasher, RequestTimeout: defaultRequestTimeout}, slog.New(slog.NewJSONHandler(logs, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(a.handler)
+	t.Cleanup(srv.Close)
+	// Клиент не идёт по редиректам: иначе 307 на очищенный путь спрятал бы ошибку.
+	noRedirect := srv.Client()
+	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	c := client{t: t, base: srv.URL, http: noRedirect}
+	c.signUp("frank", "фрэнк проверяет кривые пути")
+	token := c.token("frank", "фрэнк проверяет кривые пути")
+
+	r := c.do(http.MethodGet, "/v1//nope", token, "")
+
+	c.expect(r, http.StatusNotFound, "GET /v1//nope")
+	if !strings.HasPrefix(r.header.Get("Content-Type"), "application/problem+json") {
+		t.Fatalf("Content-Type %q", r.header.Get("Content-Type"))
+	}
+	body := r.json(t)
+	if body["code"] != "not_found" || body["request_id"] == nil || body["request_id"] == "" {
+		t.Fatalf("тело %s", r.body)
+	}
+	if !strings.Contains(logs.String(), `"path":"/v1//nope"`) {
+		t.Fatal("запроса нет в журнале доступа")
+	}
+}
