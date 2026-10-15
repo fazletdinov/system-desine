@@ -21,6 +21,15 @@ describe('without', () => {
   })
 })
 
+describe('without: стена memory.max', () => {
+  it('RSS не выше лимита даже в кадре убийства, потребность показана отдельно', () => {
+    for (const f of wo) expect(f.rssMiB).toBeLessThanOrEqual(f.limitMiB)
+    const last = wo[wo.length - 1]!
+    expect(last.rssMiB).toBe(last.limitMiB)
+    expect(last.demandMiB).toBeGreaterThan(last.limitMiB)
+  })
+})
+
 describe('with', () => {
   it('цель не выше 230, RSS не выше лимита, процесс жив', () => {
     for (const f of wi) {
@@ -28,6 +37,10 @@ describe('with', () => {
       expect(f.rssMiB).toBeLessThanOrEqual(f.limitMiB)
       expect(f.killed).toBe(false)
     }
+  })
+
+  it('суммарная память рантайма не выше GOMEMLIMIT (230) в каждом кадре', () => {
+    for (const f of wi) expect(f.demandMiB).toBeLessThanOrEqual(230)
   })
 
   it('GC запускается чаще: gcRuns на пике больше, чем без лимита', () => {

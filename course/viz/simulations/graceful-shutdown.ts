@@ -20,6 +20,7 @@ export interface ShutdownFrame {
 // Значения мессенджера и платформы: DRAIN_DELAY, SHUTDOWN_TIMEOUT, grace period, период пробы.
 export const DRAIN_DELAY_S = 5
 export const SHUTDOWN_TIMEOUT_S = 10
+// Из stop_grace_period нашего compose; в Kubernetes - terminationGracePeriodSeconds. Не умолчание docker stop.
 export const GRACE_PERIOD_S = 30
 export const DOCKER_STOP_TIMEOUT_S = 10
 export const LB_REMOVED_S = 1
@@ -54,7 +55,7 @@ const EXEC: readonly Step<ShutdownFrame>[] = [
   },
   {
     state: f({ t: 3, process: 'draining', readyz: 503, inLb: false, inflight: IN_FLIGHT, newRequests: 'none' }, 'pid1-app'),
-    caption: 'Идёт пауза DRAIN_DELAY, пять секунд: приложение сознательно ничего не закрывает. Она нужна на случай, если балансировщик или kube-proxy узнали о недоступности позже нас, и последние «в пути» запросы всё ещё к нам доедут. Пять секунд дренажа укладываются в 30 секунд grace period с большим запасом.',
+    caption: 'Идёт пауза DRAIN_DELAY, пять секунд: приложение сознательно ничего не закрывает. Она нужна на случай, если балансировщик или kube-proxy узнали о недоступности позже нас, и последние «в пути» запросы всё ещё к нам доедут. Типичная остановка (около 6 секунд) укладывается и в 10 секунд, которые docker stop даёт по умолчанию, и в 30 секунд из stop_grace_period нашего compose (в Kubernetes то же задаёт terminationGracePeriodSeconds). Худший случай, 5 + 10 = 15 секунд, помещается только в 30.',
   },
   {
     state: f({ t: 5, process: 'shutting-down', readyz: 503, inLb: false, inflight: IN_FLIGHT, newRequests: 'refused' }, 'pid1-app'),
@@ -66,7 +67,7 @@ const EXEC: readonly Step<ShutdownFrame>[] = [
   },
   {
     state: f({ t: 6, process: 'exited', readyz: null, inLb: false, inflight: 0, newRequests: 'none', exitCode: 0 }, 'pid1-app'),
-    caption: 'Последний запрос получил ответ, процесс вышел с кодом 0 на шестой секунде. Ни один клиент не увидел ошибки. Docker засчитал остановку штатной, а 30 секунд grace period остались неиспользованными.',
+    caption: 'Последний запрос получил ответ, процесс вышел с кодом 0 на шестой секунде. Ни один клиент не увидел ошибки. Docker засчитал остановку штатной. Шесть секунд помещаются и в 10 секунд docker stop по умолчанию, и в 30 секунд stop_grace_period.',
   },
 ]
 

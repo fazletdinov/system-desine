@@ -49,13 +49,13 @@ const Y_TICKS = [0, 64, 128, 192, 256, 320]
       </template>
       <polyline v-for="s in SERIES" :key="s.key" :class="['series', s.cls]" :points="line(s.key)" />
       <circle class="dot rss" :cx="x(now.t)" :cy="y(now.rssMiB)" r="4" />
-      <text v-if="now.killed" class="kill" :x="x(now.t) - 6" :y="y(now.rssMiB) - 8" text-anchor="end">✕ OOM-kill</text>
+      <text v-if="now.killed" class="kill" :x="W - R" :y="y(185)" text-anchor="end">✕ OOM-kill: требовалось ~{{ now.demandMiB }}</text>
     </svg>
     <ul class="legend" aria-label="Обозначения">
       <li v-for="s in SERIES" :key="s.key"><svg width="30" height="8" aria-hidden="true"><line x1="0" x2="30" y1="4" y2="4" :class="['series', s.cls]" /></svg>{{ s.label }}: <strong>{{ now[s.key] }}</strong></li>
       <li>запусков GC: <strong>{{ now.gcRuns }}</strong></li>
     </ul>
-    <p class="status" :class="now.killed ? 'bad' : 'ok'">{{ now.killed ? '✕ Процесс убит: RSS превысил лимит' : '✓ Процесс жив' }}</p>
+    <p class="status" :class="now.killed ? 'bad' : 'ok'">{{ now.killed ? `✕ Процесс убит: упёрся в memory.max ${now.limitMiB} МиБ (требовалось ~${now.demandMiB})` : '✓ Процесс жив' }}</p>
   </div>
 </template>
 

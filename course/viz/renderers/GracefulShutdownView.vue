@@ -35,11 +35,13 @@ const procClass = computed(() => (props.state.process === 'killed' ? 'bad' : pro
 
 <template>
   <div class="gs">
-    <p class="clock">Время от SIGTERM: <strong>{{ String(state.t).replace('.', ',') }} с</strong> из {{ TIMELINE_S }} (grace period)</p>
+    <p class="clock">Время от SIGTERM: <strong>{{ String(state.t).replace('.', ',') }} с</strong> на шкале до {{ TIMELINE_S }} с</p>
     <div class="track" role="img" :aria-label="`Шкала 0–${TIMELINE_S} с, сейчас ${state.t} с`">
       <div class="elapsed" :style="{ width: pct(state.t) }"></div>
+      <span class="tick" :style="{ left: pct(DOCKER_STOP_TIMEOUT_S) }" aria-hidden="true"></span>
       <span v-for="(m, i) in marks" :key="m.n" class="mark" :class="{ reached: m.reached, lower: i % 2 === 1 }" :style="{ left: pct(m.at) }" aria-hidden="true">{{ m.n }}</span>
     </div>
+    <p class="scale">Деления шкалы: 10 с — умолчание docker stop; 30 с — stop_grace_period в нашем compose (в Kubernetes — terminationGracePeriodSeconds).</p>
     <ol class="legend" aria-label="Отметки на шкале">
       <li v-for="m in marks" :key="m.n" :class="{ reached: m.reached }"><span class="n">{{ m.n }}</span>{{ m.reached ? '✓' : '○' }} {{ m.at }} с — {{ m.text }}</li>
     </ol>
@@ -61,6 +63,8 @@ const procClass = computed(() => (props.state.process === 'killed' ? 'bad' : pro
 .mark { position: absolute; top: -22px; display: grid; place-items: center; width: 20px; height: 20px; margin-left: -10px; border: 2px solid var(--viz-muted); border-radius: 50%; background: var(--viz-node-bg); font-size: 11px; font-weight: 700; }
 .mark.lower { top: 14px; }
 .mark.reached { border-color: var(--viz-active); background: var(--viz-active-line-bg); }
+.tick { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed var(--viz-muted); }
+.scale { margin: 0 0 6px; font-size: 12px; color: var(--viz-muted); }
 .legend { margin: 0 0 12px; padding: 0; list-style: none; font-size: 13px; color: var(--viz-muted); }
 .legend li { margin-top: 2px; }
 .legend li.reached { color: var(--viz-text); }
