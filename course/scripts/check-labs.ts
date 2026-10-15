@@ -28,4 +28,12 @@ if (unformatted !== '') {
 run('go', ['vet', './...'])
 run('go', ['test', '-race', './...'], 600_000)
 run('docker', ['compose', '-f', '0b/compose.yaml', 'config', '-q'])
-console.log('Лабораторные: gofmt, go vet, go test -race и compose config — без ошибок.')
+run('docker', ['compose', '-f', '1c/compose.yaml', 'config', '-q'])
+// Сценарий 1c — настоящие namespaces и cgroup в privileged-контейнере: сборка образа
+// при первом запуске и пять экспериментов.
+const scenario = run('docker', ['compose', '-f', '1c/compose.yaml', 'run', '--rm', '--build', '-T', 'lab', '/lab/scenario.sh'], 900_000)
+if (!scenario.includes('Все пять экспериментов прошли.')) {
+  console.error(`Сценарий лабы 1c:\n${scenario}`)
+  process.exit(1)
+}
+console.log('Лабораторные: gofmt, go vet, go test -race, compose config и сценарий 1c — без ошибок.')

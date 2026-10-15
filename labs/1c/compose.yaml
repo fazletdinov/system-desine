@@ -1,0 +1,19 @@
+name: lab1c
+
+services:
+  lab:
+    build:
+      context: ..
+      dockerfile: 1c/Dockerfile
+    image: lab1c:local
+    # region privileged
+    # privileged: лаба сама делает то, что обычно делает Docker, — mount, pivot_root,
+    # запись в cgroup. Это почти права хоста, поэтому только в лабе и никогда в проде.
+    privileged: true
+    # Свой cgroup namespace: лаба видит свою группу как корень /sys/fs/cgroup и
+    # создаёт дочерние группы, не трогая чужие.
+    cgroup: private
+    # endregion privileged
+    hostname: lab
+    stdin_open: true
+    tty: true
