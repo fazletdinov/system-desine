@@ -1,0 +1,277 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Токен по умолчанию — только чтение; джобам, которым нужно больше, права выдаются точечно.
+permissions:
+  contents: read
+
+# Новый пуш в PR отменяет устаревший прогон; на main прогоны не отменяются — каждый
+# коммит main должен получить свой результат.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Ветка 1.26, а не go-version-file: в go.mod записано 1.26.0, и govulncheck нашёл бы
+  # уязвимости стандартной библиотеки, закрытые в патчах.
+  GO_VERSION: "1.26.x"
+  GOLANGCI_LINT_VERSION: v2.12.2
+  GOVULNCHECK_VERSION: v1.8.0
+  ACTIONLINT_VERSION: v1.7.12
+  TRIVY_VERSION: v0.74.0
+
+jobs:
+  # region filter
+  # Монорепо: правка урока не должна гонять тесты мессенджера. На push в main
+  # проверяется всё — main обязан быть зелёным целиком.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # checkout не нужен: на pull_request paths-filter берёт список файлов PR из API.
+    permissions:
+      pull-requests: read
+    outputs:
+      messenger: ${{ github.event_name != 'pull_request' || steps.filter.outputs.messenger }}
+      course: ${{ github.event_name != 'pull_request' || steps.filter.outputs.course }}
+      labs: ${{ github.event_name != 'pull_request' || steps.filter.outputs.labs }}
+      workflows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflows }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            messenger:
+              - 'messenger/**'
+              - '.github/workflows/ci.yml'
+            course:
+              - 'course/**'
+              - 'messenger/**'
+              - 'labs/**'
+              - '.github/workflows/ci.yml'
+            labs:
+              - 'labs/**'
+              - 'course/scripts/check-labs.ts'
+              - '.github/workflows/ci.yml'
+            workflows:
+              - '.github/**'
+  # endregion filter
+
+  # region gates
+  messenger-lint:
+    needs: changes
+    if: needs.changes.outputs.messenger == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: messenger/go.sum
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: messenger
+
+  messenger-test:
+    needs: changes
+    if: needs.changes.outputs.messenger == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: messenger
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: messenger/go.sum
+      # -count=1 — без кэша тестов: CI проверяет код, а не прошлый результат.
+      - run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: messenger/coverage.out
+          retention-days: 14
+
+  messenger-generate:
+    needs: changes
+    if: needs.changes.outputs.messenger == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: messenger
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: messenger/go.sum
+      # На чистом checkout сравнение с git строгое: любое отличие — забытый go generate.
+      - run: go generate ./...
+      - name: Сгенерированный код совпадает с контрактом
+        run: |
+          git diff --exit-code -- .
+          test -z "$(git status --porcelain -- .)"
+
+  messenger-vuln:
+    needs: changes
+    if: needs.changes.outputs.messenger == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: messenger
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: messenger/go.sum
+          # Без check-latest setup-go берёт подходящую 1.26.x из образа раннера, а она
+          # может отставать от последнего патча; здесь важен именно последний.
+          check-latest: true
+      # govulncheck смотрит, вызывается ли уязвимый код, а не только есть ли модуль в go.sum.
+      - run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+
+  course:
+    needs: changes
+    if: needs.changes.outputs.course == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: course
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: course/.nvmrc
+          cache: npm
+          cache-dependency-path: course/package-lock.json
+      # check:go компилирует Go-фрагменты уроков.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: messenger/go.sum
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run check:go
+      - run: npm run check:refs
+      - run: npm run build
+
+  labs:
+    needs: changes
+    if: needs.changes.outputs.labs == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: course/.nvmrc
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: labs/go.mod
+      # check-labs.ts не тянет npm-зависимостей: npm ci не нужен. Сценарий 1c запускает
+      # privileged-контейнер — раннеры GitHub это разрешают.
+      - run: node scripts/check-labs.ts
+        working-directory: course
+
+  image:
+    needs: changes
+    if: needs.changes.outputs.messenger == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # smoke.sh генерирует одноразовый ключ через go run ./cmd/keygen.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: messenger/go.sum
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # region image
+      # На PR образ только собирается и проверяется; публикует release.yml после зелёного main.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: messenger
+          load: true
+          push: false
+          tags: messenger:ci
+          build-args: VERSION=ci-${{ github.sha }}
+          cache-from: type=gha,scope=messenger
+          cache-to: type=gha,mode=max,scope=messenger
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: messenger:ci
+          version: ${{ env.TRIVY_VERSION }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Smoke
+        run: scripts/smoke.sh messenger:ci
+        working-directory: messenger
+      # endregion image
+
+  workflows:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - run: go run "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+  # endregion gates
+
+  # region ci-ok
+  # Единственная обязательная проверка в ruleset. Джоба, пропущенная по if:, для
+  # GitHub — успех; поэтому список обязательных проверок по отдельным джобам принял бы
+  # «всё пропущено» (например, упала changes или прогон отменили) за зелёный PR и
+  # требовал бы правки ruleset при каждом переименовании джобы. ci-ok запускается
+  # всегда и падает, если хоть одна джоба упала или отменена.
+  ci-ok:
+    if: always()
+    needs: [changes, messenger-lint, messenger-test, messenger-generate, messenger-vuln, course, labs, image, workflows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Все ворота пройдены или пропущены по фильтру
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -Eq '"(failure|cancelled)"'; then
+            exit 1
+          fi
+  # endregion ci-ok

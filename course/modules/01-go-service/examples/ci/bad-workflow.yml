@@ -1,0 +1,18 @@
+# Учебный workflow с типичными ошибками — урок 1.18. Лежит вне .github/workflows:
+# GitHub его не запускает, а check:workflows не проверяет.
+name: bad
+on: pull_request
+permissions: write-all
+jobs:
+  greet:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@main
+      - run: echo "Проверяем PR — ${{ github.event.pull_request.title }}"
+      - run: echo $GITHUB_SHA
+  after:
+    needs: greet
+    if: needs.greet.outputs.ok == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
