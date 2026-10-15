@@ -20,8 +20,10 @@ func subcommand(args []string, stdout, stderr io.Writer) (code int, handled bool
 	case "version", "--version":
 		_, _ = fmt.Fprintln(stdout, version)
 		return 0, true
+	case "healthcheck":
+		return runHealthcheck(stderr), true
 	default:
-		_, _ = fmt.Fprintf(stderr, "неизвестная команда %q; есть: version\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "неизвестная команда %q; есть: version, healthcheck\n", args[0])
 		return 2, true
 	}
 }

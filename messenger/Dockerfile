@@ -33,6 +33,12 @@ COPY --from=build /out/messenger /messenger
 ENV MESSENGER_ADDR=:8080
 EXPOSE 8080
 USER 65532:65532
+# region healthcheck
+# В distroless нет curl и shell — проверку делает сам бинарь. start-interval (Docker 25+)
+# проверяет чаще, пока контейнер стартует: healthy через секунду, а не через interval.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --start-interval=1s --retries=3 \
+    CMD ["/messenger", "healthcheck"]
+# endregion healthcheck
 # Exec-форма: messenger — PID 1 и сам получает SIGTERM (урок 1.17).
 ENTRYPOINT ["/messenger"]
 # endregion runtime

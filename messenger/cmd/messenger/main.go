@@ -1,5 +1,6 @@
 // Command messenger — HTTP-сервер мессенджера. Сборка зависимостей — в app.go
-// (newApp); здесь только конфигурация, запуск и остановка по сигналу.
+// (newApp); здесь только конфигурация, запуск и остановка по сигналу; служебные
+// команды — в cli.go.
 package main
 
 import (
@@ -8,14 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"messenger/internal/platform/httpserver"
 )
-
-// shutdownTimeout меньше 30 с, которые Kubernetes по умолчанию ждёт после SIGTERM
-// до SIGKILL: сервер должен успеть закончить сам, а не быть убитым посреди ответа.
-const shutdownTimeout = 10 * time.Second
 
 func main() {
 	if code, handled := subcommand(os.Args[1:], os.Stdout, os.Stderr); handled {
@@ -35,16 +31,24 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	handler, err := newApp(cfg, log)
+	a, err := newApp(cfg, log)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := httpserver.New(cfg.Addr, handler, log)
+	srv := httpserver.New(cfg.Addr, a.handler, log, cfg.RequestTimeout)
 	log.Info("слушаю", "addr", cfg.Addr, "version", version)
-	if err := httpserver.Run(ctx, srv, shutdownTimeout); err != nil {
+	err = httpserver.Run(ctx, srv, httpserver.Stop{
+		Drain: func() {
+			a.probes.StartDraining()
+			log.Info("останавливаюсь: /readyz отвечает 503", "drain_delay", cfg.DrainDelay.String())
+		},
+		DrainDelay: cfg.DrainDelay,
+		Timeout:    cfg.ShutdownTimeout,
+	})
+	if err != nil {
 		return err
 	}
 	log.Info("сервер остановлен")

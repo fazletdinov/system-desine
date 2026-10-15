@@ -55,6 +55,10 @@ if (mainVulns > 0) {
   console.error(`messenger:local: уязвимостей HIGH/CRITICAL с исправлением — ${mainVulns}`)
   process.exit(1)
 }
+// Smoke: контейнер становится healthy, отвечает на пробы и API, корректно
+// останавливается по SIGTERM (тот же скрипт запускает CI).
+const smoke = run('bash', ['scripts/smoke.sh', 'messenger:local'], 120_000).trim().split('\n')
+console.log(smoke[smoke.length - 1])
 
 // Варианты для урока 1.16: собираются и сравниваются, но порогов не имеют.
 const rows: [name: string, tag: string][] = [['distroless (наш)', 'messenger:local']]
@@ -67,4 +71,4 @@ for (const [name, tag] of rows) {
   const mb = (Number(inspect(tag, '{{.Size}}')) / 1e6).toFixed(1)
   console.log(`${name.padEnd(18)} ${mb.padStart(7)} МБ  HIGH/CRITICAL с исправлением: ${vulns(tag)}`)
 }
-console.log('Образы: сборка, размер, пользователь, version и trivy — без ошибок.')
+console.log('Образы: сборка, размер, пользователь, version, trivy и smoke — без ошибок.')

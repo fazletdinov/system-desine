@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -142,12 +143,12 @@ func newClient(t *testing.T) (client, *openapitest.Validator, *syncBuffer) {
 		t.Fatal(err)
 	}
 	logs := &syncBuffer{}
-	handler, err := newApp(config{SigningKey: key, HasherParams: fastHasher}, slog.New(slog.NewJSONHandler(logs, nil)))
+	a, err := newApp(config{SigningKey: key, HasherParams: fastHasher, RequestTimeout: defaultRequestTimeout}, slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	v := openapitest.New(t)
-	srv := httptest.NewServer(v.Wrap(handler))
+	srv := httptest.NewServer(v.Wrap(a.handler))
 	t.Cleanup(srv.Close)
 	return client{t: t, base: srv.URL, http: srv.Client()}, v, logs
 }
@@ -303,9 +304,65 @@ func TestNewAppRejectsBadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newApp(config{SigningKey: key}, log); err == nil {
+	if _, err := newApp(config{SigningKey: key, RequestTimeout: defaultRequestTimeout}, log); err == nil {
 		t.Error("с нулевыми параметрами хешера: ждали ошибку")
 	}
+	if _, err := newApp(config{SigningKey: key, HasherParams: fastHasher}, log); err == nil {
+		t.Error("с нулевым таймаутом запроса: ждали ошибку")
+	}
+}
+
+// TestProbesOutsideAPI — пробы отвечают мимо аутентификации и контракта; дренаж
+// переключает только готовность, API продолжает работать.
+func TestProbesOutsideAPI(t *testing.T) {
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &syncBuffer{}
+	a, err := newApp(config{SigningKey: key, HasherParams: fastHasher, RequestTimeout: defaultRequestTimeout}, slog.New(slog.NewJSONHandler(logs, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Без валидатора контракта: проб в контракте нет — и не должно быть.
+	srv := httptest.NewServer(a.handler)
+	t.Cleanup(srv.Close)
+	c := client{t: t, base: srv.URL, http: srv.Client()}
+
+	c.expect(c.do(http.MethodGet, "/livez", "", ""), http.StatusOK, "livez без токена")
+	c.expect(c.do(http.MethodGet, "/readyz", "", ""), http.StatusOK, "readyz без токена")
+	r := c.do(http.MethodPost, "/readyz", "", "")
+	c.expect(r, http.StatusMethodNotAllowed, "POST readyz")
+	if r.header.Get("Allow") != "GET, HEAD" || !strings.HasPrefix(r.header.Get("Content-Type"), "application/problem+json") {
+		t.Fatalf("405: заголовки %v", r.header)
+	}
+
+	a.probes.StartDraining()
+
+	c.expect(c.do(http.MethodGet, "/readyz", "", ""), http.StatusServiceUnavailable, "readyz во время дренажа")
+	c.expect(c.do(http.MethodGet, "/livez", "", ""), http.StatusOK, "livez во время дренажа")
+	c.signUp("dora", "дренаж не мешает регистрироваться")
+	if strings.Contains(logs.String(), `"path":"/readyz"`) {
+		t.Fatal("пробы попали в журнал доступа")
+	}
+}
+
+// writeKeyFile кладёт новый ключ подписи во временный файл и возвращает его ключ и путь.
+func writeKeyFile(t *testing.T) (ed25519.PrivateKey, string) {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemBytes, err := jwt.EncodePrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "jwt.pem")
+	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return key, path
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -316,18 +373,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 	t.Run("ключ из файла, адрес по умолчанию", func(t *testing.T) {
-		_, key, err := ed25519.GenerateKey(rand.Reader)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pemBytes, err := jwt.EncodePrivateKey(key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		path := filepath.Join(t.TempDir(), "jwt.pem")
-		if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		key, path := writeKeyFile(t)
 		t.Setenv("MESSENGER_JWT_KEY_FILE", path)
 		t.Setenv("MESSENGER_ADDR", "")
 
@@ -335,6 +381,51 @@ func TestLoadConfig(t *testing.T) {
 
 		if err != nil || !cfg.SigningKey.Equal(key) || cfg.Addr != defaultAddr || cfg.HasherParams != argon2id.OWASPMinimum {
 			t.Fatalf("config %+v, ошибка %v", cfg.Addr, err)
+		}
+	})
+	t.Run("сроки", func(t *testing.T) {
+		_, path := writeKeyFile(t)
+		const (
+			req   = "MESSENGER_REQUEST_TIMEOUT"
+			stop  = "MESSENGER_SHUTDOWN_TIMEOUT"
+			drain = "MESSENGER_DRAIN_DELAY"
+		)
+		cases := []struct {
+			name    string
+			env     map[string]string
+			want    [3]time.Duration // RequestTimeout, ShutdownTimeout, DrainDelay
+			wantErr string           // непусто — ждём ошибку с этим текстом
+		}{
+			{"ничего не задано — значения по умолчанию", nil, [3]time.Duration{10 * time.Second, 10 * time.Second, 5 * time.Second}, ""},
+			{"таймаут запроса из окружения", map[string]string{req: "2s"}, [3]time.Duration{2 * time.Second, 10 * time.Second, 5 * time.Second}, ""},
+			{"дренаж без задержки разрешён", map[string]string{drain: "0s"}, [3]time.Duration{10 * time.Second, 10 * time.Second, 0}, ""},
+			{"нулевой таймаут запроса", map[string]string{req: "0s"}, [3]time.Duration{}, req},
+			{"отрицательный срок остановки", map[string]string{stop: "-1s"}, [3]time.Duration{}, stop},
+			{"не срок", map[string]string{drain: "пять"}, [3]time.Duration{}, drain},
+			{"дренаж и остановка не укладываются в grace period", map[string]string{drain: "20s", stop: "10s"}, [3]time.Duration{}, "меньше"},
+		}
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				t.Setenv("MESSENGER_JWT_KEY_FILE", path)
+				for _, name := range []string{req, stop, drain} {
+					t.Setenv(name, c.env[name])
+				}
+
+				cfg, err := loadConfig()
+
+				if c.wantErr != "" {
+					if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+						t.Fatalf("ошибка %v, ждали с %q", err, c.wantErr)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := [3]time.Duration{cfg.RequestTimeout, cfg.ShutdownTimeout, cfg.DrainDelay}; got != c.want {
+					t.Fatalf("сроки %v, ждали %v", got, c.want)
+				}
+			})
 		}
 	})
 	t.Run("не PEM — ошибка", func(t *testing.T) {

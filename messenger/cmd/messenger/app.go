@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"messenger/internal/auth/adapters/argon2id"
 	authhttp "messenger/internal/auth/adapters/httpapi"
@@ -20,6 +21,7 @@ import (
 	"messenger/internal/chat/adapters/userchecker"
 	chatusecase "messenger/internal/chat/usecase"
 	"messenger/internal/platform/clock"
+	"messenger/internal/platform/health"
 	"messenger/internal/platform/httpauth"
 	"messenger/internal/platform/idempotency"
 	idemmemory "messenger/internal/platform/idempotency/memory"
@@ -33,11 +35,63 @@ import (
 
 const (
 	// Loopback по умолчанию: сервис говорит по голому HTTP, и токены в нём шли бы по
-	// сети открытым текстом. TLS — на шлюзе (модуль 6.7); в Docker (1c) слушать все
-	// интерфейсы — явное решение: MESSENGER_ADDR=:8080.
+	// сети открытым текстом. TLS — на шлюзе (модуль 6.7); в образе (урок 1.16)
+	// MESSENGER_ADDR=:8080 задан в Dockerfile.
 	defaultAddr = "127.0.0.1:8080"
+	addrEnv     = "MESSENGER_ADDR"
 	keyFileEnv  = "MESSENGER_JWT_KEY_FILE"
+	// timeoutDetail — тот же текст, что problem.Respond отдаёт на DeadlineExceeded:
+	// клиенту всё равно, кто заметил истёкший срок — адаптер или middleware.
+	timeoutDetail          = "повторите запрос позже"
+	methodNotAllowedDetail = "метод не поддерживается для этого пути"
 )
+
+// #region config
+const (
+	defaultRequestTimeout  = 10 * time.Second
+	defaultShutdownTimeout = 10 * time.Second
+	// defaultDrainDelay — две пробы готовности с периодом по умолчанию (Kubernetes —
+	// 10 с, наш compose — 1–2 с) обычно меньше; 5 с — компромисс для compose и kind.
+	defaultDrainDelay = 5 * time.Second
+	// terminationGrace — сколько Kubernetes (и наш compose) ждёт после SIGTERM до
+	// SIGKILL. Дренаж и остановка должны уложиться в него с запасом.
+	terminationGrace = 30 * time.Second
+)
+
+// durationEnv читает срок из окружения; пустая переменная — значение по умолчанию.
+func durationEnv(name string, def time.Duration, allowZero bool) (time.Duration, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	if d < 0 || (d == 0 && !allowZero) {
+		return 0, fmt.Errorf("%s: срок должен быть больше нуля, получено %s", name, raw)
+	}
+	return d, nil
+}
+
+func loadTimeouts(cfg *config) error {
+	var err error
+	if cfg.RequestTimeout, err = durationEnv("MESSENGER_REQUEST_TIMEOUT", defaultRequestTimeout, false); err != nil {
+		return err
+	}
+	if cfg.ShutdownTimeout, err = durationEnv("MESSENGER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout, false); err != nil {
+		return err
+	}
+	if cfg.DrainDelay, err = durationEnv("MESSENGER_DRAIN_DELAY", defaultDrainDelay, true); err != nil {
+		return err
+	}
+	if total := cfg.DrainDelay + cfg.ShutdownTimeout; total >= terminationGrace {
+		return fmt.Errorf("MESSENGER_DRAIN_DELAY + MESSENGER_SHUTDOWN_TIMEOUT = %s: должно быть меньше %s, иначе процесс убьют SIGKILL посреди остановки", total, terminationGrace)
+	}
+	return nil
+}
+
+// #endregion config
 
 // publicRoutes — маршруты, открытые без аутентификации: метод и путь без параметров.
 // Всё остальное закрыто: забытый здесь маршрут получит 401, а не откроется всем.
@@ -49,14 +103,35 @@ type config struct {
 	Addr         string
 	SigningKey   ed25519.PrivateKey
 	HasherParams argon2id.Params
+	// RequestTimeout — срок обработки одного запроса (middleware.Timeout).
+	RequestTimeout time.Duration
+	// ShutdownTimeout — сколько ждать начатые запросы после дренажа.
+	ShutdownTimeout time.Duration
+	// DrainDelay — сколько после SIGTERM ещё принимать запросы, отвечая /readyz 503.
+	DrainDelay time.Duration
+}
+
+// app — то, что сборка отдаёт main: обработчик и пробы (main переводит их в дренаж по SIGTERM).
+type app struct {
+	handler http.Handler
+	probes  *health.Probes
+}
+
+// addrFromEnv — адрес сервера; его же читает подкоманда healthcheck, чтобы постучаться
+// в тот порт, который слушает сервер.
+func addrFromEnv() string {
+	if addr := os.Getenv(addrEnv); addr != "" {
+		return addr
+	}
+	return defaultAddr
 }
 
 // loadConfig читает окружение. Без ключа подписи сервер не стартует: сгенерировать
 // ключ «на лету» значило бы молча обесценить все токены при каждом перезапуске.
 func loadConfig() (config, error) {
-	cfg := config{Addr: os.Getenv("MESSENGER_ADDR"), HasherParams: argon2id.OWASPMinimum}
-	if cfg.Addr == "" {
-		cfg.Addr = defaultAddr
+	cfg := config{Addr: addrFromEnv(), HasherParams: argon2id.OWASPMinimum}
+	if err := loadTimeouts(&cfg); err != nil {
+		return config{}, err
 	}
 	path := os.Getenv(keyFileEnv)
 	if path == "" {
@@ -75,7 +150,10 @@ func loadConfig() (config, error) {
 // #region wiring
 // newApp — composition root: единственное место, где конкретные реализации (часы,
 // генератор id, хранилища, JWT, HTTP) соединяются с use case'ами через их порты.
-func newApp(cfg config, log *slog.Logger) (http.Handler, error) {
+func newApp(cfg config, log *slog.Logger) (*app, error) {
+	if cfg.RequestTimeout <= 0 {
+		return nil, errors.New("сборка: нужен таймаут запроса")
+	}
 	clk, ids := clock.System{}, idgen.UUIDv7{}
 	users := usermemory.NewStore()
 
@@ -114,14 +192,30 @@ func newApp(cfg config, log *slog.Logger) (http.Handler, error) {
 	// #region chain
 	// Первый — самый внешний. Request ID нужен всем, кто пишет в журнал; Recover — внутри
 	// AccessLog, чтобы паника попала в журнал как 500; аутентификация — до маршрутизатора.
-	return middleware.Chain(
+	// Timeout — внутри Recover, чтобы паника по сроку тоже стала 500; до аутентификации —
+	// срок есть у всего, включая проверку токена.
+	api := middleware.Chain(
 		middleware.RouteErrors(mux, routeError(log)),
 		middleware.RequestID(ids),
 		middleware.AccessLog(log),
 		middleware.Recover(log, internalError(log)),
+		middleware.Timeout(cfg.RequestTimeout, timeoutError(log)),
 		httpauth.Middleware(bearer, publicRoutes, unauthenticated(log)),
-	), nil
+	)
 	// #endregion chain
+
+	// #region root-mux
+	// Пробы — мимо цепочки: без аутентификации, журнала доступа и таймаута запроса.
+	// Оркестратор дёргает их каждые несколько секунд, и журнал на 90 % состоял бы из них.
+	probes, err := health.New(log)
+	if err != nil {
+		return nil, fmt.Errorf("сборка: %w", err)
+	}
+	root := http.NewServeMux()
+	probes.Register(root, methodNotAllowed(log))
+	root.Handle("/", api)
+	return &app{handler: root, probes: probes}, nil
+	// #endregion root-mux
 }
 
 // #endregion wiring
@@ -219,12 +313,27 @@ func newChat(getUser *userusecase.GetUser, clk clock.System, ids idgen.UUIDv7, l
 func routeError(log *slog.Logger) func(http.ResponseWriter, *http.Request, int) {
 	return func(w http.ResponseWriter, r *http.Request, status int) {
 		if status == http.StatusMethodNotAllowed {
-			writeProblem(log, w, r, problem.Problem{Code: problem.CodeMethodNotAllowed, Detail: "метод не поддерживается для этого пути"})
+			methodNotAllowed(log)(w, r)
 			return
 		}
 		// Пустой шаблон без Allow — «не найдено». Даже редирект на очищенный путь
 		// (/v1//x → /v1/x) ServeMux отдаёт с пустым шаблоном, только когда и там пусто.
 		writeProblem(log, w, r, problem.Problem{Code: problem.CodeNotFound, Detail: "маршрут не найден"})
+	}
+}
+
+// methodNotAllowed — 405 и для API, и для проб; заголовок Allow ставит тот, кто знает
+// разрешённые методы (ServeMux или health).
+func methodNotAllowed(log *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(log, w, r, problem.Problem{Code: problem.CodeMethodNotAllowed, Detail: methodNotAllowedDetail})
+	}
+}
+
+// timeoutError — ответ middleware.Timeout, когда обработчик вернулся по сроку молча.
+func timeoutError(log *slog.Logger) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(log, w, r, problem.Problem{Code: problem.CodeTimeout, Detail: timeoutDetail})
 	}
 }
 
