@@ -57,6 +57,13 @@ describe('layer-cache', () => {
     expect(s.imageMB).toBeLessThan(30)
     expect(run({ type: 'stage', multi: false }, { type: 'build' }).imageMB).toBeGreaterThan(800)
   })
+  it('cache mount не кладёт кэш модулей и компилятора в слой: одностадийный образ с ним меньше', () => {
+    const on = run({ type: 'stage', multi: false }, { type: 'build' })
+    const off = run({ type: 'stage', multi: false }, { type: 'cacheMount', on: false }, { type: 'build' })
+    expect(on.imageMB).toBeLessThan(off.imageMB)
+    // В слое остаётся только результат — бинарь; базовый образ с компилятором — тот же.
+    expect(off.imageMB - on.imageMB).toBeGreaterThan(300)
+  })
   it('каждый шаг подписан, подписи с терминами', () => {
     const steps = sim.steps(run({ type: 'build' }))
     expect(steps).toHaveLength(1)

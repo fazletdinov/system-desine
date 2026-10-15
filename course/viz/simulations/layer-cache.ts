@@ -52,6 +52,9 @@ interface Instr {
 }
 
 // Время и размеры — порядок величин для Go-сервиса средних размеров, не замер.
+const MODULES_MB = 120 // кэш модулей /go/pkg/mod
+const BUILD_CACHE_MB = 285 // кэш компилятора /root/.cache/go-build
+const BINARY_MB = 15 // сам бинарь
 const BASE: Instr = { id: 'base', text: 'FROM golang:1.26 AS build', stage: 'build', copies: [], seconds: 20, mb: 850 }
 const WORKDIR: Instr = { id: 'workdir', text: 'WORKDIR /src', stage: 'build', copies: [], seconds: 0.1, mb: 0 }
 const COPY_MOD: Instr = { id: 'copy-mod', text: 'COPY go.mod go.sum ./', stage: 'build', copies: ['gomod'], seconds: 0.1, mb: 0 }
@@ -63,7 +66,8 @@ const downloadInstr = (mount: boolean): Instr => ({
   stage: 'build',
   copies: [],
   seconds: 25,
-  mb: 120,
+  // С cache mount модули ложатся в смонтированный каталог, а не в слой: слой пуст.
+  mb: mount ? 0 : MODULES_MB,
 })
 const buildInstr = (mount: boolean): Instr => ({
   id: 'build',
@@ -73,10 +77,12 @@ const buildInstr = (mount: boolean): Instr => ({
   stage: 'build',
   copies: [],
   seconds: 40,
-  mb: 300,
+  // С cache mount кэш компилятора остаётся в смонтированном каталоге; в слой
+  // попадает только результат — бинарь в /out.
+  mb: mount ? BINARY_MB : BINARY_MB + BUILD_CACHE_MB,
 })
 const RUNTIME: Instr = { id: 'runtime', text: 'FROM gcr.io/distroless/static-debian13:nonroot', stage: 'runtime', copies: [], seconds: 3, mb: 2 }
-const COPY_BIN: Instr = { id: 'copy-bin', text: 'COPY --from=build /out/messenger /messenger', stage: 'runtime', copies: [], seconds: 0.2, mb: 15 }
+const COPY_BIN: Instr = { id: 'copy-bin', text: 'COPY --from=build /out/messenger /messenger', stage: 'runtime', copies: [], seconds: 0.2, mb: BINARY_MB }
 
 const copySrc = (ignore: boolean): Instr => ({
   id: 'copy-src',

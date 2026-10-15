@@ -7,6 +7,12 @@ import { join } from 'node:path'
 const MESSENGER = fileURLToPath(new URL('../../messenger', import.meta.url))
 const EXAMPLES = fileURLToPath(new URL('../modules/01-go-service/examples/dockerfiles', import.meta.url))
 // Порог из спеки (§11): distroless static + статический бинарь мессенджера.
+// Что значит {{.Size}}, зависит от хранилища образов Docker:
+// - containerd image store (Docker Desktop, новые установки Docker 29) — сжатый размер
+//   содержимого, сколько качается из реестра: у автора 3 841 347 байт (3,84 МБ);
+// - overlay2 / graphdriver (возможен на раннере CI) — распакованный размер слоёв: сумма
+//   SIZE из `docker history messenger:local` — 12,9 МБ (посчитано, не замерено на overlay2).
+// 25 МБ с запасом покрывают оба случая, поэтому проверка одна и та же локально и в CI.
 const MAX_IMAGE_BYTES = 25_000_000
 const TRIVY = 'aquasec/trivy:0.74.0'
 

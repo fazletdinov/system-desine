@@ -124,7 +124,7 @@ $ ls blobs/sha256 | wc -l
 
 <Callout type="simplified">
 
-На Docker Engine с хранилищем containerd (по умолчанию в Docker Desktop и в новых установках Docker 29, урок 1.15) поле `.Size` у `docker image inspect` — **сжатый** размер содержимого: столько скачивается из реестра. Колонка `DISK USAGE` у `docker images` — место на диске: распакованные слои плюс сами сжатые архивы. У нашего образа это 3,84 МБ и 16,7 МБ. На старом хранилище (`overlay2`) `.Size` показывал распакованный размер. В этом уроке «размер образа» — сжатый, как его считает `check:images`, а распакованный приводим рядом.
+На Docker Engine с хранилищем containerd (по умолчанию в Docker Desktop и в новых установках Docker 29, урок 1.15) поле `.Size` у `docker image inspect` — **сжатый** размер содержимого: столько скачивается из реестра. Колонка `DISK USAGE` у `docker images` — место на диске: распакованные слои плюс сами сжатые архивы. У нашего образа это 3,84 МБ и 16,7 МБ. На старом хранилище (`overlay2`) `.Size` показывает распакованный размер — на таком Docker (например, на раннере CI) `check:images` увидит у нашего образа около 12,9 МБ: столько дают слои по `docker history`. Порог 25 МБ проходят оба значения, поэтому проверка одна и та же локально и в CI. В этом уроке «размер образа» — сжатый, как его считает `check:images`, а распакованный приводим рядом.
 
 </Callout>
 
@@ -164,34 +164,29 @@ IMAGE          CREATED          CREATED BY                                      
 
 Шесть верхних строк — наш Dockerfile: один слой на 7,11 МБ (`COPY` бинаря) и пять записей по 0 байт. Ниже — 13 слоёв distroless. Их собирают не Dockerfile'ом, а системой сборки Bazel, поэтому вместо инструкций — имена целей Bazel: сертификаты, `/etc/passwd`, `/tmp`, tzdata, файлы пакетов Debian. `<missing>` в колонке `IMAGE` — не ошибка: у промежуточных шагов нет своего образа, есть только слои. Сложив колонку `SIZE`, получим 12,9 МБ — распакованный размер образа.
 
-**Удаление файла не уменьшает образ.** В 1.15 мы видели whiteout у OverlayFS — «белую метку», которая прячет файл нижнего слоя. В слое образа удаление записано так же: в tar-архиве появляется пустой файл с префиксом `.wh.` перед именем (`.wh.big.bin`), а для «спрячь всё содержимое каталога» — файл `.wh..wh..opq`. Байты удалённого файла остаются в нижнем слое — и в реестре, и в каждом `docker pull`. Проверим на маленьком Dockerfile:
+**Удаление файла не уменьшает образ.** В 1.15 мы видели whiteout у OverlayFS — «белую метку», которая прячет файл нижнего слоя. В слое образа удаление записано так же: в tar-архиве появляется пустой файл с префиксом `.wh.` перед именем (`.wh.big.bin`), а для «спрячь всё содержимое каталога» — файл `.wh..wh..opq`. Байты удалённого файла остаются в нижнем слое — и в реестре, и в каждом `docker pull`. Проверим на маленьком Dockerfile из примеров урока:
 
-```dockerfile
-FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
-RUN head -c 50000000 /dev/urandom > /big.bin
-RUN rm /big.bin
-ARG API_TOKEN
-RUN echo "токен длиной ${#API_TOKEN}" > /dev/null
-```
+<<< @/modules/01-go-service/examples/dockerfiles/whiteout.Dockerfile{dockerfile}
 
 ```text
-$ docker build -t whiteout-demo --build-arg API_TOKEN=s3cr3t-token -f demo.Dockerfile .
+$ cd course/modules/01-go-service/examples/dockerfiles
+$ docker build --no-cache -t whiteout-demo --build-arg API_TOKEN=s3cr3t-token -f whiteout.Dockerfile .
  1 warning found (use docker --debug to expand):
- - SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ARG "API_TOKEN") (line 4)
+ - SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ARG "API_TOKEN") (line 9)
 $ docker history whiteout-demo
 IMAGE          CREATED         CREATED BY                                      SIZE      COMMENT
-07d36ca71fdc   2 seconds ago   RUN |1 API_TOKEN=s3cr3t-token /bin/sh -c ech…   4.1kB     buildkit.dockerfile.v0
+8e6ac39beeae   2 seconds ago   RUN |1 API_TOKEN=s3cr3t-token /bin/sh -c ech…   4.1kB     buildkit.dockerfile.v0
 <missing>      2 seconds ago   ARG API_TOKEN=s3cr3t-token                      0B        buildkit.dockerfile.v0
-<missing>      2 seconds ago   RUN /bin/sh -c rm /big.bin # buildkit           4.1kB     buildkit.dockerfile.v0
+<missing>      3 seconds ago   RUN /bin/sh -c rm /big.bin # buildkit           4.1kB     buildkit.dockerfile.v0
 <missing>      3 seconds ago   RUN /bin/sh -c head -c 50000000 /dev/urandom…   50MB      buildkit.dockerfile.v0
 <missing>      3 weeks ago     CMD ["/bin/sh"]                                 0B        buildkit.dockerfile.v0
 <missing>      3 weeks ago     ADD alpine-minirootfs-3.23.6-x86_64.tar.gz /…   9.08MB    buildkit.dockerfile.v0
 $ docker images whiteout-demo
 IMAGE                  ID             DISK USAGE   CONTENT SIZE   EXTRA
-whiteout-demo:latest   07d36ca71fdc        113MB         53.9MB
+whiteout-demo:latest   8e6ac39beeae        113MB         53.9MB
 ```
 
-Два урока в одном выводе. Первый: слой `rm` весит 4 КБ (это метка), а слой с файлом — по-прежнему 50 МБ, и образ весит 53,9 МБ при пустом `/`. Почистить «потом» нельзя: чистить нужно **в той же инструкции `RUN`**, где мусор появился, или не пускать его в итоговый образ вовсе — через multi-stage. Второй: значение `ARG` записано в историю открытым текстом — `API_TOKEN=s3cr3t-token` увидит любой, кто скачал образ. BuildKit честно предупреждает (`SecretsUsedInArgOrEnv`), но сборку не останавливает. Секреты в сборку передают через `RUN --mount=type=secret`: файл секрета монтируется на время одной команды и не попадает ни в слой, ни в историю, ни в кэш.
+Два урока в одном выводе. Первый: слой `rm` весит 4 КБ (это метка), а слой с файлом — по-прежнему 50 МБ, и образ весит 53,9 МБ, хотя файла `/big.bin` в нём уже не видно. Почистить «потом» нельзя: чистить нужно **в той же инструкции `RUN`**, где мусор появился, или не пускать его в итоговый образ вовсе — через multi-stage. Второй: значение `ARG` записано в историю открытым текстом — `API_TOKEN=s3cr3t-token` увидит любой, кто скачал образ. BuildKit честно предупреждает (`SecretsUsedInArgOrEnv`), но сборку не останавливает. Секреты в сборку передают через `RUN --mount=type=secret`: файл секрета монтируется на время одной команды и не попадает ни в слой, ни в историю, ни в кэш.
 
 ## <Part kind="theory" /> Кэш сборки: из чего ключ и почему промах катится вниз
 
@@ -472,7 +467,7 @@ BuildKit устроен иначе, и его авторы сравнивают 
 
 1. **Порядок.** Соберите, нажмите «Изменить main.go», соберите снова: `go mod download` взят из кэша, пересобраны `COPY . .`, `go build` и копия бинаря. Теперь переключите «COPY . . сразу», соберите (смена порядка сама по себе — промах), снова «Изменить main.go» и «Собрать»: теперь пересобирается и скачивание модулей. Найдите в подписи первый пересобранный слой — всё ниже него в этой стадии пересобрано.
 2. **`.dockerignore`.** Выключите `.dockerignore`, соберите, нажмите «Изменить README» и соберите ещё раз. README стал частью контекста, и его правка сбросила `COPY . .` и `go build`. Включите `.dockerignore` и повторите — все слои из кэша. Заметили, что при выключенном `.dockerignore` копия бинаря в финальную стадию всё равно взялась из кэша? Бинарь от README не зависит, а `COPY --from` сравнивает содержимое.
-3. **Multi-stage и cache mount.** Выключите multi-stage и соберите: образ раздулся до сотен мегабайт — в него попали компилятор, модули и кэш. Включите обратно. Потом переключите cache mount и соберите: флаг `--mount` — часть текста инструкции, поэтому смена флага — промах. А с включённым cache mount правка `main.go` пересобирает `go build` заметно быстрее: компилятор переиспользует свой кэш.
+3. **Multi-stage и cache mount.** Выключите multi-stage и соберите: вместо 17 МБ образ весит 865 МБ — в него попал базовый образ с компилятором и исходниками. Модулей и кэша компилятора в нём нет: с включённым cache mount они лежат в смонтированном каталоге, а в слой `go build` попадает только бинарь. Теперь выключите и cache mount и соберите ещё раз: 1270 МБ — модули и кэш компилятора легли в слои, как в нашем наивном образе (его слой `go build` — 142 МБ). Включите оба обратно. Потом переключите cache mount и соберите: флаг `--mount` — часть текста инструкции, поэтому смена флага — промах. А с включённым cache mount правка `main.go` пересобирает `go build` заметно быстрее: компилятор переиспользует свой кэш.
 
 <SelfCheck question="Почему в первом опыте при правильном порядке слой «COPY --from=build» пересобрался, а во втором (README без .dockerignore) — нет, хотя go build пересобирался в обоих?">
 
@@ -604,7 +599,7 @@ messenger/
 └── docs/adr/
     └── 0007-distroless-вместо-scratch-и-alpine.md   # new
 course/
-├── modules/01-go-service/examples/dockerfiles/      # naive, alpine, scratch — для сравнения
+├── modules/01-go-service/examples/dockerfiles/      # naive, alpine, scratch — для сравнения; whiteout — опыт с rm и ARG
 └── scripts/check-images.ts     # npm run check:images
 ```
 
