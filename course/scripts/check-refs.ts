@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { hasRegion, scanSnippetRefs } from './snippet-regions.ts'
 
 const COURSE_DIR = fileURLToPath(new URL('..', import.meta.url))
@@ -37,6 +37,6 @@ export function checkSnippetRefs(): number {
   return total
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   console.log(`Ссылки <<< на код — без ошибок (ссылок: ${checkSnippetRefs()}).`)
 }

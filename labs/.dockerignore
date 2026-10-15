@@ -1,2 +1,8 @@
+# Контекст сборки лаб — каталог labs/ (compose: context: ..). Белый список: нужно только то,
+# что копируют Dockerfile'ы 0b (go.mod, 0b) и 1c (go.mod, 1c).
+*
+!go.mod
+!0b
+!1c
 0b/captures
 0b/dns

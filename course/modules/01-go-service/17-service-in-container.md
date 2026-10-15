@@ -467,7 +467,7 @@ GOMAXPROCS: 2
 Образ из урока 1.16 уже работает от пользователя 65532. Compose добавляет ещё четыре слоя защиты по принципу <T id="least-privilege">наименьших привилегий</T>: процессу — только то, что ему нужно.
 
 - **`read_only: true` + `tmpfs: /tmp`.** Корневая файловая система контейнера — только для чтения. Атакующий, получивший выполнение кода, не сможет записать в образ свою программу или поправить конфиг. `/tmp` — в памяти, на случай, если библиотеке понадобится временный файл. Мессенджеру не нужно и это, но `/tmp` ожидают многие пакеты стандартной библиотеки, и без него ошибка всплыла бы в неожиданном месте;
-- **`cap_drop: [ALL]`.** Root в Linux — это набор отдельных привилегий, <T id="linux-capability">capabilities</T>: сменить владельца файла, открыть порт ниже 1024, трассировать чужой процесс. Docker по умолчанию оставляет контейнеру больше десятка из них. Наш процесс не root, а порт у него 8080, так что ему не нужна ни одна. В `/proc/<pid>/status` контейнера `CapEff: 0000000000000000`;
+- **`cap_drop: [ALL]`.** Root в Linux — это набор отдельных привилегий, <T id="linux-capability">capabilities</T>: сменить владельца файла, открыть порт ниже 1024, трассировать чужой процесс. Docker по умолчанию оставляет контейнеру больше десятка из них. Наш процесс не root, а порт у него 8080, так что ему не нужна ни одна. В `/proc/<pid>/status` контейнера `CapEff: 0000000000000000`, но это ещё не доказательство: у не-root процесса `CapEff` нулевой и без `cap_drop`. Эффект `cap_drop` виден в `CapBnd` — ограничивающем наборе, потолке, выше которого процесс не получит права никак (у обычного не-root контейнера Docker там `00000000a80425fb`, у нашего `0000000000000000`);
 - **`no-new-privileges:true`.** Запрещает процессу и его потомкам **получать** новые привилегии: через setuid-бинарь (`sudo`, `su`) или файловые capabilities. Даже если в образ как-то попадёт setuid-программа, запуск её ничего не даст. В `/proc/<pid>/status` — `NoNewPrivs: 1`;
 - **`mem_limit: 256m`, `cpus: 1`.** Лимиты cgroup: в `memory.max` контейнера — `268435456`, в `cpu.max` — `100000 100000` (100 мс квоты на каждые 100 мс периода, одно ядро).
 
@@ -700,13 +700,14 @@ $ docker inspect -f '{{json .Config.Entrypoint}} {{json .Config.Cmd}} user={{.Co
 ```text
 $ PID=$(docker inspect -f '{{.State.Pid}}' messenger-messenger-1)
 $ docker run --rm --privileged --pid=host busybox:1.37@sha256:bdf5… \
-    nsenter -t 1 -m -- grep -E '^(Name|NSpid|SigIgn|SigCgt|Uid|CapEff|NoNewPrivs)' /proc/$PID/status
+    nsenter -t 1 -m -- grep -E '^(Name|NSpid|SigIgn|SigCgt|Uid|CapEff|CapBnd|NoNewPrivs)' /proc/$PID/status
 Name:	messenger
 Uid:	65532	65532	65532	65532
 NSpid:	1693	1
 SigIgn:	0000000000000000
 SigCgt:	fffffffd7fc1feff
 CapEff:	0000000000000000
+CapBnd:	0000000000000000
 NoNewPrivs:	1
 $ docker run --rm --privileged --pid=host --cgroupns=host busybox:1.37@sha256:bdf5… sh -c \
     "CG=/sys/fs/cgroup\$(cut -d: -f3 /proc/$PID/cgroup); for f in memory.max cpu.max memory.current pids.current; do echo \"\$f: \$(cat \$CG/\$f)\"; done"
@@ -719,7 +720,7 @@ CONTAINER ID   NAME                    CPU %     MEM USAGE / LIMIT   MEM %     N
 6989b3c73856   messenger-messenger-1   2.98%     45.7MiB / 256MiB    17.85%    9.9kB / 7.01kB   4.1kB / 0B   8
 ```
 
-`NSpid: 1693 1`: в VM процесс — 1693, в своём namespace — 1. Обработчики сигналов, пустые capabilities и `NoNewPrivs` — те самые, что мы разбирали в теории. `memory.max` — 256 МиБ, `cpu.max` — одно ядро. Мессенджер со всеми данными в памяти занимает <N>45,7 МиБ</N>. `PIDS 8` — это потоки, а не процессы: у Go-программы их несколько (`GOMAXPROCS` = 2 плюс системные).
+`NSpid: 1693 1`: в VM процесс — 1693, в своём namespace — 1. Обработчики сигналов, пустой `CapBnd` и `NoNewPrivs` — те самые, что мы разбирали в теории. Нулевой `CapEff` показывает лишь, что процесс не root, а вот нулевой `CapBnd` — результат `cap_drop: [ALL]`: у не-root контейнера без него потолок остаётся `00000000a80425fb`. `memory.max` — 256 МиБ, `cpu.max` — одно ядро. Мессенджер со всеми данными в памяти занимает <N>45,7 МиБ</N>. `PIDS 8` — это потоки, а не процессы: у Go-программы их несколько (`GOMAXPROCS` = 2 плюс системные).
 
 ### Остановка
 

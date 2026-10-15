@@ -177,7 +177,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run check:go
       - run: npm run check:refs
-      - run: npm run build
+      # check:base сам собирает сайт под подпутём /check-base/ (как на Pages) и ищет ссылки мимо базы.
+      - run: npm run check:base
 
   labs:
     needs: changes
