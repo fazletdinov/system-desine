@@ -42,7 +42,7 @@ const dispatch = (action: ChainAction): void => {
 </template>
 
 <style scoped>
-.intro { margin: 0 0 10px; font-size: 14px; color: var(--viz-muted); }
+.intro { margin: 0 0 10px; font-size: 14px; color: var(--vp-c-text-2); }
 .panel { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .panel button { min-width: 36px; min-height: 36px; padding: 0 12px; border: 2px solid var(--vp-c-divider); border-radius: 8px; background: var(--vp-c-bg); color: var(--vp-c-text-1); font: inherit; cursor: pointer; }
 .panel button.on { border-color: var(--vp-c-brand-1); font-weight: 700; }

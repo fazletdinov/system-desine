@@ -16,7 +16,7 @@ const runtimeStage = computed(() => props.state.lastBuild.filter((l) => l.stage 
 const built = computed(() => props.state.lastBuild.length > 0)
 // «Изменён с прошлой сборки»: у файла есть правка, которой не было при последней сборке.
 const lastBuiltVersions = computed(() => props.state.builtVersions)
-const dirty = (id: FileId): boolean => props.state.versions[id] !== lastBuiltVersions.value[id]
+const dirty = (id: FileId): boolean => built.value && props.state.versions[id] !== lastBuiltVersions.value[id]
 
 const fmt = (l: Layer): string => (l.seconds === 0 ? '0 с' : `${l.seconds < 1 ? l.seconds.toFixed(1) : Math.round(l.seconds)} с`)
 </script>
@@ -65,7 +65,7 @@ const fmt = (l: Layer): string => (l.seconds === 0 ? '0 с' : `${l.seconds < 1 ?
 <style scoped>
 .lc { container-type: inline-size; color: var(--viz-text); }
 .totals { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 10px; }
-.big { margin: 0; font-size: 14px; color: var(--viz-muted); }
+.big { margin: 0; font-size: 14px; color: var(--viz-text); }
 .big b { margin-left: 4px; font-size: 26px; font-variant-numeric: tabular-nums; color: var(--viz-text); }
 .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 .col { padding: 8px 10px; border: 2px solid var(--viz-edge); border-radius: 10px; background: var(--viz-node-bg); min-width: 0; }
@@ -80,7 +80,7 @@ code { font-size: 12px; overflow-wrap: anywhere; }
 .badge { padding: 1px 6px; border: 2px solid var(--viz-edge); border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
 .badge.cached { border-color: var(--viz-response); }
 .badge.built { border-color: var(--viz-cache); }
-.sec { min-width: 36px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--viz-muted); }
+.sec { min-width: 36px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--viz-text); }
 .files { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
 .files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 8px; border: 2px solid var(--viz-edge); border-radius: 8px; background: var(--viz-node-bg); font-size: 13px; }
 .files li.dirty { border-color: var(--viz-active); border-style: dashed; }

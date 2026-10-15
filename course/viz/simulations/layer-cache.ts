@@ -55,8 +55,26 @@ interface Instr {
 const BASE: Instr = { id: 'base', text: 'FROM golang:1.26 AS build', stage: 'build', copies: [], seconds: 20, mb: 850 }
 const WORKDIR: Instr = { id: 'workdir', text: 'WORKDIR /src', stage: 'build', copies: [], seconds: 0.1, mb: 0 }
 const COPY_MOD: Instr = { id: 'copy-mod', text: 'COPY go.mod go.sum ./', stage: 'build', copies: ['gomod'], seconds: 0.1, mb: 0 }
-const DOWNLOAD: Instr = { id: 'download', text: 'RUN go mod download', stage: 'build', copies: [], seconds: 25, mb: 120 }
-const BUILD: Instr = { id: 'build', text: 'RUN go build -o /out/messenger ./cmd/messenger', stage: 'build', copies: [], seconds: 40, mb: 300 }
+// Флаг --mount входит в текст инструкции, а значит и в ключ слоя: BuildKit считает
+// инструкцию с другим --mount другой операцией и промахивается мимо кэша.
+const downloadInstr = (mount: boolean): Instr => ({
+  id: 'download',
+  text: mount ? 'RUN --mount=type=cache,target=/go/pkg/mod go mod download' : 'RUN go mod download',
+  stage: 'build',
+  copies: [],
+  seconds: 25,
+  mb: 120,
+})
+const buildInstr = (mount: boolean): Instr => ({
+  id: 'build',
+  text: mount
+    ? 'RUN --mount=type=cache,target=/root/.cache/go-build go build -trimpath -o /out/messenger ./cmd/messenger'
+    : 'RUN go build -trimpath -o /out/messenger ./cmd/messenger',
+  stage: 'build',
+  copies: [],
+  seconds: 40,
+  mb: 300,
+})
 const RUNTIME: Instr = { id: 'runtime', text: 'FROM gcr.io/distroless/static-debian13:nonroot', stage: 'runtime', copies: [], seconds: 3, mb: 2 }
 const COPY_BIN: Instr = { id: 'copy-bin', text: 'COPY --from=build /out/messenger /messenger', stage: 'runtime', copies: [], seconds: 0.2, mb: 15 }
 
@@ -69,9 +87,11 @@ const copySrc = (ignore: boolean): Instr => ({
   mb: 0,
 })
 
-function program(s: Pick<LayerState, 'order' | 'dockerignore' | 'multiStage'>): Instr[] {
+function program(s: Pick<LayerState, 'order' | 'dockerignore' | 'multiStage' | 'cacheMount'>): Instr[] {
   const src = copySrc(s.dockerignore)
-  const build = s.order === 'correct' ? [BASE, WORKDIR, COPY_MOD, DOWNLOAD, src, BUILD] : [BASE, WORKDIR, src, DOWNLOAD, BUILD]
+  const download = downloadInstr(s.cacheMount)
+  const compile = buildInstr(s.cacheMount)
+  const build = s.order === 'correct' ? [BASE, WORKDIR, COPY_MOD, download, src, compile] : [BASE, WORKDIR, src, download, compile]
   return s.multiStage ? [...build, RUNTIME, COPY_BIN] : build
 }
 
@@ -150,7 +170,7 @@ function captionFor(s: LayerState): Caption {
   return [
     { text: `Первый пересобранный слой — «${first.instruction}»; после него ` },
     term('кэш сборки', 'build-cache'),
-    { text: ' не помогает и пересобирается всё. ' },
+    { text: ' не помогает: пересобираются все слои этой стадии. ' },
     { text: `Сборка ~${Math.round(total)} с, ` },
     term('образ', 'container-image'),
     { text: ` ${s.imageMB} МБ.` },

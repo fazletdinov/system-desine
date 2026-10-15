@@ -47,6 +47,11 @@ describe('layer-cache', () => {
     const t = (s: typeof on) => s.lastBuild.find((l) => l.id === 'build')?.seconds ?? 0
     expect(t(on)).toBeLessThan(t(off))
   })
+  it('переключение cache mount меняет инструкцию и промахивается мимо кэша', () => {
+    const s = run({ type: 'build' }, { type: 'cacheMount', on: false }, { type: 'build' })
+    expect(s.lastBuild.find((l) => l.id === 'build')?.status).toBe('built')
+    expect(s.lastBuild.find((l) => l.id === 'base')?.status).toBe('cached')
+  })
   it('итоговый образ — только слои финальной стадии', () => {
     const s = run({ type: 'build' })
     expect(s.imageMB).toBeLessThan(30)
