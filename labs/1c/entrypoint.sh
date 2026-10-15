@@ -5,7 +5,6 @@
 # для дочерних групп нельзя, пока в группе есть процессы. Поэтому переносим все процессы
 # в лист init и только потом включаем cpu, memory и pids — так же поступает entrypoint
 # образа docker:dind.
-# endregion entrypoint
 set -eu
 
 cg=/sys/fs/cgroup
@@ -18,3 +17,4 @@ if [ -w "$cg/cgroup.subtree_control" ] && ! grep -qw memory "$cg/cgroup.subtree_
 	echo "+cpu +memory +pids" >"$cg/cgroup.subtree_control"
 fi
 exec "$@"
+# endregion entrypoint
