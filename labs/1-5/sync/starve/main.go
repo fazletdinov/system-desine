@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,10 +20,17 @@ const (
 	starvationGap = time.Millisecond     // порог из sync.Mutex: ждёшь дольше — замок передают тебе напрямую
 )
 
+// waitBuckets — верхние границы корзин гистограммы ожиданий. 1–3 мс — «одно удержание»
+// (holdTime), 3–5 мс — «два удержания»: так видно, сколько раундов проиграла быстрая горутина.
+var waitBuckets = []time.Duration{100 * time.Microsecond, time.Millisecond, 3 * time.Millisecond, 5 * time.Millisecond}
+
+var bucketNames = []string{"<0,1 мс", "0,1–1 мс", "1–3 мс", "3–5 мс", "≥5 мс"}
+
 type stats struct {
 	acquisitions int
 	maxWait      time.Duration
-	longWaits    int // ожидания дольше starvationGap
+	longWaits    int   // ожидания дольше starvationGap
+	hist         []int // по корзине на waitBuckets и одна сверх последней границы
 }
 
 // #region starve
@@ -49,12 +57,35 @@ func quick(ctx context.Context, mu *sync.Mutex, st *stats) {
 
 // record вызывается под замком mu и пишет в stats только горутина-владелец,
 // поэтому собственной синхронизации stats не нужно.
+// #region histogram
 func (s *stats) record(wait time.Duration) {
 	s.acquisitions++
 	s.maxWait = max(s.maxWait, wait)
 	if wait > starvationGap {
 		s.longWaits++
 	}
+	if s.hist == nil {
+		s.hist = make([]int, len(waitBuckets)+1)
+	}
+	i := 0
+	for i < len(waitBuckets) && wait >= waitBuckets[i] {
+		i++
+	}
+	s.hist[i]++
+}
+
+// #endregion histogram
+
+func (s *stats) histogram() string {
+	parts := make([]string, len(bucketNames))
+	for i, name := range bucketNames {
+		n := 0
+		if s.hist != nil {
+			n = s.hist[i]
+		}
+		parts[i] = fmt.Sprintf("%s: %d", name, n)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func milliseconds(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
@@ -75,4 +106,5 @@ func main() {
 	fmt.Printf("держатель (держит %v): захватов %d, макс. ожидание %.2f мс\n", holdTime, heavy.acquisitions, milliseconds(heavy.maxWait))
 	fmt.Printf("быстрая горутина:       захватов %d, макс. ожидание %.2f мс, ожиданий дольше %v: %d\n",
 		light.acquisitions, milliseconds(light.maxWait), starvationGap, light.longWaits)
+	fmt.Printf("ожидания быстрой горутины: %s\n", light.histogram())
 }

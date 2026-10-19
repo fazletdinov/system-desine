@@ -1,8 +1,10 @@
-// Пакет synclab — бенчмарки лабы 1.5: цена Mutex, RWMutex и atomic под нагрузкой
-// и ложное разделение строки кэша (false sharing).
+// Пакет synclab — бенчмарки лабы 1.5: цена Mutex, RWMutex и atomic под нагрузкой,
+// длинная секция чтения, CAS-цикл, шардированный счётчик и ложное разделение строки кэша (false sharing).
 package synclab
 
 import (
+	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -110,3 +112,104 @@ func BenchmarkFalseSharingPadded(b *testing.B) {
 }
 
 // #endregion padding
+
+// #region longread
+// Длинная секция чтения: читатель под замком обходит срез целиком. Сравнимая пара —
+// LongReadMutex и LongReadRWMutex с одинаковой работой; размер среза задаёт длину секции.
+var longReadSizes = []int{256, 4096}
+
+func sumInts(xs []int) int {
+	s := 0
+	for _, v := range xs {
+		s += v
+	}
+	return s
+}
+
+func BenchmarkLongReadMutex(b *testing.B) {
+	for _, n := range longReadSizes {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			var mu sync.Mutex
+			data := make([]int, n)
+			b.RunParallel(func(pb *testing.PB) {
+				s := 0
+				for pb.Next() {
+					mu.Lock()
+					s += sumInts(data)
+					mu.Unlock()
+				}
+				_ = s
+			})
+		})
+	}
+}
+
+func BenchmarkLongReadRWMutex(b *testing.B) {
+	for _, n := range longReadSizes {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			var mu sync.RWMutex
+			data := make([]int, n)
+			b.RunParallel(func(pb *testing.PB) {
+				s := 0
+				for pb.Next() {
+					mu.RLock()
+					s += sumInts(data)
+					mu.RUnlock()
+				}
+				_ = s
+			})
+		})
+	}
+}
+
+// #endregion longread
+
+// #region casloop
+// addCAS — приращение CAS-циклом: прочитать, вычислить, попробовать заменить; если ячейку
+// успели изменить, повторить. Возвращает число неудачных попыток.
+func addCAS(n *atomic.Int64, delta int64) (retries int) {
+	for {
+		old := n.Load()
+		if n.CompareAndSwap(old, old+delta) {
+			return retries
+		}
+		retries++
+	}
+}
+
+// Пара для CounterAtomic: тот же счётчик, но неблокирующий алгоритм вместо одной инструкции Add.
+func BenchmarkCounterCASLoop(b *testing.B) {
+	var n, retries atomic.Int64
+	b.RunParallel(func(pb *testing.PB) {
+		r := 0
+		for pb.Next() {
+			r += addCAS(&n, 1)
+		}
+		retries.Add(int64(r))
+	})
+	b.ReportMetric(float64(retries.Load())/float64(b.N), "retries/op")
+}
+
+// #endregion casloop
+
+// #region sharded
+// slot — ячейка шардированного счётчика: паддинг уводит соседнюю ячейку в другую строку кэша.
+type slot struct {
+	n atomic.Int64
+	_ [cacheLine - 8]byte
+}
+
+// Пара для CounterAtomic: у каждой горутины RunParallel своя ячейка, общей строки кэша нет.
+// Сумма — обход ячеек; её здесь не считаем, меряем только запись.
+func BenchmarkShardedCounter(b *testing.B) {
+	slots := make([]slot, runtime.GOMAXPROCS(0)) // RunParallel запускает по горутине на P
+	var next atomic.Int64
+	b.RunParallel(func(pb *testing.PB) {
+		mine := &slots[int(next.Add(1)-1)%len(slots)]
+		for pb.Next() {
+			mine.n.Add(1)
+		}
+	})
+}
+
+// #endregion sharded

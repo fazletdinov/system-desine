@@ -160,6 +160,8 @@ light_max=$(first_number "$out" 'быстрая горутина: .*макс\. �
 $out"
 [ -n "$light_max" ] && less "$light_max" 250 || fail "sync/starve: максимальное ожидание быстрой горутины '$light_max' мс, ждали меньше 250:
 $out"
+echo "$out" | grep -q '^ожидания быстрой горутины: <0,1 мс: [0-9]' || fail "sync/starve: нет строки с гистограммой ожиданий:
+$out"
 ok "sync/starve: быстрая горутина получила замок $light_n раз, ждала не дольше $light_max мс"
 
 # --- 9. patterns/leak: утечка горутин (labdemo) ---
@@ -193,7 +195,7 @@ ok "patterns/limit: пик $free_peak горутин без лимита и $sem
 # --- 11. бенчмарки: работоспособность (числа снимаются отдельно, см. README) ---
 out=$(go test -run='^$' -bench=. -benchtime=100ms ./1-5/sync/ ./1-5/sched/ 2>&1) || fail "бенчмарки упали:
 $out"
-for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads; do
+for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkLongReadMutex BenchmarkLongReadRWMutex BenchmarkCounterCASLoop BenchmarkShardedCounter BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads; do
 	echo "$out" | grep -q "^$name" || fail "в бенчмарках нет $name:
 $out"
 done
