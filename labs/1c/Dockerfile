@@ -6,7 +6,7 @@
 FROM busybox:1.38@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS rootfs
 # endregion rootfs
 
-FROM golang:1.27.0-trixie@sha256:df98008ecd2b0ecc9f0a94d1b07e3564a9c92b555369b33d9b5f60d0765b2db7 AS build
+FROM golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c AS build
 WORKDIR /src
 COPY go.mod ./
 COPY 1c ./1c
@@ -14,7 +14,7 @@ COPY 1c ./1c
 RUN CGO_ENABLED=0 go build -o /out/minicontainer ./1c/cmd/minicontainer \
  && CGO_ENABLED=0 go build -o /out/hog ./1c/cmd/hog
 
-FROM golang:1.27.0-trixie@sha256:df98008ecd2b0ecc9f0a94d1b07e3564a9c92b555369b33d9b5f60d0765b2db7
+FROM golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c
 RUN apt-get update \
  && apt-get install -y --no-install-recommends iproute2 procps util-linux \
  && rm -rf /var/lib/apt/lists/*
