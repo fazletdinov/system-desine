@@ -127,10 +127,13 @@ ok "race/flagloop: обычный bool — $plain, atomic.Bool — заверш�
 # --- 7. race/iface: гонка за переменную-интерфейс (labdemo) ---
 build iface ./1-5/race/iface -tags labdemo
 # Порча интерфейса — гонка на удачу: одна попытка из трёх должна упасть (обычно падает каждая).
+# Обе проверки iface идут с GOMAXPROCS=4: на одном P программа не падает, а -race не печатает
+# ни одного отчёта (стек прошлого обращения успевает уйти из истории детектора, урок 1.5.3,
+# «Память у него конечная»). На раннере с одним vCPU четыре P всё равно чередуются потоками ОС.
 crashed=no
 for _ in 1 2 3; do
 	set +e
-	out=$("$bin/iface" 2>&1)
+	out=$(GOMAXPROCS=4 "$bin/iface" 2>&1)
 	code=$?
 	set -e
 	if [ "$code" -ne 0 ] && echo "$out" | grep -Eq 'SIGSEGV|fatal error|panic:'; then
@@ -142,7 +145,7 @@ done
 $out"
 build iface-race ./1-5/race/iface -tags labdemo -race
 set +e
-race_out=$("$bin/iface-race" 2>&1)
+race_out=$(GOMAXPROCS=4 "$bin/iface-race" 2>&1)
 set -e
 echo "$race_out" | grep -q 'WARNING: DATA RACE' || fail "race/iface -race: нет WARNING: DATA RACE:
 $race_out"
