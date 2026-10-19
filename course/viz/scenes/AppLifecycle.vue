@@ -13,6 +13,8 @@ const OPTIONS = [
 ]
 const variant = ref<LifecycleVariant>('signal')
 const steps = computed(() => appLifecycleScenario(variant.value))
+const drainStart = computed(() => steps.value.find((s) => s.state.http === 'draining')?.state.t ?? null)
+const exitAt = computed(() => steps.value.find((s) => s.state.exit !== null)?.state.t ?? null)
 const onVariant = (id: string): void => {
   variant.value = id === 'component-failure' ? 'component-failure' : id === 'second-signal' ? 'second-signal' : 'signal'
 }
@@ -23,7 +25,7 @@ const onVariant = (id: string): void => {
     <VariantTabs :options="OPTIONS" :model-value="variant" label="Что запускает остановку" @update:model-value="onVariant" />
     <Player :steps="steps" label="Жизненный цикл сервиса: остановка по сигналу и по сбою">
       <template #default="{ step }">
-        <AppLifecycleView :state="step.state" />
+        <AppLifecycleView :state="step.state" :drain-start="drainStart" :exit-at="exitAt" />
       </template>
     </Player>
   </VizFrame>

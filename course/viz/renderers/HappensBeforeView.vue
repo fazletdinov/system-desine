@@ -4,7 +4,7 @@ import type { HbEvent, HbFrame } from '../simulations/happens-before'
 
 const props = defineProps<{ state: HbFrame }>()
 
-// Геометрия: viewBox 360 — подписи ≥ 12 px на экране 375 px.
+// Геометрия: viewBox 360 сжимается до ≈ 320 px (≈ 0,89), поэтому кегль в SVG 14 даёт ≈ 12,4 px на экране 375 px.
 const W = 360
 const ROW = 46
 const TOP = 34
@@ -75,14 +75,14 @@ const outcomeText = computed(() => (props.state.outcome === 'any' ? 'любой:
 .badge.bad { border-left-color: var(--viz-error); }
 .badge.mid { border-left-color: var(--viz-active); }
 svg { display: block; width: 100%; height: auto; }
-.title { font-size: 15px; font-weight: 700; fill: var(--viz-text); }
+.title { font-size: 16px; font-weight: 700; fill: var(--viz-text); }
 .axis { stroke: var(--viz-edge); stroke-width: 2; stroke-dasharray: 4 4; }
 .order { stroke: var(--viz-muted); stroke-width: 2; }
 .edge { stroke: var(--viz-response); stroke-width: 3; }
 .head-order { fill: var(--viz-muted); }
 .head-edge { fill: var(--viz-response); }
 .ev { fill: var(--viz-node-bg); stroke: var(--viz-service); stroke-width: 2; }
-.op { font-size: 12px; font-family: ui-monospace, monospace; fill: var(--viz-text); }
+.op { font-size: 14px; font-family: ui-monospace, monospace; fill: var(--viz-text); }
 .legend { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--viz-muted); }
 .legend li { margin-top: 2px; }
 .sw { display: inline-block; width: 26px; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--viz-muted); }

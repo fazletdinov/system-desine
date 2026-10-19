@@ -21,9 +21,13 @@ const HANDOFF_TEXT = {
     <p class="clock">Время: <strong>{{ fmt(state.t) }} мс</strong></p>
     <div class="track" role="img" :aria-label="`Шкала 0–${T_MAX} мс, сейчас ${state.t} мс, порог ожидания ${STARVATION_MS} мс`">
       <div class="elapsed" :style="{ width: pct(state.t) }"></div>
-      <div v-for="w in waiters" :key="w.g" class="wait" :style="{ left: pct(w.since), width: pct(state.t - w.since) }" :class="{ over: w.waited > STARVATION_MS }"></div>
     </div>
-    <p class="scale">Полоса под шкалой — ожидание горутины; она краснеет, когда ожидание превысило порог {{ STARVATION_MS }} мс.</p>
+    <div class="waits" :style="{ height: `${Math.max(waiters.length, 1) * 16}px` }">
+      <div v-for="(w, i) in waiters" :key="w.g" class="wait" :style="{ top: `${i * 16}px`, left: pct(w.since), width: pct(state.t - w.since) }" :class="{ over: w.waited > STARVATION_MS }"><span class="who">{{ w.g }}</span></div>
+      <span v-if="waiters.length > 0" class="limit" :style="{ left: pct(waiters[0]!.since + STARVATION_MS) }" aria-hidden="true"></span>
+    </div>
+    <p v-if="waiters.length > 0" class="limit-lbl" :style="{ marginLeft: `min(${pct(waiters[0]!.since + STARVATION_MS)}, calc(100% - 9em))` }">▲ порог {{ STARVATION_MS }} мс для {{ waiters[0]!.g }}: на {{ fmt(waiters[0]!.since + STARVATION_MS) }} мс</p>
+    <p class="scale">Каждая полоса под шкалой — ожидание одной горутины; она краснеет, когда ожидание превысило порог {{ STARVATION_MS }} мс. Штриховая черта — порог первого в очереди.</p>
     <div class="cards">
       <div class="card"><h4>Владелец замка</h4><p>{{ state.owner ?? 'замок свободен' }}</p></div>
       <div class="card"><h4>Приходит на CPU</h4><p>{{ state.arriving ?? 'никого' }}</p></div>
@@ -48,9 +52,13 @@ h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--viz-muted); }
 .clock { margin: 0 0 6px; font-size: 14px; }
 .track { position: relative; height: 12px; margin: 0 0 6px; border: 2px solid var(--viz-edge); border-radius: 6px; }
 .elapsed { height: 100%; background: var(--viz-request); border-radius: 4px; transition: width 0.3s; }
-.wait { position: absolute; top: 14px; height: 8px; border-radius: 4px; background: var(--viz-active); }
+.waits { position: relative; margin: 0 2px; }
+.wait { position: absolute; height: 12px; min-width: 2px; border-radius: 4px; background: var(--viz-active); }
+.who { position: absolute; left: calc(100% + 4px); font-size: 11px; line-height: 12px; color: var(--viz-text); white-space: nowrap; }
+.limit { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed var(--viz-error); }
+.limit-lbl { margin: 2px 0 0; font-size: 12px; color: var(--viz-muted); }
 .wait.over { background: var(--viz-error); }
-.scale { margin: 14px 0 8px; font-size: 12px; color: var(--viz-muted); }
+.scale { margin: 6px 0 8px; font-size: 12px; color: var(--viz-muted); }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 8px; }
 .card { min-width: 0; padding: 6px 10px; border: 2px solid var(--viz-edge); border-left-width: 8px; border-radius: 8px; }
 .card.ok { border-left-color: var(--viz-response); }

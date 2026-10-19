@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { DRAIN_DELAY_S, HASH_CONCURRENCY, HASH_QUEUE, TIMELINE_S, type BackState, type HttpState, type LifecycleFrame } from '../simulations/app-lifecycle'
+import { DRAIN_DELAY_S, SHUTDOWN_TIMEOUT_S, HASH_CONCURRENCY, HASH_QUEUE, TIMELINE_S, type BackState, type HttpState, type LifecycleFrame } from '../simulations/app-lifecycle'
 
-const props = defineProps<{ state: LifecycleFrame }>()
+// drainStart — t первого кадра с draining, exitAt — t кадра с кодом выхода; оба считает сцена по всему сценарию.
+const props = defineProps<{ state: LifecycleFrame; drainStart: number | null; exitAt: number | null }>()
+
+const drainEnd = computed(() => (props.drainStart === null ? null : props.drainStart + DRAIN_DELAY_S))
+// Выход раньше конца дренажа (второй сигнал): отметки нет, она ввела бы в заблуждение.
+const showDrainMark = computed(() => drainEnd.value !== null && (props.exitAt === null || props.exitAt >= drainEnd.value))
 
 const pct = (s: number): string => `${(s / TIMELINE_S) * 100}%`
 const fmt = (s: number): string => String(s).replace('.', ',')
@@ -28,9 +33,12 @@ const exitClass = computed(() => (props.state.exit === 0 ? 'ok' : 'bad'))
     <p class="clock">Время: <strong>{{ fmt(state.t) }} с</strong> на шкале до {{ TIMELINE_S }} с · событие: {{ state.note }}</p>
     <div class="track" role="img" :aria-label="`Шкала 0–${TIMELINE_S} с, сейчас ${state.t} с`">
       <div class="elapsed" :style="{ width: pct(state.t) }"></div>
-      <span class="tick" :style="{ left: pct(DRAIN_DELAY_S) }" aria-hidden="true"></span>
+      <span v-if="showDrainMark" class="tick" :style="{ left: pct(drainEnd ?? 0) }" aria-hidden="true"></span>
     </div>
-    <p class="scale">Черта на 5 с — конец DRAIN_DELAY; после неё начинается Shutdown (до 10 с).</p>
+    <p class="scale">
+      <template v-if="showDrainMark">Черта на {{ fmt(drainEnd ?? 0) }} с — конец DRAIN_DELAY ({{ DRAIN_DELAY_S }} с после начала дренажа); после неё начинается Shutdown (до {{ SHUTDOWN_TIMEOUT_S }} с).</template>
+      <template v-else>Второй сигнал пришёл раньше конца DRAIN_DELAY: до Shutdown дело не дошло.</template>
+    </p>
 
     <div class="lanes">
       <section class="lane" :class="httpClass" aria-label="HTTP-сервер">

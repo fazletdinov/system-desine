@@ -43,9 +43,16 @@ describe.each(['channel', 'mutex'] as const)('%s', (v) => {
     for (const s of happensBeforeScenario(v)) expect(s.state.raceReport).toBe(false)
   })
 
-  it('пути нет, пока ребро синхронизации не нарисовано', () => {
-    const first = happensBeforeScenario(v).find((s) => s.state.edges.length === 0 && s.state.g2.length > 0)
-    if (first !== undefined) expect(reachable(first.state, 'write', 'read')).toBe(false)
+  it('без ребра синхронизации пути от записи к чтению нет, с ребром есть', () => {
+    // Последний кадр до появления ребра: запись уже есть, путь к будущему чтению не построен.
+    const frames = happensBeforeScenario(v).map((s) => s.state)
+    const iEdge = frames.findIndex((f) => f.edges.length > 0)
+    expect(iEdge).toBeGreaterThan(0)
+    const before = frames[iEdge - 1]!
+    expect(before.edges).toEqual([])
+    expect([...before.g1, ...before.g2].some((e) => e.id === 'write')).toBe(true)
+    expect(reachable({ ...frames.at(-1)!, edges: [] }, 'write', 'read')).toBe(false)
+    expect(reachable(frames.at(-1)!, 'write', 'read')).toBe(true)
   })
 })
 
