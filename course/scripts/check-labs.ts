@@ -36,4 +36,10 @@ if (!scenario.includes('Все пять экспериментов прошли.
   console.error(`Сценарий лабы 1c:\n${scenario}`)
   process.exit(1)
 }
-console.log('Лабораторные: gofmt, go vet, go test -race, compose config и сценарий 1c — без ошибок.')
+// Сценарий лабы 1.5 — маленькие Go-программы без Docker; намеренные гонки и утечки собираются с тегом labdemo.
+const scenario15 = run('bash', ['1-5/scenario.sh'], 180_000)
+if (scenario15.trim().split('\n').at(-1) !== 'Лаба 1.5: все проверки прошли.') {
+  console.error(`Сценарий лабы 1.5:\n${scenario15}`)
+  process.exit(1)
+}
+console.log('Лабораторные: gofmt, go vet, go test -race, compose config и сценарии 1c и 1.5 — без ошибок.')

@@ -197,7 +197,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: labs/go.mod
       # check-labs.ts не тянет npm-зависимостей: npm ci не нужен. Сценарий 1c запускает
-      # privileged-контейнер — раннеры GitHub это разрешают.
+      # privileged-контейнер — раннеры GitHub это разрешают. Сценарий лабы 1.5 (scenario.sh)
+      # идёт там же: Go-программы без Docker, намеренные гонки собираются с тегом labdemo.
       - run: node scripts/check-labs.ts
         working-directory: course
 
