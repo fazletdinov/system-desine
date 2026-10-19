@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -187,5 +188,130 @@ func testCanceledContext(t *testing.T, s idempotency.Store) {
 	// Отменённые вызовы ничего не записали: ключ свободен.
 	if _, created := reserve(t, s, "u1", "k", pending("A"), t0); !created {
 		t.Fatal("отменённый вызов занял ключ")
+	}
+}
+
+// SweepStore — хранилище, которое умеет и ключи, и фоновую очистку. Псевдоним, а не
+// новый тип: подходит и функция, возвращающая interface{ Store; Sweeper }.
+type SweepStore = interface {
+	idempotency.Store
+	idempotency.Sweeper
+}
+
+// RunSweeper прогоняет контракт очистки. Каждая проверка получает своё, пустое хранилище.
+func RunSweeper(t *testing.T, newStore func(t *testing.T) SweepStore) {
+	t.Helper()
+	tests := []struct {
+		name string
+		fn   func(t *testing.T, s SweepStore)
+	}{
+		{"удаляет только просроченные", testSweepExpiredOnly},
+		{"запись «в работе» живёт до TTL", testSweepPending},
+		{"повторная очистка ничего не удаляет", testSweepRepeat},
+		{"много просроченных — все удалены", testSweepMany},
+		{"отменённый контекст", testSweepCanceled},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tt.fn(t, newStore(t))
+		})
+	}
+}
+
+func sweep(t *testing.T, s idempotency.Sweeper, now time.Time) int {
+	t.Helper()
+	removed, err := s.Sweep(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return removed
+}
+
+// alive — запись по ключу ещё есть: Reserve её не занимает, а возвращает.
+func alive(t *testing.T, s idempotency.Store, key string, now time.Time) bool {
+	t.Helper()
+	_, created := reserve(t, s, "u1", key, pending("probe"), now)
+	return !created
+}
+
+func testSweepExpiredOnly(t *testing.T, s SweepStore) {
+	reserve(t, s, "u1", "old", pending("A"), t0)
+	complete(t, s, "u1", "old")
+	later := t0.Add(time.Hour)
+	fresh := pending("B")
+	fresh.ExpiresAt = later.Add(idempotency.TTL)
+	reserve(t, s, "u1", "fresh", fresh, later)
+	expiry := t0.Add(idempotency.TTL)
+
+	if n := sweep(t, s, expiry.Add(-time.Nanosecond)); n != 0 {
+		t.Fatalf("за наносекунду до ExpiresAt удалено %d записей", n)
+	}
+	// Граница включительна — как у Reserve: в момент ExpiresAt запись просрочена.
+	if n := sweep(t, s, expiry); n != 1 {
+		t.Fatalf("в момент ExpiresAt удалено %d записей, ждали 1", n)
+	}
+	if !alive(t, s, "fresh", expiry) {
+		t.Fatal("очистка удалила живую запись")
+	}
+}
+
+func testSweepPending(t *testing.T, s SweepStore) {
+	reserve(t, s, "u1", "k", pending("A"), t0) // Reserve без Complete — «в работе»
+	if n := sweep(t, s, t0.Add(idempotency.TTL-time.Second)); n != 0 {
+		t.Fatalf("до TTL удалено %d записей «в работе»", n)
+	}
+	if !alive(t, s, "k", t0) {
+		t.Fatal("запись «в работе» пропала до TTL")
+	}
+	// После TTL «в работе» удаляется так же, как готовая: Reserve её всё равно перезаписал бы.
+	if n := sweep(t, s, t0.Add(idempotency.TTL)); n != 1 {
+		t.Fatalf("после TTL удалено %d записей «в работе», ждали 1", n)
+	}
+}
+
+func testSweepRepeat(t *testing.T, s SweepStore) {
+	reserve(t, s, "u1", "k", pending("A"), t0)
+	expiry := t0.Add(idempotency.TTL)
+	if n := sweep(t, s, expiry); n != 1 {
+		t.Fatalf("удалено %d, ждали 1", n)
+	}
+	if n := sweep(t, s, expiry); n != 0 {
+		t.Fatalf("повторная очистка удалила %d записей", n)
+	}
+}
+
+// Записей больше, чем умещается в одну порцию любой разумной реализации.
+func testSweepMany(t *testing.T, s SweepStore) {
+	const expired, live = 2500, 300
+	for i := range expired {
+		reserve(t, s, "u1", fmt.Sprintf("old-%d", i), pending("A"), t0)
+	}
+	fresh := pending("B")
+	fresh.ExpiresAt = t0.Add(2 * idempotency.TTL)
+	for i := range live {
+		reserve(t, s, "u1", fmt.Sprintf("live-%d", i), fresh, t0)
+	}
+	now := t0.Add(idempotency.TTL)
+	if n := sweep(t, s, now); n != expired {
+		t.Fatalf("удалено %d, ждали %d", n, expired)
+	}
+	for i := range live {
+		if !alive(t, s, fmt.Sprintf("live-%d", i), now) {
+			t.Fatalf("живая запись live-%d удалена", i)
+		}
+	}
+}
+
+func testSweepCanceled(t *testing.T, s SweepStore) {
+	reserve(t, s, "u1", "k", pending("A"), t0)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.Sweep(ctx, t0.Add(idempotency.TTL)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Sweep: ждали context.Canceled, получили %v", err)
+	}
+	// Отменённый вызов ничего не удалил.
+	if n := sweep(t, s, t0.Add(idempotency.TTL)); n != 1 {
+		t.Fatalf("после отменённого Sweep удалено %d, ждали 1", n)
 	}
 }

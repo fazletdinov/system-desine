@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -20,18 +21,24 @@ const (
 	// r.Body.Read на контекст не смотрит: зависшее чтение тела прерывает только этот
 	// дедлайн чтения соединения.
 	readTimeout = 10 * time.Second
-	// Запас записи сверх таймаута запроса: ответ 503 timeout должен успеть уйти до
-	// того, как сервер оборвёт запись. WriteTimeout отсчитывается от конца чтения
-	// заголовков до конца записи ответа.
+	// Запас, чтобы ответ 503 timeout успел записаться до дедлайна записи соединения:
+	// WriteTimeout = таймаут запроса + writeMargin и отсчитывается от конца чтения
+	// заголовков до конца записи ответа. Без запаса дедлайн записи наступил бы
+	// одновременно со сроком запроса, и клиент получил бы обрыв вместо 503.
 	writeMargin = 5 * time.Second
 	// Простой keep-alive соединения между запросами (урок 0b.6 — пулы соединений).
 	idleTimeout = 60 * time.Second
 )
 
 // New собирает http.Server с таймаутами; requestTimeout — срок обработки запроса
-// (middleware.Timeout), от него считается WriteTimeout. Внутренние ошибки сервера
-// (например, сбой TLS-рукопожатия) идут в тот же slog на уровне Warn, а не в log.
-func New(addr string, h http.Handler, log *slog.Logger, requestTimeout time.Duration) *http.Server {
+// (middleware.Timeout), от него считается WriteTimeout. Нулевой срок отвергается:
+// WriteTimeout стал бы одним запасом, и ответ на долгий запрос обрывался бы молча.
+// Внутренние ошибки сервера (например, сбой TLS-рукопожатия) идут в тот же slog на
+// уровне Warn, а не в log.
+func New(addr string, h http.Handler, log *slog.Logger, requestTimeout time.Duration) (*http.Server, error) {
+	if requestTimeout <= 0 {
+		return nil, fmt.Errorf("httpserver: таймаут запроса должен быть больше нуля, получено %s", requestTimeout)
+	}
 	return &http.Server{
 		Addr:              addr,
 		Handler:           h,
@@ -40,7 +47,7 @@ func New(addr string, h http.Handler, log *slog.Logger, requestTimeout time.Dura
 		WriteTimeout:      requestTimeout + writeMargin,
 		IdleTimeout:       idleTimeout,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
-	}
+	}, nil
 }
 
 // Stop — как останавливаться по сигналу.
@@ -56,15 +63,29 @@ type Stop struct {
 }
 
 // #region drain
-// Run обслуживает запросы, пока не отменят ctx, затем останавливается в три шага:
-// Drain → ожидание DrainDelay (запросы ещё принимаются) → Shutdown не дольше Timeout.
-// Подробно — урок 1.17.
+// Run занимает адрес srv.Addr и обслуживает запросы через Serve.
 func Run(ctx context.Context, srv *http.Server, stop Stop) error {
-	// Владелец горутины — Run, способ остановки — Shutdown: после него ListenAndServe
-	// сразу возвращается. Буфер 1 — чтобы горутина не зависла на отправке, если Run
+	addr := srv.Addr
+	if addr == "" {
+		addr = ":http" // как у ListenAndServe
+	}
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("httpserver: %w", err)
+	}
+	return Serve(ctx, srv, ln, stop)
+}
+
+// Serve обслуживает запросы на ln, пока не отменят ctx, затем останавливается в три
+// шага: Drain → ожидание DrainDelay (запросы ещё принимаются) → Shutdown не дольше
+// Timeout. Подробно — урок 1.17. Слушатель — параметр, чтобы тесты подставляли сеть
+// в памяти и проверяли сроки остановки в виртуальном времени (synctest, урок 1.5.6).
+func Serve(ctx context.Context, srv *http.Server, ln net.Listener, stop Stop) error {
+	// Владелец горутины — Serve, способ остановки — Shutdown: после него srv.Serve
+	// сразу возвращается. Буфер 1 — чтобы горутина не зависла на отправке, если Serve
 	// уже вышел по ошибке Shutdown и результат никто не прочитает.
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- srv.ListenAndServe() }()
+	go func() { serveErr <- srv.Serve(ln) }()
 
 	select {
 	case err := <-serveErr:
@@ -90,13 +111,13 @@ func Run(ctx context.Context, srv *http.Server, stop Stop) error {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		// Не дождались: оставшиеся запросы обрываем сами. Иначе зависшее соединение
-		// пережило бы Run и держало процесс до SIGKILL.
+		// пережило бы Serve и держало процесс до SIGKILL.
 		if cerr := srv.Close(); cerr != nil {
 			err = errors.Join(err, cerr)
 		}
 		return fmt.Errorf("httpserver: остановка: %w", err)
 	}
-	// После Shutdown ListenAndServe возвращает http.ErrServerClosed — это не ошибка.
+	// После Shutdown srv.Serve возвращает http.ErrServerClosed — это не ошибка.
 	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("httpserver: %w", err)
 	}

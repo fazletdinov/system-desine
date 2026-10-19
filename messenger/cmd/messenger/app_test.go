@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -14,21 +15,42 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/uuid"
 
 	"messenger/internal/auth/adapters/argon2id"
 	"messenger/internal/auth/adapters/jwt"
+	"messenger/internal/platform/lifecycle"
 	"messenger/internal/platform/openapitest"
 )
 
 // fastHasher — единственная разница с боевой сборкой: OWASP-минимум (19 МиБ на хеш)
 // сделал бы сквозной тест медленным, а проверяем мы здесь сборку, а не стойкость.
 var fastHasher = argon2id.Params{MemoryKiB: 64, Iterations: 1, Parallelism: 1, SaltLen: 16, KeyLen: 32}
+
+// testConfig — рабочий конфиг сборки для тестов: новый ключ подписи, быстрый хешер,
+// сроки и параллелизм по умолчанию.
+func testConfig(t *testing.T) config {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config{
+		SigningKey:            key,
+		HasherParams:          fastHasher,
+		RequestTimeout:        defaultRequestTimeout,
+		IdempotencySweepEvery: defaultIdempotencySweepEvery,
+		HashConcurrency:       2,
+		HashQueue:             8,
+	}
+}
 
 // Пароли из тел запросов: их не должно быть ни в ответах, ни в журнале.
 const (
@@ -138,12 +160,8 @@ func (c client) token(username, password string) string {
 
 func newClient(t *testing.T) (client, *openapitest.Validator, *syncBuffer) {
 	t.Helper()
-	_, key, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
 	logs := &syncBuffer{}
-	a, err := newApp(config{SigningKey: key, HasherParams: fastHasher, RequestTimeout: defaultRequestTimeout}, slog.New(slog.NewJSONHandler(logs, nil)))
+	a, err := newApp(testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,31 +314,64 @@ func TestMessengerEndToEnd(t *testing.T) {
 // #endregion e2e
 
 func TestNewAppRejectsBadConfig(t *testing.T) {
-	log := slog.New(slog.DiscardHandler)
-	if _, err := newApp(config{HasherParams: fastHasher}, log); err == nil {
-		t.Error("без ключа подписи: ждали ошибку")
+	cases := []struct {
+		name  string
+		spoil func(*config)
+	}{
+		{"без ключа подписи", func(c *config) { c.SigningKey = nil }},
+		{"с нулевыми параметрами хешера", func(c *config) { c.HasherParams = argon2id.Params{} }},
+		{"с нулевым таймаутом запроса", func(c *config) { c.RequestTimeout = 0 }},
+		{"с нулевым периодом очистки", func(c *config) { c.IdempotencySweepEvery = 0 }},
+		{"без мест для хеширования", func(c *config) { c.HashConcurrency = 0 }},
+		{"с отрицательной очередью хешей", func(c *config) { c.HashQueue = -1 }},
 	}
-	_, key, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := testConfig(t)
+			c.spoil(&cfg)
+			if _, err := newApp(cfg, slog.New(slog.DiscardHandler)); err == nil {
+				t.Fatal("ждали ошибку")
+			}
+		})
 	}
-	if _, err := newApp(config{SigningKey: key, RequestTimeout: defaultRequestTimeout}, log); err == nil {
-		t.Error("с нулевыми параметрами хешера: ждали ошибку")
-	}
-	if _, err := newApp(config{SigningKey: key, HasherParams: fastHasher}, log); err == nil {
-		t.Error("с нулевым таймаутом запроса: ждали ошибку")
-	}
+}
+
+// TestAppBackgroundStops — сборка отдаёт фоновую очистку идемпотентности; она
+// работает по периоду и останавливается через lifecycle без ошибки.
+func TestAppBackgroundStops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logs := &syncBuffer{}
+		log := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		a, err := newApp(testConfig(t), log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(a.back) != 1 || a.back[0].Name() != "idempotency-sweeper" {
+			t.Fatalf("фоновые компоненты: %v, ждали idempotency-sweeper", a.back)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- lifecycle.Run(ctx, log, lifecycle.Stages{Back: a.back}) }()
+
+		// Период с джиттером не больше 1.1 × Every: за два периода — хотя бы одна очистка.
+		synctest.Sleep(2 * defaultIdempotencySweepEvery)
+		cancel()
+
+		if err := <-done; err != nil {
+			t.Fatalf("lifecycle.Run: %v", err)
+		}
+		out := logs.String()
+		if !strings.Contains(out, `"removed":0`) || !strings.Contains(out, "фоновые компоненты остановлены") {
+			t.Fatalf("журнал: %s", out)
+		}
+	})
 }
 
 // TestProbesOutsideAPI — пробы отвечают мимо аутентификации и контракта; дренаж
 // переключает только готовность, API продолжает работать.
 func TestProbesOutsideAPI(t *testing.T) {
-	_, key, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
 	logs := &syncBuffer{}
-	a, err := newApp(config{SigningKey: key, HasherParams: fastHasher, RequestTimeout: defaultRequestTimeout}, slog.New(slog.NewJSONHandler(logs, nil)))
+	a, err := newApp(testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,15 +418,15 @@ func writeKeyFile(t *testing.T) (ed25519.PrivateKey, string) {
 
 func TestLoadConfig(t *testing.T) {
 	t.Run("без файла ключа — ошибка с подсказкой", func(t *testing.T) {
-		t.Setenv("MESSENGER_JWT_KEY_FILE", "")
+		t.Setenv(envJWTKeyFile, "")
 		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "keygen") {
 			t.Fatalf("ошибка %v, ждали подсказку про keygen", err)
 		}
 	})
 	t.Run("ключ из файла, адрес по умолчанию", func(t *testing.T) {
 		key, path := writeKeyFile(t)
-		t.Setenv("MESSENGER_JWT_KEY_FILE", path)
-		t.Setenv("MESSENGER_ADDR", "")
+		t.Setenv(envJWTKeyFile, path)
+		t.Setenv(envAddr, "")
 
 		cfg, err := loadConfig()
 
@@ -386,9 +437,9 @@ func TestLoadConfig(t *testing.T) {
 	t.Run("сроки", func(t *testing.T) {
 		_, path := writeKeyFile(t)
 		const (
-			req   = "MESSENGER_REQUEST_TIMEOUT"
-			stop  = "MESSENGER_SHUTDOWN_TIMEOUT"
-			drain = "MESSENGER_DRAIN_DELAY"
+			req   = envRequestTimeout
+			stop  = envShutdownTimeout
+			drain = envDrainDelay
 		)
 		cases := []struct {
 			name    string
@@ -406,7 +457,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 		for _, c := range cases {
 			t.Run(c.name, func(t *testing.T) {
-				t.Setenv("MESSENGER_JWT_KEY_FILE", path)
+				t.Setenv(envJWTKeyFile, path)
 				for _, name := range []string{req, stop, drain} {
 					t.Setenv(name, c.env[name])
 				}
@@ -433,22 +484,83 @@ func TestLoadConfig(t *testing.T) {
 		if err := os.WriteFile(path, []byte("не ключ"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("MESSENGER_JWT_KEY_FILE", path)
+		t.Setenv(envJWTKeyFile, path)
 		if _, err := loadConfig(); err == nil {
 			t.Fatal("ждали ошибку")
 		}
 	})
 }
 
+func TestLoadTimeoutsIncludesBackStop(t *testing.T) {
+	// DRAIN_DELAY + SHUTDOWN_TIMEOUT = 28 с укладывались в 30 с до урока 1.5.6; теперь
+	// после них ещё до lifecycle.BackStopTimeout (2 с) ждём фоновые компоненты.
+	t.Setenv(envDrainDelay, "18s")
+	t.Setenv(envShutdownTimeout, "10s")
+	t.Setenv(envRequestTimeout, "")
+	var cfg config
+	if err := loadTimeouts(&cfg); err == nil || !strings.Contains(err.Error(), "2s") {
+		t.Fatalf("ошибка %v, ждали отказ с учётом BackStopTimeout 2s", err)
+	}
+	t.Setenv(envDrainDelay, "17s")
+	if err := loadTimeouts(&cfg); err != nil {
+		t.Fatalf("17s + 10s + 2s < 30s: %v", err)
+	}
+}
+
+func TestLoadConcurrencyConfig(t *testing.T) {
+	_, path := writeKeyFile(t)
+	procs := runtime.GOMAXPROCS(0)
+	type want struct {
+		sweep              time.Duration
+		concurrency, queue int
+	}
+	cases := []struct {
+		name    string
+		env     map[string]string
+		want    want
+		wantErr string // непусто — ждём ошибку с этим текстом (именем переменной)
+	}{
+		{"ничего не задано — значения по умолчанию", nil, want{time.Minute, procs, 4 * procs}, ""},
+		{"очередь по умолчанию — от заданного числа мест", map[string]string{envHashConcurrency: "3"}, want{time.Minute, 3, 12}, ""},
+		{"очередь 0 — отказ сразу, когда места заняты", map[string]string{envHashQueue: "0"}, want{time.Minute, procs, 0}, ""},
+		{"период очистки из окружения", map[string]string{envIdempotencySweepEvery: "30s"}, want{30 * time.Second, procs, 4 * procs}, ""},
+		{"ноль мест для хеширования", map[string]string{envHashConcurrency: "0"}, want{}, envHashConcurrency},
+		{"не число", map[string]string{envHashConcurrency: "abc"}, want{}, envHashConcurrency},
+		{"отрицательная очередь", map[string]string{envHashQueue: "-1"}, want{}, envHashQueue},
+		{"очередь — мусор", map[string]string{envHashQueue: "4x"}, want{}, envHashQueue},
+		{"отрицательный период очистки", map[string]string{envIdempotencySweepEvery: "-1s"}, want{}, envIdempotencySweepEvery},
+		{"нулевой период очистки", map[string]string{envIdempotencySweepEvery: "0s"}, want{}, envIdempotencySweepEvery},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv(envJWTKeyFile, path)
+			for _, name := range []string{envIdempotencySweepEvery, envHashConcurrency, envHashQueue} {
+				t.Setenv(name, c.env[name])
+			}
+
+			cfg, err := loadConfig()
+
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("ошибка %v, ждали с %q", err, c.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := (want{cfg.IdempotencySweepEvery, cfg.HashConcurrency, cfg.HashQueue}); got != c.want {
+				t.Fatalf("конфиг %+v, ждали %+v", got, c.want)
+			}
+		})
+	}
+}
+
 // TestUncleanPathIsAPIError — пути с «//», «/./», «/../» отвечает API, а не ServeMux перед
 // ним: 404 problem+json с request ID, а не голый 307 без журнала (урок 1.7: /v1//x → 404).
 func TestUncleanPathIsAPIError(t *testing.T) {
-	_, key, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
 	logs := &syncBuffer{}
-	a, err := newApp(config{SigningKey: key, HasherParams: fastHasher, RequestTimeout: defaultRequestTimeout}, slog.New(slog.NewJSONHandler(logs, nil)))
+	a, err := newApp(testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

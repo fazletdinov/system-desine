@@ -45,3 +45,11 @@ type Store interface {
 }
 
 // #endregion record
+
+// Sweeper — фоновая очистка просроченных записей. Отдельный узкий порт, а не метод
+// Store: middleware очистка не нужна, и хранилищу не обязательно уметь её в том же
+// интерфейсе — у Postgres (модуль 2a) это может быть вовсе задача по расписанию.
+type Sweeper interface {
+	// Sweep удаляет записи с ExpiresAt <= now; возвращает число удалённых.
+	Sweep(ctx context.Context, now time.Time) (removed int, err error)
+}
