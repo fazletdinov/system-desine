@@ -213,8 +213,8 @@ func TestLimiterCancelReleasesSlot(t *testing.T) {
 
 // #endregion cancel-test
 
-// Паника в хешере обычно роняет процесс, но если её перехватят выше (middleware.Recover
-// перехватывает), ограничитель не должен навсегда потерять место.
+// Паника в хешере идёт в горутине запроса, и middleware.Recover превращает её в 500 —
+// процесс живёт дальше, значит, ограничитель не должен навсегда потерять место.
 func TestLimiterReleasesOnPanic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFake()
