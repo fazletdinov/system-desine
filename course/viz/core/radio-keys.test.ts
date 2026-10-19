@@ -17,4 +17,9 @@ describe('nextRadioIndex', () => {
     expect(nextRadioIndex(0, 3, 'Enter')).toBe(-1)
     expect(nextRadioIndex(0, 0, 'ArrowRight')).toBe(-1)
   })
+
+  it.each(['altKey', 'ctrlKey', 'metaKey'] as const)('стрелка с %s не перехватывается', (modifier) => {
+    expect(nextRadioIndex(0, 3, 'ArrowLeft', { [modifier]: true })).toBe(-1)
+    expect(nextRadioIndex(0, 3, 'ArrowRight', { [modifier]: true })).toBe(-1)
+  })
 })

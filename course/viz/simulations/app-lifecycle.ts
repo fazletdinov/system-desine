@@ -49,9 +49,9 @@ const SIGNAL: readonly Step<LifecycleFrame>[] = [
     caption: [
       { text: 'Обычная работа. HTTP-сервер и фоновая очистка ключей идемпотентности — два ' },
       COMPONENT,
-      { text: ' с общим контрактом Run(ctx) error, запущенные под одним ' },
+      { text: ' с общим контрактом Run(ctx) error, запущенные под одним владельцем — lifecycle.Run (две группы ' },
       ERRGROUP,
-      { text: `. Очистка срабатывает по таймеру. В очереди хеширования паролей Argon2id выполняются ${HASH_CONCURRENCY} хеша (HASH_CONCURRENCY), ещё 3 ждут места из ${HASH_QUEUE} (HASH_QUEUE); девятый запрос получил бы 503 сразу.` },
+      { text: `). Очистка срабатывает по таймеру. В очереди хеширования паролей Argon2id выполняются ${HASH_CONCURRENCY} хеша (HASH_CONCURRENCY), ещё 3 ждут места из ${HASH_QUEUE} (HASH_QUEUE); одиннадцатый одновременный запрос (мест ${HASH_CONCURRENCY + HASH_QUEUE}) получил бы 503 сразу.` },
     ],
   },
   {
@@ -76,7 +76,7 @@ const SIGNAL: readonly Step<LifecycleFrame>[] = [
   },
   {
     state: fr(6.4, 'stopped', 503, 'stopping', NONE, null, 'остановка фона'),
-    caption: `Отмена контекста дошла до idempotency-sweeper, он завершает итерацию. На всё про всё у фона ${BACK_STOP_TIMEOUT_S} с (backStopTimeout): компонент, игнорирующий отмену, не должен вешать выход процесса.`,
+    caption: `Отмена контекста дошла до idempotency-sweeper, он завершает итерацию. На всё про всё у фона ${BACK_STOP_TIMEOUT_S} с (BackStopTimeout): компонент, игнорирующий отмену, не должен вешать выход процесса.`,
   },
   {
     state: fr(6.9, 'stopped', 503, 'stopped', NONE, null, 'фон остановлен'),
@@ -87,7 +87,7 @@ const SIGNAL: readonly Step<LifecycleFrame>[] = [
     caption: [
       { text: 'Процесс завершается с кодом 0: штатная ' },
       GRACEFUL,
-      { text: ' уложилась в 6,9 с. Ни один клиент не увидел ошибки. Худший случай — DRAIN_DELAY + SHUTDOWN_TIMEOUT + backStopTimeout = 17 с, он по-прежнему в пределах 30 с, которые оркестратор даёт до SIGKILL. Всё остальное — аварийный путь по принципу ' },
+      { text: ' уложилась в 6,9 с. Ни один клиент не увидел ошибки. Худший случай — DRAIN_DELAY + SHUTDOWN_TIMEOUT + BackStopTimeout = 17 с, он по-прежнему в пределах 30 с, которые оркестратор даёт до SIGKILL. Всё остальное — аварийный путь по принципу ' },
       CRASH_ONLY,
       { text: ': если выйти чисто не вышло, лучше упасть и дать оркестратору перезапустить.' },
     ],
@@ -100,14 +100,14 @@ const FAILURE: readonly Step<LifecycleFrame>[] = [
     caption: [
       { text: 'Та же картина: HTTP и idempotency-sweeper — ' },
       COMPONENT,
-      { text: ' под одним ' },
+      { text: ' под одним владельцем — lifecycle.Run (две группы ' },
       ERRGROUP,
-      { text: ', очередь хешей загружена. Но на этот раз никто не посылал SIGTERM.' },
+      { text: '), очередь хешей загружена. Но на этот раз никто не посылал SIGTERM.' },
     ],
   },
   {
     state: fr(3, 'draining', 503, 'failed', BUSY, null, 'сбой компонента'),
-    caption: 'На третьей секунде idempotency-sweeper вернул ошибку, не дожидаясь отмены. errgroup отменяет общий контекст: сервер идёт тем же путём, что и по сигналу, — /readyz 503, дренаж. Продолжать работать без очистки молча было бы хуже: ключи копились бы, а никто бы не знал. Потратить 5 секунд на аккуратный уход дешевле, чем оборвать начатые запросы из-за упавшей очистки.',
+    caption: 'На третьей секунде idempotency-sweeper вернул ошибку, не дожидаясь отмены. lifecycle.Run отменяет общий контекст (сам, не через errgroup): сервер идёт тем же путём, что и по сигналу, — /readyz 503, дренаж. Продолжать работать без очистки молча было бы хуже: ключи копились бы, а никто бы не знал. Потратить 5 секунд на аккуратный уход дешевле, чем оборвать начатые запросы из-за упавшей очистки.',
   },
   {
     state: fr(3 + DRAIN_DELAY_S, 'shutting-down', 503, 'failed', BUSY, null, 'Shutdown'),
@@ -137,9 +137,9 @@ const SECOND: readonly Step<LifecycleFrame>[] = [
     caption: [
       { text: 'Обычная работа: HTTP и idempotency-sweeper — ' },
       COMPONENT,
-      { text: ' под одним ' },
+      { text: ' под одним владельцем — lifecycle.Run (две группы ' },
       ERRGROUP,
-      { text: ', в очереди хешей 2 + 3.' },
+      { text: '), в очереди хешей 2 + 3.' },
     ],
   },
   {

@@ -18,8 +18,30 @@ type Component interface {
 	Name() string
 	// Run работает до отмены ctx и тогда возвращает nil; ошибка до отмены — сбой.
 	// После отмены context.Canceled (идиома «вернуть ctx.Err()») тоже считается
-	// штатной остановкой; любая другая ошибка — сбой, даже после отмены.
+	// штатной остановкой, в том числе обёрнутая через %w; любая другая ошибка, включая
+	// errors.Join(context.Canceled, причина), — сбой, даже после отмены.
 	Run(ctx context.Context) error
+}
+
+// onlyCanceled — ошибка целиком состоит из context.Canceled (возможно, обёрнутого):
+// errors.Is здесь не годится, он считал бы штатной и errors.Join(Canceled, причина),
+// проглатывая настоящий сбой.
+func onlyCanceled(err error) bool {
+	switch e := err.(type) { //nolint:errorlint // обход дерева Unwrap намеренный: errors.As не отличит Join от одиночной обёртки
+	case nil:
+		return false
+	case interface{ Unwrap() []error }:
+		for _, inner := range e.Unwrap() {
+			if !onlyCanceled(inner) {
+				return false
+			}
+		}
+		return len(e.Unwrap()) > 0
+	case interface{ Unwrap() error }:
+		return onlyCanceled(e.Unwrap())
+	default:
+		return errors.Is(err, context.Canceled)
+	}
 }
 
 // Stages — компоненты в порядке остановки: сначала все Front, затем все Back.
@@ -80,7 +102,7 @@ func Run(ctx context.Context, log *slog.Logger, s Stages) error {
 			switch {
 			case err == nil && ctx.Err() == nil:
 				err = ErrStoppedEarly
-			case errors.Is(err, context.Canceled) && ctx.Err() != nil:
+			case onlyCanceled(err) && ctx.Err() != nil:
 				// Компонент вернул ошибку своей же отмены — это штатная остановка.
 				err = nil
 			}

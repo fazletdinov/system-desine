@@ -66,7 +66,7 @@ func New(p Params) (*Hasher, error) {
 // #region hash
 // ctx проверяется только до вычисления: внутри argon2.IDKey нет точки, где можно
 // остановиться, — это один вызов, который заполняет m КиБ и проходит их t раз.
-// Отменённый запрос не начнёт хеш, но начатый досчитается (≈ 17 мс для OWASPMinimum).
+// Отменённый запрос не начнёт хеш, но начатый досчитается (≈ 18 мс в одиночку, до ~40 мс при N параллельных, урок 1.5.6; OWASPMinimum).
 func (h *Hasher) Hash(ctx context.Context, pw domain.Password) (domain.PasswordHash, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.PasswordHash{}, fmt.Errorf("argon2id: %w", err)

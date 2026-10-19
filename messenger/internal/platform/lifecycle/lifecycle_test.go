@@ -237,6 +237,28 @@ func TestRunCanceledAfterStopIsClean(t *testing.T) {
 	})
 }
 
+// Join(Canceled, причина) после отмены — не штатная остановка: причина не должна
+// теряться, хотя в цепочке есть context.Canceled.
+func TestRunJoinWithCanceledAfterStopIsFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		boom := errors.New("boom")
+		joined := fake{name: "sweeper", run: func(ctx context.Context) error {
+			<-ctx.Done()
+			return errors.Join(ctx.Err(), boom)
+		}}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := runAsync(ctx, lifecycle.Stages{Back: []lifecycle.Component{joined}})
+		synctest.Wait()
+
+		cancel()
+
+		err := <-done
+		if !errors.Is(err, boom) || !strings.Contains(err.Error(), "sweeper") {
+			t.Fatalf("Run: %v, want сбой sweeper с причиной boom", err)
+		}
+	})
+}
+
 // Без Front фоновые компоненты всё равно работают до отмены ctx, а не
 // останавливаются сразу «после выхода всех Front».
 func TestRunWithoutFrontRunsBackUntilCancel(t *testing.T) {

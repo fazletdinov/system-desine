@@ -8,7 +8,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: T] }>()
 const buttons = ref<HTMLButtonElement[]>([])
 
 const onKeydown = async (event: KeyboardEvent, index: number): Promise<void> => {
-  const target = props.options[nextRadioIndex(index, props.options.length, event.key)]
+  const target = props.options[nextRadioIndex(index, props.options.length, event.key, event)]
   if (!target) return
   event.preventDefault()
   emit('update:modelValue', target.value)
