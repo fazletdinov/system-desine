@@ -15,7 +15,7 @@
 ├── chan/                # урок 1.5.2: каналы и таймеры
 │   └── ops/  timers/
 ├── race/                # урок 1.5.3: модель памяти и гонки (тег labdemo)
-│   └── flagloop/  iface/
+│   └── flagloop/  iface/  history/
 ├── sync/                # урок 1.5.4: Mutex, RWMutex, atomic, false sharing, голодание
 │   ├── sync_test.go
 │   └── starve/
@@ -170,6 +170,25 @@ WARNING: DATA RACE
 
 Без `-race` код выхода ненулевой; `-race` печатает отчёты и (из-за числа повторов гонки) весь вывод
 длинный.
+
+### race/history — урок 1.5.3, регион `history` (тег `labdemo`, только с `-race`)
+
+Две горутины по `-n` раз пишут в одну переменную без синхронизации. Гонка есть при любом `n`, но найдёт
+ли её детектор, зависит от того, сохранился ли в его журнале стек прошлого обращения. На одном P порог
+зависит от `GORACE=history_size`:
+
+```
+$ go build -race -tags labdemo -o history ./1-5/race/history
+$ GOMAXPROCS=1 GORACE=atexit_sleep_ms=0 ./history -n 20000 2>&1 | grep -c 'WARNING: DATA RACE'
+1
+$ GOMAXPROCS=1 GORACE=atexit_sleep_ms=0 ./history -n 30000 2>&1 | grep -c 'WARNING: DATA RACE'
+0
+$ GOMAXPROCS=1 GORACE='atexit_sleep_ms=0 history_size=1' ./history -n 30000 2>&1 | grep -c 'WARNING: DATA RACE'
+1
+```
+
+Пороги — порядок величины на машине автора, а не константы. В `scenario.sh` программа не входит: результат
+зависит от планировщика и не детерминирован.
 
 ### sync/sync_test.go — урок 1.5.4, регионы `counter` и `padding`
 
