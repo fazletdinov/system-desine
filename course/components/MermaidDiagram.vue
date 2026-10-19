@@ -49,5 +49,8 @@ watch([isDark, () => props.code], render)
 /* Место под схему резервируется заранее, чтобы страница не прыгала после загрузки mermaid. */
 .mermaid-host { min-height: 120px; display: flex; justify-content: center; overflow-x: auto; }
 .mermaid-host :deep(svg) { max-width: 100%; height: auto; }
+/* Mermaid кладёт текст узлов в <p> и считает высоту по своему line-height (1.5), измеряя вне .vp-doc.
+   Стиль VitePress для .vp-doc p (line-height 28px) растягивал текст, и последняя строка вылезала за рамку. */
+.mermaid-host :deep(svg p) { margin: 0; line-height: inherit; }
 .mermaid-error { color: var(--vp-c-danger-1); white-space: pre-wrap; }
 </style>
