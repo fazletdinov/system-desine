@@ -57,6 +57,8 @@ func (s *stats) record(wait time.Duration) {
 	}
 }
 
+func milliseconds(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+
 func main() {
 	labenv.Print(os.Stdout)
 
@@ -70,7 +72,7 @@ func main() {
 	wg.Go(func() { quick(ctx, &mu, &light) })
 	wg.Wait()
 
-	fmt.Printf("держатель (держит %v): захватов %d, макс. ожидание %v\n", holdTime, heavy.acquisitions, heavy.maxWait.Round(10*time.Microsecond))
-	fmt.Printf("быстрая горутина:       захватов %d, макс. ожидание %v, ожиданий дольше %v: %d\n",
-		light.acquisitions, light.maxWait.Round(10*time.Microsecond), starvationGap, light.longWaits)
+	fmt.Printf("держатель (держит %v): захватов %d, макс. ожидание %.2f мс\n", holdTime, heavy.acquisitions, milliseconds(heavy.maxWait))
+	fmt.Printf("быстрая горутина:       захватов %d, макс. ожидание %.2f мс, ожиданий дольше %v: %d\n",
+		light.acquisitions, milliseconds(light.maxWait), starvationGap, light.longWaits)
 }

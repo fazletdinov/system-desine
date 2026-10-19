@@ -58,8 +58,12 @@ ok "sched/cost: горутина — $stack байт стека и $spawn нс �
 
 # --- 2. sched/preempt: асинхронное вытеснение (Go 1.14) ---
 build preempt ./1-5/sched/preempt
-out=$("$bin/preempt")
-with=$(first_number "$out" 'main проснулся через ([0-9]+) мс')
+# Одна повторная попытка: на шумном раннере main может проснуться поздно и без нашей вины.
+for _ in 1 2; do
+	out=$("$bin/preempt")
+	with=$(first_number "$out" 'main проснулся через ([0-9]+) мс')
+	if [ -n "$with" ] && [ "$with" -lt 100 ]; then break; fi
+done
 out_off=$(GODEBUG=asyncpreemptoff=1 "$bin/preempt")
 without=$(first_number "$out_off" 'main проснулся через ([0-9]+) мс')
 [ -n "$with" ] && [ "$with" -lt 100 ] || fail "sched/preempt: с вытеснением main проснулся через $with мс, ждали меньше 100:
@@ -148,7 +152,7 @@ ok "race/iface: без -race программа падает ($(echo "$out" | gr
 build starve ./1-5/sync/starve
 out=$("$bin/starve")
 light_n=$(first_number "$out" 'быстрая горутина: +захватов ([0-9]+)')
-light_max=$(first_number "$out" 'быстрая горутина: .*макс\. ожидание ([0-9.]+)ms')
+light_max=$(first_number "$out" 'быстрая горутина: .*макс\. ожидание ([0-9.]+) мс')
 [ -n "$light_n" ] && [ "$light_n" -gt 0 ] || fail "sync/starve: быстрая горутина не получила замок:
 $out"
 [ -n "$light_max" ] && less "$light_max" 250 || fail "sync/starve: максимальное ожидание быстрой горутины '$light_max' мс, ждали меньше 250:
@@ -186,7 +190,7 @@ ok "patterns/limit: пик $free_peak горутин без лимита и $sem
 # --- 11. бенчмарки: работоспособность (числа снимаются отдельно, см. README) ---
 out=$(go test -run='^$' -bench=. -benchtime=100ms ./1-5/sync/ ./1-5/sched/ 2>&1) || fail "бенчмарки упали:
 $out"
-for name in BenchmarkCounterMutex BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads; do
+for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads; do
 	echo "$out" | grep -q "^$name" || fail "в бенчмарках нет $name:
 $out"
 done

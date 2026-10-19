@@ -21,6 +21,21 @@ func BenchmarkCounterMutex(b *testing.B) {
 	})
 }
 
+// Пара для RWMutex: те же чтения под обычным Mutex.
+func BenchmarkCounterMutexRead(b *testing.B) {
+	var mu sync.Mutex
+	var n int
+	b.RunParallel(func(pb *testing.PB) {
+		sum := 0
+		for pb.Next() {
+			mu.Lock()
+			sum += n
+			mu.Unlock()
+		}
+		_ = sum
+	})
+}
+
 // Читатели берут RLock: RWMutex оправдан, когда читают намного чаще, чем пишут,
 // и критическая секция длиннее самого RLock/RUnlock.
 func BenchmarkCounterRWMutexRead(b *testing.B) {

@@ -16,8 +16,8 @@ const blockedAfter = 50 * time.Millisecond
 
 // #region ops
 type channelState struct {
-	name string
-	make func() chan int
+	name    string
+	newChan func() chan int
 }
 
 type operation struct {
@@ -74,7 +74,7 @@ func printTable() {
 	for _, op := range operations {
 		row := []string{op.name}
 		for _, s := range states {
-			row = append(row, observe(op, s.make()))
+			row = append(row, observe(op, s.newChan()))
 		}
 		fmt.Println("| " + strings.Join(row, " | ") + " |")
 	}

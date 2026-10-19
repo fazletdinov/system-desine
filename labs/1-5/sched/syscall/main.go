@@ -41,7 +41,8 @@ func measure(block func()) (before, during uint64) {
 
 // #region syscall
 func nanosleep() {
-	// Прямой системный вызов: рантайм не знает, что он «просто ждёт», и держит поток занятым.
+	// Прямой системный вызов: горутина держит свой поток ОС (M) до возврата из ядра,
+	// а sysmon отбирает у него процессор (P), чтобы остальной Go-код продолжал работать.
 	ts := syscall.NsecToTimespec(blockFor.Nanoseconds())
 	_ = syscall.Nanosleep(&ts, nil)
 }
@@ -49,11 +50,13 @@ func nanosleep() {
 func main() {
 	labenv.Print(os.Stdout)
 
-	before, during := measure(nanosleep)
-	fmt.Printf("syscall.Nanosleep x%d: потоков до %d, во время %d (+%d)\n", blockers, before, during, during-before)
-
-	before, during = measure(func() { time.Sleep(blockFor) })
+	// time.Sleep идёт первым: пул потоков ещё не раздут блокирующими вызовами,
+	// и «+0» — свойство time.Sleep, а не порядка запуска.
+	before, during := measure(func() { time.Sleep(blockFor) })
 	fmt.Printf("time.Sleep        x%d: потоков до %d, во время %d (+%d)\n", blockers, before, during, during-before)
+
+	before, during = measure(nanosleep)
+	fmt.Printf("syscall.Nanosleep x%d: потоков до %d, во время %d (+%d)\n", blockers, before, during, during-before)
 }
 
 // #endregion syscall

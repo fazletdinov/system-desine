@@ -13,6 +13,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"labs/1-5/labenv"
@@ -27,7 +28,15 @@ const (
 	// workTime — работа успешных задач: ошибочная задача отвечает первой,
 	// поэтому функция возвращается раньше, чем остальные отправят результат.
 	workTime = 20 * time.Millisecond
+	// settleDeadline — потолок ожидания, пока профиль перестанет меняться;
+	// settlePolls — сколько подряд одинаковых замеров считаем «успокоилось».
+	settleDeadline = 5 * time.Second
+	settlePolls    = 3
+	pollEvery      = 5 * time.Millisecond
 )
+
+// finished считает задачи, завершившие работу (до отправки результата в канал).
+var finished atomic.Int64
 
 var errTask = errors.New("задача не удалась")
 
@@ -38,9 +47,11 @@ type outcome struct {
 
 func process(n int) (int, error) {
 	if n == failingAt {
+		finished.Add(1)
 		return 0, errTask
 	}
 	time.Sleep(workTime)
+	finished.Add(1)
 	return n * n, nil
 }
 
@@ -104,10 +115,9 @@ func items() []int {
 	return out
 }
 
-// leakedProfile прогоняет GC, пишет профиль goroutineleak (debug=1) и возвращает
+// profileText прогоняет GC, пишет профиль goroutineleak (debug=1) и возвращает
 // его текст и число утёкших горутин из строки "goroutineleak profile: total N".
-func leakedProfile() (text string, count int, err error) {
-	time.Sleep(2 * workTime) // дать успешным задачам дойти до отправки в ch
+func profileText() (text string, count int, err error) {
 	for range gcRounds {
 		runtime.GC()
 	}
@@ -127,9 +137,34 @@ func leakedProfile() (text string, count int, err error) {
 	return buf.String(), count, nil
 }
 
+// leakedProfile ждёт без привязки к часам: сначала пока все задачи отработают
+// (счётчик finished), затем пока число утёкших не перестанет меняться settlePolls замеров подряд.
+// Потолок settleDeadline не даёт зависнуть, если что-то пошло не так.
+func leakedProfile() (text string, count int, err error) {
+	deadline := time.Now().Add(settleDeadline)
+	for finished.Load() < taskCount && time.Now().Before(deadline) {
+		time.Sleep(pollEvery)
+	}
+	stable, last := 0, -1
+	for stable < settlePolls && time.Now().Before(deadline) {
+		text, count, err = profileText()
+		if err != nil {
+			return "", 0, err
+		}
+		if count == last {
+			stable++
+		} else {
+			stable, last = 1, count
+		}
+		time.Sleep(pollEvery)
+	}
+	return text, count, nil
+}
+
 // report вызывает функцию и печатает, сколько горутин осталось заблокированными.
 // Профиль накопительный, поэтому исправленную версию запускаем первой.
 func report(name string, process func([]int) ([]int, error), withProfile bool) error {
+	finished.Store(0)
 	_, err := process(items())
 	fmt.Printf("%s: ошибка %q\n", name, err)
 	text, count, perr := leakedProfile()
