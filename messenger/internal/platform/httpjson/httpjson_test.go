@@ -117,7 +117,7 @@ func TestDecodeMessages(t *testing.T) {
 		{name: "число вместо строки", body: `{"text":42}`, wantMsg: "поле text: ожидается строка", wantField: "text"},
 		{name: "строка вместо числа", body: `{"seq":"1"}`, wantMsg: "поле seq: ожидается число", wantField: "seq"},
 		{name: "объект вместо массива", body: `{"member_ids":{}}`, wantMsg: "поле member_ids: ожидается массив", wantField: "member_ids"},
-		{name: "число вместо строки в массиве", body: `{"member_ids":[1]}`, wantMsg: "поле member_ids: ожидается строка", wantField: "member_ids"},
+		{name: "число вместо строки в массиве", body: `{"member_ids":[1]}`, wantMsg: "поле member_ids.0: ожидается строка", wantField: "member_ids.0"},
 		{name: "массив вместо объекта", body: `[]`, wantMsg: "тело должно быть JSON-объектом"},
 		{name: "неизвестное поле", body: `{"text":"a","author_id":"x"}`, wantMsg: `неизвестное поле "author_id"`, wantField: "author_id"},
 		{name: "второй объект", body: `{"text":"a"}{"text":"b"}`, wantMsg: "в теле должен быть ровно один JSON-объект"},

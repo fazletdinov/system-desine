@@ -39,7 +39,7 @@ Workflow лежат в `.github/workflows/` (урок 1.18 — `ci.yml`, уро�
 
 ## Лабораторные
 
-Практика модулей лежит в `labs/` — отдельный Go-модуль (`labs/go.mod`, Go 1.26, без внешних зависимостей). Каталог модуля 0b:
+Практика модулей лежит в `labs/` — отдельный Go-модуль (`labs/go.mod`, Go 1.27, без внешних зависимостей). Каталог модуля 0b:
 
 - `labs/0b/compose.yaml` и `Dockerfile` — стенд из трёх контейнеров в сети `172.28.0.0/24`: `client`, `server` и `dns` (CoreDNS с зоной `messenger.example`); в образ собраны программы лабораторной и инструменты (`tcpdump`, `ss`, `dig`, `curl` с HTTP/3, `openssl`, `strace`);
 - `labs/0b/netem.sh 40ms 1%` — задержка и потери через netem на `client` и `server` (половина RTT на каждом конце), `labs/0b/netem.sh off` — снять; нужен модуль ядра `sch_netem`;
@@ -70,7 +70,7 @@ docker compose run --rm -T lab /lab/scenario.sh
 
 ## Мессенджер
 
-Сквозной проект курса лежит в `messenger/` — отдельный Go-модуль (`messenger/go.mod`, Go 1.26). Код раскладывается по контекстам (`internal/user`, `internal/chat`, `internal/auth`) и слоям `domain` ← `usecase` ← `adapters` ← `cmd`; правило зависимостей проверяет линтер `depguard` (настройка — `messenger/.golangci.yml`, решения — `messenger/docs/adr/`).
+Сквозной проект курса лежит в `messenger/` — отдельный Go-модуль (`messenger/go.mod`, Go 1.27). Код раскладывается по контекстам (`internal/user`, `internal/chat`, `internal/auth`) и слоям `domain` ← `usecase` ← `adapters` ← `cmd`; правило зависимостей проверяет линтер `depguard` (настройка — `messenger/.golangci.yml`, решения — `messenger/docs/adr/`).
 
 ```bash
 cd messenger
@@ -92,7 +92,7 @@ go run ./cmd/keygen -out jwt.pem && docker compose up --build   # http://127.0.0
 
 Образ — multi-stage сборка на distroless (`messenger/Dockerfile`, урок 1.16), процесс работает от UID 65532 с файловой системой только для чтения, без capabilities, с лимитами 256 МБ памяти и 1 CPU (`messenger/compose.yaml`, урок 1.17). Ключ подписи приходит секретом-файлом в `/run/secrets/jwt_key`, а не переменной окружения. На Docker Desktop файл `0600` читается процессом контейнера; на «голом» Docker Engine (Linux без Desktop) — нет, и сервер падает с `permission denied`: для учебного ключа `chmod 0444 jwt.pem`, почему — в уроке 1.17. Пробы: `/livez` (процесс жив) и `/readyz` (готов принимать трафик; по SIGTERM сразу 503, затем дренаж и остановка). `HEALTHCHECK` образа вызывает `messenger healthcheck`. Порт опубликован только на loopback хоста.
 
-Проверка — из `course/`: `npm run check:messenger` — `gofmt`, свежесть `go generate`, `go vet`, `golangci-lint run`, `go test -race` по `messenger/` и ссылки `<<< @/../messenger/…#регион` во всех уроках (нет файла, нет региона или строка с `<<<`, которую не разобрать, — ошибка). Нужен **golangci-lint v2** (`version: "2"` в конфиге; v1 его не прочитает), например `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`; скрипт ищет его сначала в `~/go/bin`, потом в `PATH`.
+Проверка — из `course/`: `npm run check:messenger` — `gofmt`, свежесть `go generate`, `go vet`, `golangci-lint run`, `go test -race` по `messenger/` и ссылки `<<< @/../messenger/…#регион` во всех уроках (нет файла, нет региона или строка с `<<<`, которую не разобрать, — ошибка). Нужен **golangci-lint v2** (`version: "2"` в конфиге; v1 его не прочитает), например `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0`; скрипт ищет его сначала в `~/go/bin`, потом в `PATH`.
 
 Каждый урок модуля 1 заканчивается тегом `m01-lNN` (сейчас — от `m01-l01` до `m01-l20`) — состоянием кода после урока: `git checkout m01-l03` показывает код после урока 1.3, а `git -c core.quotePath=false diff --stat m01-l02 m01-l03 -- messenger` — что в нём изменилось. На каждом теге `go build ./...` и `go test -race ./...` проходят в `messenger/` и `labs/`.
 
