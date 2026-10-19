@@ -3,7 +3,7 @@
 # region rootfs
 # Rootfs контейнера — файловая система образа busybox, закреплённого по digest.
 # Это ровно то, что docker run распаковал бы для busybox: каталоги и статический бинарь.
-FROM busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e AS rootfs
+FROM busybox:1.38@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS rootfs
 # endregion rootfs
 
 FROM golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c AS build
