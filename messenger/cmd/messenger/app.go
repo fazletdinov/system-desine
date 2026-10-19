@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"messenger/internal/auth/adapters/argon2id"
+	"messenger/internal/auth/adapters/hashlimit"
 	authhttp "messenger/internal/auth/adapters/httpapi"
 	"messenger/internal/auth/adapters/jwt"
 	authmemory "messenger/internal/auth/adapters/memory"
@@ -92,6 +94,12 @@ func loadTimeouts(cfg *config) error {
 }
 
 // #endregion config
+
+// defaultHashQueueFactor — очередь хешера по умолчанию: 4 ждущих на каждое место
+// вычисления. При ≈ 17 мс на хеш последний в очереди ждёт ≈ 4 × 17 мс — заметно
+// меньше срока запроса, а всплеск входов сверх этого получает 503 сразу, а не
+// копит горутины и память.
+const defaultHashQueueFactor = 4
 
 // publicRoutes — маршруты, открытые без аутентификации: метод и путь без параметров.
 // Всё остальное закрыто: забытый здесь маршрут получит 401, а не откроется всем.
@@ -247,12 +255,19 @@ func newAuth(cfg config, users *usermemory.Store, clk clock.System, ids idgen.UU
 	if err != nil {
 		return nil, nil, err
 	}
-	hasher, err := argon2id.New(cfg.HasherParams)
+	argon, err := argon2id.New(cfg.HasherParams)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Хеш — чистая работа CPU: больше GOMAXPROCS одновременных вычислений не ускорят,
+	// а память (19 МиБ на хеш) умножат. Ограничитель — один на регистрацию и вход.
+	hashConcurrency := runtime.GOMAXPROCS(0)
+	hasher, err := hashlimit.New(argon, hashConcurrency, defaultHashQueueFactor*hashConcurrency)
 	if err != nil {
 		return nil, nil, err
 	}
 	creds := authmemory.NewStore()
-	signUp, err := authusecase.NewSignUp(hasher, bridge, creds)
+	signUp, err := authusecase.NewSignUp(hasher, bridge, bridge, creds)
 	if err != nil {
 		return nil, nil, err
 	}

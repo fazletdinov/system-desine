@@ -27,7 +27,7 @@ type countingHasher struct {
 
 const fakePrefix = "h:"
 
-func (h *countingHasher) Hash(p domain.Password) (domain.PasswordHash, error) {
+func (h *countingHasher) Hash(_ context.Context, p domain.Password) (domain.PasswordHash, error) {
 	h.hashes.Add(1)
 	if h.hashErr != nil {
 		return domain.PasswordHash{}, h.hashErr
@@ -35,7 +35,7 @@ func (h *countingHasher) Hash(p domain.Password) (domain.PasswordHash, error) {
 	return domain.NewPasswordHash(fakePrefix + p.Plaintext())
 }
 
-func (h *countingHasher) Verify(plaintext string, hash domain.PasswordHash) (bool, error) {
+func (h *countingHasher) Verify(_ context.Context, plaintext string, hash domain.PasswordHash) (bool, error) {
 	h.verifies.Add(1)
 	if h.verifyErr != nil {
 		return false, h.verifyErr
@@ -87,6 +87,12 @@ func (p *profiles) UserIDByUsername(_ context.Context, username string) (domain.
 	}
 	return profile.ID, nil
 }
+
+// stubValidator — ProfileValidator с заранее заданным ответом. Правила имён тут
+// не нужны: тест проверяет порядок шагов регистрации, а не сами правила.
+type stubValidator struct{ err error }
+
+func (v stubValidator) ValidateProfile(context.Context, string, string) error { return v.err }
 
 // countingSaver считает обращения к хранилищу и умеет падать.
 type countingSaver struct {

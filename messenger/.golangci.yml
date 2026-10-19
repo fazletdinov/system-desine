@@ -107,9 +107,18 @@ linters:
           files: ["**/internal/auth/**", "!**/internal/auth/adapters/userbridge/**"]
           deny:
             - pkg: messenger/internal/user
-              desc: "auth не зависит от user: порты ProfileRegistrar и UserLookup, адаптер userbridge"
+              desc: "auth не зависит от user: порты ProfileRegistrar, ProfileValidator и UserLookup, адаптер userbridge"
             - pkg: messenger/internal/chat
               desc: "auth не знает про чаты"
+        # Ограничитель хеширования — декоратор над портом: знает только порт (и типы
+        # домена в его сигнатуре), а не конкретный хешер и не HTTP (спека 1.5a, §4.7).
+        hashlimit:
+          list-mode: strict
+          files: ["**/internal/auth/adapters/hashlimit/**", "!$test"]
+          allow:
+            - $gostd
+            - messenger/internal/auth/usecase
+            - messenger/internal/auth/domain
         # Контексты не знают о пробах: проверки готовности (Postgres в 2a) регистрирует
         # composition root — так контекст не зависит от того, как его здоровье спрашивают.
         contexts-no-health:

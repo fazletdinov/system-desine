@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 
@@ -78,6 +79,36 @@ func TestWriteUnknownCode(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "секрет") {
 		t.Fatal("detail незарегистрированной проблемы утёк в ответ")
+	}
+}
+
+// Retry-After — целые секунды (RFC 9110 §10.2.3), поэтому доли округляются вверх:
+// клиент, пришедший раньше обещанного, снова получил бы отказ.
+func TestWriteRetryAfter(t *testing.T) {
+	tests := []struct {
+		name  string
+		after time.Duration
+		want  string
+	}{
+		{"1,5 с — округление вверх", 1500 * time.Millisecond, "2"},
+		{"ровно 1 с", time.Second, "1"},
+		{"0 — заголовка нет", 0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			p := problem.Problem{Code: problem.CodeOverloaded, Detail: "повторите через секунду", RetryAfter: tt.after}
+			if err := problem.Write(rec, newRequest(t, http.MethodPost, "/v1/users"), p); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(rec.Header().Values("Retry-After"), ","); got != tt.want {
+				t.Fatalf("Retry-After %q, ждали %q", got, tt.want)
+			}
+			m := decode(t, rec)
+			if rec.Code != http.StatusServiceUnavailable || m["code"] != "overloaded" || m["title"] != "Сервер перегружен" {
+				t.Fatalf("%d %v %v, ждали 503 overloaded «Сервер перегружен»", rec.Code, m["code"], m["title"])
+			}
+		})
 	}
 }
 

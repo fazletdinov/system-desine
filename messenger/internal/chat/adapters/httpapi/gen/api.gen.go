@@ -65,6 +65,7 @@ const (
 	ProblemCodeMethodNotAllowed      ProblemCode = "method_not_allowed"
 	ProblemCodeNotFound              ProblemCode = "not_found"
 	ProblemCodeNotMember             ProblemCode = "not_member"
+	ProblemCodeOverloaded            ProblemCode = "overloaded"
 	ProblemCodeTimeout               ProblemCode = "timeout"
 	ProblemCodeUnauthenticated       ProblemCode = "unauthenticated"
 	ProblemCodeUnsupportedMediaType  ProblemCode = "unsupported_media_type"
@@ -97,6 +98,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeNotFound:
 		return true
 	case ProblemCodeNotMember:
+		return true
+	case ProblemCodeOverloaded:
 		return true
 	case ProblemCodeTimeout:
 		return true

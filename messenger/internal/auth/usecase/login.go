@@ -35,7 +35,9 @@ func NewLogin(users UserLookup, creds CredentialsFinder, hasher PasswordHasher, 
 	if err != nil {
 		return nil, fmt.Errorf("login: фиктивный пароль не проходит политику: %w", err)
 	}
-	dummy, err := hasher.Hash(pw)
+	// Запросного ctx здесь нет: конструктор работает при сборке в app.go, до приёма
+	// запросов, поэтому ограничитель хеширования свободен и ждать некого.
+	dummy, err := hasher.Hash(context.Background(), pw)
 	if err != nil {
 		return nil, fmt.Errorf("login: фиктивный хеш: %w", err)
 	}
@@ -50,7 +52,7 @@ func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 	}
 	id, err := uc.users.UserIDByUsername(ctx, cmd.Username)
 	if errors.Is(err, domain.ErrNoSuchUser) {
-		return Token{}, uc.reject(cmd.Password, err)
+		return Token{}, uc.reject(ctx, cmd.Password, err)
 	}
 	if err != nil {
 		return Token{}, fmt.Errorf("login: %w", err)
@@ -58,12 +60,12 @@ func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 	creds, err := uc.creds.FindCredentials(ctx, id)
 	if errors.Is(err, domain.ErrNoCredentials) {
 		// Профиль без пароля — след неудачной регистрации (ADR-0004). Для клиента — то же «неверно».
-		return Token{}, uc.reject(cmd.Password, err)
+		return Token{}, uc.reject(ctx, cmd.Password, err)
 	}
 	if err != nil {
 		return Token{}, fmt.Errorf("login: %w", err)
 	}
-	ok, err := uc.hasher.Verify(cmd.Password, creds.PasswordHash())
+	ok, err := uc.hasher.Verify(ctx, cmd.Password, creds.PasswordHash())
 	if err != nil {
 		return Token{}, fmt.Errorf("login: %w", err)
 	}
@@ -79,8 +81,8 @@ func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 
 // reject тратит на отказ столько же, сколько настоящая проверка: иначе по времени
 // ответа видно, есть ли пользователь (быстро — нет, медленно — есть, но пароль не тот).
-func (uc *Login) reject(password string, reason error) error {
-	if _, err := uc.hasher.Verify(password, uc.dummy); err != nil {
+func (uc *Login) reject(ctx context.Context, password string, reason error) error {
+	if _, err := uc.hasher.Verify(ctx, password, uc.dummy); err != nil {
 		return fmt.Errorf("login: фиктивная проверка: %w", err)
 	}
 	return rejected(reason)

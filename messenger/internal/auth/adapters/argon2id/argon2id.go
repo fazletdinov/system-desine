@@ -1,6 +1,7 @@
 package argon2id
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -63,7 +64,13 @@ func New(p Params) (*Hasher, error) {
 }
 
 // #region hash
-func (h *Hasher) Hash(pw domain.Password) (domain.PasswordHash, error) {
+// ctx проверяется только до вычисления: внутри argon2.IDKey нет точки, где можно
+// остановиться, — это один вызов, который заполняет m КиБ и проходит их t раз.
+// Отменённый запрос не начнёт хеш, но начатый досчитается (≈ 17 мс для OWASPMinimum).
+func (h *Hasher) Hash(ctx context.Context, pw domain.Password) (domain.PasswordHash, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.PasswordHash{}, fmt.Errorf("argon2id: %w", err)
+	}
 	salt := make([]byte, h.p.SaltLen)
 	if _, err := io.ReadFull(h.rand, salt); err != nil {
 		return domain.PasswordHash{}, fmt.Errorf("argon2id: соль: %w", err)
@@ -74,7 +81,10 @@ func (h *Hasher) Hash(pw domain.Password) (domain.PasswordHash, error) {
 	return domain.NewPasswordHash(encoded)
 }
 
-func (h *Hasher) Verify(plaintext string, hash domain.PasswordHash) (bool, error) {
+func (h *Hasher) Verify(ctx context.Context, plaintext string, hash domain.PasswordHash) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("argon2id: %w", err)
+	}
 	p, salt, key, err := parse(hash.String())
 	if err != nil {
 		return false, err

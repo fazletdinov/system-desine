@@ -377,7 +377,14 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     ServiceUnavailable:
-      description: Сервер не успел ответить
+      description: Сервер не успел ответить (timeout) или перегружен (overloaded)
+      headers:
+        Retry-After:
+          description: |
+            Через сколько секунд повторить запрос (RFC 9110 §10.2.3). Есть у overloaded:
+            очередь хеширования паролей полна, и сервер отказал сразу, не начав работу.
+          required: false
+          schema: { type: integer, minimum: 1 }
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -537,5 +544,6 @@ components:
       type: string
       enum: [bad_json, body_too_large, client_message_id_reused, conflict, idempotency_in_progress,
              idempotency_key_reused, internal, invalid_credentials, invalid_input, method_not_allowed,
-             not_found, not_member, timeout, unauthenticated, unsupported_media_type, username_taken]
+             not_found, not_member, overloaded, timeout, unauthenticated, unsupported_media_type,
+             username_taken]
     # endregion problem-schema

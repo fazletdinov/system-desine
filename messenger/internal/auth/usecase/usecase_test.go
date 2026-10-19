@@ -31,7 +31,7 @@ func newEnv(t *testing.T) *env {
 	e := &env{hasher: &countingHasher{}, profiles: newProfiles()}
 	store := memory.NewStore()
 	var err error
-	if e.signUp, err = usecase.NewSignUp(e.hasher, e.profiles, store); err != nil {
+	if e.signUp, err = usecase.NewSignUp(e.hasher, e.profiles, stubValidator{}, store); err != nil {
 		t.Fatal(err)
 	}
 	if e.login, err = usecase.NewLogin(e.profiles, store, e.hasher, fixedIssuer{}); err != nil {
@@ -128,7 +128,7 @@ func TestSignUpOrder(t *testing.T) {
 	t.Run("хешер сломан — профиль не создан", func(t *testing.T) {
 		t.Parallel()
 		hasher, prof := &countingHasher{hashErr: errBoom}, newProfiles()
-		uc, err := usecase.NewSignUp(hasher, prof, memory.NewStore())
+		uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,7 +145,7 @@ func TestSignUpOrder(t *testing.T) {
 		prof := newProfiles()
 		prof.failErr = errBoom
 		saver := &countingSaver{CredentialsSaver: memory.NewStore()}
-		uc, err := usecase.NewSignUp(&countingHasher{}, prof, saver)
+		uc, err := usecase.NewSignUp(&countingHasher{}, prof, stubValidator{}, saver)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +161,7 @@ func TestSignUpOrder(t *testing.T) {
 		t.Parallel()
 		prof := newProfiles()
 		saver := &countingSaver{CredentialsSaver: memory.NewStore(), failErr: errBoom}
-		uc, err := usecase.NewSignUp(&countingHasher{}, prof, saver)
+		uc, err := usecase.NewSignUp(&countingHasher{}, prof, stubValidator{}, saver)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +183,7 @@ func TestSignUpOrder(t *testing.T) {
 func TestSignUpPasswordPolicy(t *testing.T) {
 	t.Parallel()
 	hasher, prof := &countingHasher{}, newProfiles()
-	uc, err := usecase.NewSignUp(hasher, prof, memory.NewStore())
+	uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,6 +197,32 @@ func TestSignUpPasswordPolicy(t *testing.T) {
 	}
 }
 
+// #region invalid-username-test
+// Опечатка в имени не должна стоить полного хеша: Argon2id — самый дорогой шаг
+// регистрации, и он идёт только после всех дешёвых проверок.
+func TestSignUpInvalidUsernameDoesNotHash(t *testing.T) {
+	t.Parallel()
+	hasher, prof := &countingHasher{}, newProfiles()
+	invalid := &domain.ValidationError{Field: "username", Reason: "только a–z, 0–9 и _"}
+	uc, err := usecase.NewSignUp(hasher, prof, stubValidator{err: invalid}, memory.NewStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = uc.Execute(context.Background(), usecase.SignUpCommand{Username: "Не Имя!", DisplayName: "Боб", Password: alicePassword})
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "username" {
+		t.Fatalf("ждали ValidationError по username, получили %v", err)
+	}
+	if n := hasher.hashes.Load(); n != 0 {
+		t.Fatalf("хешер вызван %d раз для некорректного имени", n)
+	}
+	if prof.calls != 0 {
+		t.Fatalf("профиль создавался %d раз для некорректного имени", prof.calls)
+	}
+}
+
+// #endregion invalid-username-test
+
 func TestSignUpUsernameTaken(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
@@ -208,14 +234,15 @@ func TestSignUpUsernameTaken(t *testing.T) {
 
 func TestConstructorsRejectNil(t *testing.T) {
 	t.Parallel()
-	h, p, s := &countingHasher{}, newProfiles(), memory.NewStore()
+	h, p, s, v := &countingHasher{}, newProfiles(), memory.NewStore(), stubValidator{}
 	tests := []struct {
 		name string
 		new  func() error
 	}{
-		{"sign up: нет хешера", func() error { _, err := usecase.NewSignUp(nil, p, s); return err }},
-		{"sign up: нет профилей", func() error { _, err := usecase.NewSignUp(h, nil, s); return err }},
-		{"sign up: нет хранилища", func() error { _, err := usecase.NewSignUp(h, p, nil); return err }},
+		{"sign up: нет хешера", func() error { _, err := usecase.NewSignUp(nil, p, v, s); return err }},
+		{"sign up: нет профилей", func() error { _, err := usecase.NewSignUp(h, nil, v, s); return err }},
+		{"sign up: нет проверки имени", func() error { _, err := usecase.NewSignUp(h, p, nil, s); return err }},
+		{"sign up: нет хранилища", func() error { _, err := usecase.NewSignUp(h, p, v, nil); return err }},
 		{"login: нет поиска", func() error { _, err := usecase.NewLogin(nil, s, h, fixedIssuer{}); return err }},
 		{"login: нет хранилища", func() error { _, err := usecase.NewLogin(p, nil, h, fixedIssuer{}); return err }},
 		{"login: нет хешера", func() error { _, err := usecase.NewLogin(p, s, nil, fixedIssuer{}); return err }},

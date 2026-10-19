@@ -1,6 +1,8 @@
 package argon2id_test
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -42,7 +44,7 @@ func TestHashAndVerify(t *testing.T) {
 	t.Parallel()
 	h := newHasher(t, fast)
 	const pw = "правильный-пароль-длинный"
-	hashed, err := h.Hash(password(t, pw))
+	hashed, err := h.Hash(context.Background(), password(t, pw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,10 +54,10 @@ func TestHashAndVerify(t *testing.T) {
 	if strings.Contains(hashed.String(), pw) {
 		t.Fatal("пароль виден в хеше")
 	}
-	if ok, err := h.Verify(pw, hashed); err != nil || !ok {
+	if ok, err := h.Verify(context.Background(), pw, hashed); err != nil || !ok {
 		t.Fatalf("свой пароль не прошёл: %v, %v", ok, err)
 	}
-	if ok, err := h.Verify("неправильный-пароль-длинный", hashed); err != nil || ok {
+	if ok, err := h.Verify(context.Background(), "неправильный-пароль-длинный", hashed); err != nil || ok {
 		t.Fatalf("чужой пароль прошёл: %v, %v", ok, err)
 	}
 }
@@ -65,11 +67,11 @@ func TestHashAndVerify(t *testing.T) {
 func TestSaltMakesHashesDiffer(t *testing.T) {
 	t.Parallel()
 	h := newHasher(t, fast)
-	a, err := h.Hash(password(t, "один-и-тот-же-пароль"))
+	a, err := h.Hash(context.Background(), password(t, "один-и-тот-же-пароль"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := h.Hash(password(t, "один-и-тот-же-пароль"))
+	b, err := h.Hash(context.Background(), password(t, "один-и-тот-же-пароль"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,11 +86,11 @@ func TestVerifyUsesParamsFromHash(t *testing.T) {
 	t.Parallel()
 	old := newHasher(t, argon2id.Params{MemoryKiB: 32, Iterations: 2, Parallelism: 2, SaltLen: 16, KeyLen: 16})
 	const pw = "пароль-со-старыми-параметрами"
-	hashed, err := old.Hash(password(t, pw))
+	hashed, err := old.Hash(context.Background(), password(t, pw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := newHasher(t, fast).Verify(pw, hashed); err != nil || !ok {
+	if ok, err := newHasher(t, fast).Verify(context.Background(), pw, hashed); err != nil || !ok {
 		t.Fatalf("хеш со старыми параметрами не проверился новым хешером: %v, %v", ok, err)
 	}
 }
@@ -96,7 +98,7 @@ func TestVerifyUsesParamsFromHash(t *testing.T) {
 func TestVerifyRejectsCorruptHash(t *testing.T) {
 	t.Parallel()
 	h := newHasher(t, fast)
-	good, err := h.Hash(password(t, "правильный-пароль-длинный"))
+	good, err := h.Hash(context.Background(), password(t, "правильный-пароль-длинный"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,10 +120,29 @@ func TestVerifyRejectsCorruptHash(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if ok, err := h.Verify("правильный-пароль-длинный", hash(t, tt.hash)); err == nil || ok {
+			if ok, err := h.Verify(context.Background(), "правильный-пароль-длинный", hash(t, tt.hash)); err == nil || ok {
 				t.Fatalf("испорченный хеш %q принят: %v, %v", tt.hash, ok, err)
 			}
 		})
+	}
+}
+
+// Отменённый ctx — отказ до вычисления: запрос, который уже никому не нужен, не должен
+// тратить 19 МиБ и десятки миллисекунд. Начатое вычисление ctx не прерывает (комментарий у Hash).
+func TestCanceledContextSkipsWork(t *testing.T) {
+	t.Parallel()
+	h := newHasher(t, fast)
+	good, err := h.Hash(context.Background(), password(t, "правильный-пароль-длинный"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := h.Hash(ctx, password(t, "правильный-пароль-длинный")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Hash с отменённым ctx: ждали context.Canceled, получили %v", err)
+	}
+	if ok, err := h.Verify(ctx, "правильный-пароль-длинный", good); !errors.Is(err, context.Canceled) || ok {
+		t.Fatalf("Verify с отменённым ctx: ждали context.Canceled, получили %v, %v", ok, err)
 	}
 }
 
@@ -160,7 +181,7 @@ func BenchmarkHashOWASP(b *testing.B) {
 	h := newHasher(b, argon2id.OWASPMinimum)
 	pw := password(b, "правильный-пароль-длинный")
 	for b.Loop() {
-		if _, err := h.Hash(pw); err != nil {
+		if _, err := h.Hash(context.Background(), pw); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -6,6 +6,8 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strconv"
+	"time"
 
 	"messenger/internal/platform/middleware"
 )
@@ -38,6 +40,7 @@ const (
 	CodeIdempotencyInProgress Code = "idempotency_in_progress"
 	CodeIdempotencyKeyReused  Code = "idempotency_key_reused"
 	CodeTimeout               Code = "timeout"
+	CodeOverloaded            Code = "overloaded"
 	CodeInternal              Code = "internal"
 )
 
@@ -65,6 +68,7 @@ var registry = map[Code]spec{
 	CodeIdempotencyInProgress: {http.StatusConflict, "Запрос с этим ключом ещё выполняется"},
 	CodeIdempotencyKeyReused:  {http.StatusUnprocessableEntity, "Ключ идемпотентности использован для другого запроса"},
 	CodeTimeout:               {http.StatusServiceUnavailable, "Сервер не успел ответить"},
+	CodeOverloaded:            {http.StatusServiceUnavailable, "Сервер перегружен"},
 	CodeInternal:              {http.StatusInternalServerError, "Внутренняя ошибка сервера"},
 }
 
@@ -81,6 +85,9 @@ type Problem struct {
 	Code          Code
 	Detail        string
 	InvalidParams []InvalidParam
+	// RetryAfter > 0 — через сколько клиенту стоит повторить (заголовок Retry-After).
+	// Это не поле тела: прокси и клиентские библиотеки читают именно заголовок.
+	RetryAfter time.Duration
 }
 
 // Invalid — проблема с одним неверным полем или параметром; name — имя из контракта.
@@ -127,6 +134,9 @@ func Write(w http.ResponseWriter, r *http.Request, p Problem) error {
 		body.InvalidParams = append(body.InvalidParams, wireParam(ip))
 	}
 	w.Header().Set("Content-Type", ContentType)
+	if p.RetryAfter > 0 {
+		w.Header().Set("Retry-After", retryAfterSeconds(p.RetryAfter))
+	}
 	w.WriteHeader(s.status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		return fmt.Errorf("problem: запись ответа: %w", err)
@@ -135,3 +145,9 @@ func Write(w http.ResponseWriter, r *http.Request, p Problem) error {
 }
 
 // #endregion write
+
+// retryAfterSeconds — целые секунды (RFC 9110 §10.2.3 не допускает долей) с округлением
+// вверх: клиент, повторивший раньше обещанного, скорее всего снова получил бы отказ.
+func retryAfterSeconds(d time.Duration) string {
+	return strconv.FormatInt(int64((d+time.Second-1)/time.Second), 10)
+}
