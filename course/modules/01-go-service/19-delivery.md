@@ -34,7 +34,7 @@ title: "1.19. Доставка: реестр, теги, SBOM и происхож
 - **связь с репозиторием.** Пакет, опубликованный из workflow, автоматически привязан к репозиторию. На странице пакета видно, откуда он, а права наследуются от репозитория;
 - **аттестации рядом.** Подписанные утверждения о происхождении образа GitHub хранит у себя и умеет класть в тот же реестр рядом с образом.
 
-Две особенности GHCR, о которых стоит знать заранее. Во-первых, **новый пакет по умолчанию приватный**, даже в публичном репозитории. После первой публикации его надо один раз сделать публичным в настройках пакета, и тогда `docker pull` работает анонимно, без входа. Во-вторых, **имя образа — только в нижнем регистре**: так требует спецификация OCI Distribution для имён репозиториев. Логин владельца на GitHub может быть `IvanPetrov`, а образ должен называться `ghcr.io/ivanpetrov/messenger`. Поэтому в `release.yml` имя образа приводится к нижнему регистру (`${OWNER,,}` в bash).
+Две особенности GHCR, о которых стоит знать заранее. Во-первых, **видимость пакета не обязана совпадать с видимостью репозитория**. По документации GitHub новый пакет приватный, а от связанного репозитория наследует права доступа, но не видимость. При публикации курса пакет `messenger` оказался публичным сразу, хотя документация обещает иное. Поэтому не полагайтесь ни на то, ни на другое: после первой публикации проверьте анонимный `docker pull`. Если реестр ответит `denied` или `unauthorized`, сделайте пакет публичным в его настройках. Во-вторых, **имя образа — только в нижнем регистре**: так требует спецификация OCI Distribution для имён репозиториев. Логин владельца на GitHub может быть `IvanPetrov`, а образ должен называться `ghcr.io/ivanpetrov/messenger`. Поэтому в `release.yml` имя образа приводится к нижнему регистру (`${OWNER,,}` в bash).
 
 ## <Part kind="theory" /> Теги: изменяемые и неизменяемые
 
@@ -523,11 +523,11 @@ BuildKit записал коммит (`vcs:revision`, его он взял из 
 
 ## <Part kind="practice" /> После публикации: первый релиз и проверка
 
-Всё, что ниже, требует репозитория на GitHub. Его создаёте вы сами (урок 1.18). Вывод команд в этом разделе — **пример**, а не прогон автора: репозиторий курса ещё не опубликован. После первой публикации пример заменят реальным выводом.
+Всё, что ниже, требует репозитория на GitHub. Его создаёте вы сами (урок 1.18). Вывод команд в этом разделе — настоящий: первая публикация репозитория курса `fazletdinov/system-desine` (19 октября 2026 года, коммит `6935c68`). У вас будут свои владелец, имя репозитория и digest.
 
 1. **Создайте репозиторий и отправьте `main`.** `gh auth login` (интерактивно, в браузере), затем `gh repo create <repo> --public --source . --push`. Первый `push` в `main` запустит `ci`. После его успеха `workflow_run` запустит `release` и `pages`: файлы workflow теперь лежат в ветке по умолчанию.
 2. **Включите Pages.** Settings → Pages → Build and deployment → Source: **GitHub Actions**. Без этого `configure-pages` упадёт с ошибкой «Get Pages site failed». Если первый прогон `pages` успел упасть, перезапустите его кнопкой Re-run или через Actions → pages → Run workflow (`workflow_dispatch`).
-3. **Сделайте пакет публичным.** Профиль → Packages → `messenger` → Package settings → Change visibility → Public. Новый пакет GHCR приватный даже у публичного репозитория.
+3. **Проверьте видимость пакета.** Анонимный `docker pull` из шага 5 должен пройти. Если реестр отвечает `denied`, откройте профиль → Packages → `messenger` → Package settings → Change visibility → Public.
 4. **Защитите `main`** (шаги из урока 1.18): Settings → Rules → Rulesets — «Require a pull request before merging», «Require status checks to pass» с `ci-ok`, «Block force pushes», «Restrict deletions», обход для владельца. В Settings → Code security включите secret scanning, push protection, Dependabot alerts и CodeQL default setup.
 5. **Скачайте образ без входа:**
 
@@ -536,20 +536,44 @@ BuildKit записал коммит (`vcs:revision`, его он взял из 
    docker buildx imagetools inspect ghcr.io/<owner>/messenger:main
    ```
 
-   `imagetools inspect` покажет индекс: `linux/amd64`, `linux/arm64` и два манифеста `unknown/unknown`. Это та же картина, что в OCI Layout выше.
-6. **Проверьте происхождение** по digest (его печатает `imagetools inspect` в строке `Digest:`):
-
-   **Пример вывода** (заменим реальным после первой публикации):
+   Чтобы `pull` был действительно анонимным, запустите его с пустым каталогом настроек: `DOCKER_CONFIG=$(mktemp -d) docker pull …`. Иначе Docker молча возьмёт ваш сохранённый логин, и приватный пакет тоже скачается. `imagetools inspect` первой публикации курса:
 
    ```text
-   $ gh attestation verify oci://ghcr.io/<owner>/messenger@sha256:<digest> --owner <owner>
-   Loaded digest sha256:<digest> for oci://ghcr.io/<owner>/messenger@sha256:<digest>
+   $ docker buildx imagetools inspect ghcr.io/fazletdinov/messenger:main
+   Name:      ghcr.io/fazletdinov/messenger:main
+   MediaType: application/vnd.oci.image.index.v1+json
+   Digest:    sha256:eae29acc8584f54b96e4076f699d57b70a778bc8f1df5fd674b6ad5386a5ed97
+
+   Manifests:
+     Name:        ghcr.io/fazletdinov/messenger:main@sha256:22578d751e20255475c101f8952c43bd796e42f72c05395006bc2c922b5562a2
+     MediaType:   application/vnd.oci.image.manifest.v1+json
+     Platform:    linux/amd64
+
+     Name:        ghcr.io/fazletdinov/messenger:main@sha256:d544a3445f2b74b679eaaf060a1564703dbb09fcffec1095b7060a1893f93592
+     MediaType:   application/vnd.oci.image.manifest.v1+json
+     Platform:    linux/arm64
+
+     Name:        ghcr.io/fazletdinov/messenger:main@sha256:63165ae2b8ef58d1be51337ee8b456ff0df9299146f4315afca34a682fa8641d
+     MediaType:   application/vnd.oci.image.manifest.v1+json
+     Platform:    unknown/unknown
+     Annotations:
+       vnd.docker.reference.digest: sha256:22578d751e20255475c101f8952c43bd796e42f72c05395006bc2c922b5562a2
+       vnd.docker.reference.type:   attestation-manifest
+     …
+   ```
+
+   Индекс, `linux/amd64`, `linux/arm64` и манифесты `unknown/unknown` с аннотацией `attestation-manifest` (второй, для `arm64`, обрезан). Это та же картина, что в OCI Layout выше. Аннотация `vnd.docker.reference.digest` говорит, к какому платформенному манифесту относится аттестация.
+6. **Проверьте происхождение** по digest индекса (строка `Digest:` выше):
+
+   ```text
+   $ gh attestation verify oci://ghcr.io/fazletdinov/messenger@sha256:eae29acc8584f54b96e4076f699d57b70a778bc8f1df5fd674b6ad5386a5ed97 --owner fazletdinov
+   Loaded digest sha256:eae29acc8584f54b96e4076f699d57b70a778bc8f1df5fd674b6ad5386a5ed97 for oci://ghcr.io/fazletdinov/messenger@sha256:eae29acc8584f54b96e4076f699d57b70a778bc8f1df5fd674b6ad5386a5ed97
    Loaded 1 attestation from GitHub API
 
    The following policy criteria will be enforced:
    - Predicate type must match:................ https://slsa.dev/provenance/v1
-   - Source Repository Owner URI must match:... https://github.com/<owner>
-   - Subject Alternative Name must match regex: (?i)^https://github.com/<owner>/
+   - Source Repository Owner URI must match:... https://github.com/fazletdinov
+   - Subject Alternative Name must match regex: (?i)^https://github\.com/fazletdinov/
    - OIDC Issuer must match:................... https://token.actions.githubusercontent.com
 
    ✓ Verification succeeded!
@@ -557,14 +581,45 @@ BuildKit записал коммит (`vcs:revision`, его он взял из 
    The following 1 attestation matched the policy criteria
 
    - Attestation #1
-     - Build repo:..... <owner>/<repo>
+     - Build repo:..... fazletdinov/system-desine
      - Build workflow:. .github/workflows/release.yml@refs/heads/main
-     - Signer repo:.... <owner>/<repo>
+     - Signer repo:.... fazletdinov/system-desine
      - Signer workflow: .github/workflows/release.yml@refs/heads/main
    ```
 
-   Затем строгий вариант: `--repo <owner>/<repo> --signer-workflow <owner>/<repo>/.github/workflows/release.yml --source-ref refs/heads/main`. И отрицательная проверка: тот же `verify` для `docker.io/library/golang@sha256:…` должен закончиться ошибкой `✗ No attestations found for subject sha256:…`. Проверка, которая никогда не говорит «нет», ничего не проверяет.
-7. **Откройте курс.** **Пример адреса** (заменим реальным после первой публикации): `https://<owner>.github.io/<repo>/`. Проверьте, что во вкладке есть иконка, ссылки терминов ведут в глоссарий под `/<repo>/glossary`, а поиск работает.
+   Посмотрите на регулярное выражение для SAN: с `--owner` подходит **любой** workflow любого репозитория владельца. Строгий вариант сужает политику до одного репозитория, одного workflow и одной ветки:
+
+   ```text
+   $ gh attestation verify oci://ghcr.io/fazletdinov/messenger@sha256:eae29acc… \
+       --repo fazletdinov/system-desine \
+       --signer-workflow fazletdinov/system-desine/.github/workflows/release.yml \
+       --source-ref refs/heads/main
+   …
+   The following policy criteria will be enforced:
+   - Predicate type must match:................ https://slsa.dev/provenance/v1
+   - Source Repository Owner URI must match:... https://github.com/fazletdinov
+   - Source Repository URI must match:......... https://github.com/fazletdinov/system-desine
+   - Source repo ref must match:............... refs/heads/main
+   - Subject Alternative Name must match regex: ^https://github\.com/fazletdinov/system-desine/\.github/workflows/release\.yml(@(refs/.*|[0-9a-fA-F]+))?$
+   - OIDC Issuer must match:................... https://token.actions.githubusercontent.com
+
+   ✓ Verification succeeded!
+   ```
+
+   И отрицательная проверка: образ, который собирали не вы, должен провалить `verify`.
+
+   ```text
+   $ gh attestation verify oci://docker.io/library/golang@sha256:37cfcca63222ec499bec5e8ad7aad52dbf7529db36d5812b8eae2f0621aa92d6 --repo fazletdinov/system-desine
+   Loaded digest sha256:37cfcca63222ec499bec5e8ad7aad52dbf7529db36d5812b8eae2f0621aa92d6 for oci://docker.io/library/golang@sha256:37cfcca63222ec499bec5e8ad7aad52dbf7529db36d5812b8eae2f0621aa92d6
+   ✗ Loading attestations from GitHub API failed
+
+   Error: HTTP 404: Not Found (https://api.github.com/repos/fazletdinov/system-desine/attestations/sha256:37cfcca6…?per_page=30&predicate_type=https%3A%2F%2Fslsa.dev%2Fprovenance%2Fv1)
+   $ echo $?
+   1
+   ```
+
+   GitHub хранит аттестации по digest. Для чужого digest в этом репозитории их нет, API отвечает 404, и `gh` завершается с кодом 1. В скрипте выкатки важен именно код возврата, а не текст: формулировки ошибок меняются от версии к версии `gh` (здесь 2.102.0). Проверка, которая никогда не говорит «нет», ничего не проверяет.
+7. **Откройте курс.** Первая публикация живёт по адресу https://fazletdinov.github.io/system-desine/, у вас будет `https://<owner>.github.io/<repo>/`. Проверьте, что во вкладке есть иконка, ссылки терминов ведут в глоссарий под `/<repo>/glossary`, а поиск работает.
 8. **Первый релиз.** `git tag v0.1.0 <коммит main, прошедший ci> && git push origin v0.1.0`. В пакете появятся `0.1.0`, `0.1` и `latest`.
 
 ## <Part kind="practice" /> Что изменилось в репозитории
