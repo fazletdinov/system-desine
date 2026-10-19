@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import VizFrame from '../components/VizFrame.vue'
 import Player from '../components/Player.vue'
+import SegmentedToggle from '../components/SegmentedToggle.vue'
 import PaginationView from '../renderers/PaginationView.vue'
 import { paginationSimulation, type PagingAction, type PagingMode } from '../simulations/pagination'
 
@@ -11,18 +12,16 @@ const steps = computed(() => paginationSimulation.steps(state.value))
 const dispatch = (action: PagingAction): void => {
   state.value = paginationSimulation.apply(state.value, action)
 }
-const modes: { id: PagingMode; label: string }[] = [
-  { id: 'offset', label: 'offset' },
-  { id: 'cursor', label: 'курсор' },
+const modes: { value: PagingMode; text: string }[] = [
+  { value: 'offset', text: 'offset' },
+  { value: 'cursor', text: 'курсор' },
 ]
 </script>
 
 <template>
   <VizFrame label="Песочница: пагинация">
     <p class="intro">Листайте историю чата и между страницами добавляйте или удаляйте сообщения. Сравните offset и курсор.</p>
-    <div class="panel" role="radiogroup" aria-label="Способ пагинации">
-      <button v-for="m in modes" :key="m.id" type="button" role="radio" :aria-checked="state.mode === m.id" :class="{ on: state.mode === m.id }" @click="dispatch({ type: 'mode', mode: m.id })">{{ m.label }}</button>
-    </div>
+    <SegmentedToggle label="Способ пагинации" :options="modes" :model-value="state.mode" @update:model-value="(mode) => dispatch({ type: 'mode', mode })" />
     <div class="panel" role="group" aria-label="Действия">
       <button type="button" @click="dispatch({ type: 'next' })">Следующая страница</button>
       <button type="button" @click="dispatch({ type: 'insert' })">Новое сообщение сверху</button>

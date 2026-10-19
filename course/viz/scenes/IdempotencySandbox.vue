@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import VizFrame from '../components/VizFrame.vue'
 import Player from '../components/Player.vue'
+import SegmentedToggle from '../components/SegmentedToggle.vue'
 import IdempotencyView from '../renderers/IdempotencyView.vue'
 import { idempotencySimulation, type IdemAction, type IdemMode } from '../simulations/idempotency'
 
@@ -11,18 +12,16 @@ const steps = computed(() => idempotencySimulation.steps(state.value))
 const dispatch = (action: IdemAction): void => {
   state.value = idempotencySimulation.apply(state.value, action)
 }
-const modes: { id: IdemMode; label: string }[] = [
-  { id: 'no-key', label: 'без ключа' },
-  { id: 'key', label: 'с ключом' },
+const modes: { value: IdemMode; text: string }[] = [
+  { value: 'no-key', text: 'без ключа' },
+  { value: 'key', text: 'с ключом' },
 ]
 </script>
 
 <template>
   <VizFrame label="Песочница: идемпотентность POST">
     <p class="intro">Создание чата: ответ потерялся, клиент повторяет запрос. Что сделает сервер без ключа и с ключом?</p>
-    <div class="panel" role="radiogroup" aria-label="Режим">
-      <button v-for="m in modes" :key="m.id" type="button" role="radio" :aria-checked="state.mode === m.id" :class="{ on: state.mode === m.id }" @click="dispatch({ type: 'mode', mode: m.id })">{{ m.label }}</button>
-    </div>
+    <SegmentedToggle label="Режим" :options="modes" :model-value="state.mode" @update:model-value="(mode) => dispatch({ type: 'mode', mode })" />
     <div class="panel" role="group" aria-label="Действия">
       <button type="button" @click="dispatch({ type: 'send', body: 'A' })">Отправить (тело A)</button>
       <button type="button" @click="dispatch({ type: 'send', body: 'A' })">Повторить</button>

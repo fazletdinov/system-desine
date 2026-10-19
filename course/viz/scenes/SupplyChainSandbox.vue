@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import VizFrame from '../components/VizFrame.vue'
 import Player from '../components/Player.vue'
+import SegmentedToggle from '../components/SegmentedToggle.vue'
 import SupplyChainView from '../renderers/SupplyChainView.vue'
 import { supplyChainSimulation, type ChainAction } from '../simulations/supply-chain'
 
@@ -11,23 +12,26 @@ const steps = computed(() => supplyChainSimulation.steps(state.value))
 const dispatch = (action: ChainAction): void => {
   state.value = supplyChainSimulation.apply(state.value, action)
 }
+const pinOptions = [
+  { value: 'tag', text: 'закрепление: тег' },
+  { value: 'sha', text: 'закрепление: SHA' },
+] as const
+const permissionOptions = [
+  { value: 'write-all', text: 'permissions: write-all' },
+  { value: 'minimal', text: 'permissions: минимальные' },
+] as const
+const secretOptions = [
+  { value: true, text: 'секрет в env: да' },
+  { value: false, text: 'секрет в env: нет' },
+] as const
 </script>
 
 <template>
   <VizFrame label="Песочница: атака на цепочку поставок">
     <p class="intro">Злоумышленник перевешивает тег чужого action на свой коммит. Что выполнится в вашем workflow и что утечёт?</p>
-    <div class="panel" role="radiogroup" aria-label="Закрепление">
-      <button type="button" role="radio" :aria-checked="state.pin === 'tag'" :class="{ on: state.pin === 'tag' }" @click="dispatch({ type: 'pin', mode: 'tag' })">закрепление: тег</button>
-      <button type="button" role="radio" :aria-checked="state.pin === 'sha'" :class="{ on: state.pin === 'sha' }" @click="dispatch({ type: 'pin', mode: 'sha' })">закрепление: SHA</button>
-    </div>
-    <div class="panel" role="radiogroup" aria-label="Права токена">
-      <button type="button" role="radio" :aria-checked="state.permissions === 'write-all'" :class="{ on: state.permissions === 'write-all' }" @click="dispatch({ type: 'permissions', mode: 'write-all' })">permissions: write-all</button>
-      <button type="button" role="radio" :aria-checked="state.permissions === 'minimal'" :class="{ on: state.permissions === 'minimal' }" @click="dispatch({ type: 'permissions', mode: 'minimal' })">permissions: минимальные</button>
-    </div>
-    <div class="panel" role="radiogroup" aria-label="Секрет в env">
-      <button type="button" role="radio" :aria-checked="state.secretInEnv" :class="{ on: state.secretInEnv }" @click="dispatch({ type: 'secret', inEnv: true })">секрет в env: да</button>
-      <button type="button" role="radio" :aria-checked="!state.secretInEnv" :class="{ on: !state.secretInEnv }" @click="dispatch({ type: 'secret', inEnv: false })">секрет в env: нет</button>
-    </div>
+    <SegmentedToggle label="Закрепление" :options="pinOptions" :model-value="state.pin" @update:model-value="(mode) => dispatch({ type: 'pin', mode })" />
+    <SegmentedToggle label="Права токена" :options="permissionOptions" :model-value="state.permissions" @update:model-value="(mode) => dispatch({ type: 'permissions', mode })" />
+    <SegmentedToggle label="Секрет в env" :options="secretOptions" :model-value="state.secretInEnv" @update:model-value="(inEnv) => dispatch({ type: 'secret', inEnv })" />
     <div class="panel" role="group" aria-label="Действия">
       <button type="button" @click="dispatch({ type: 'attack' })">Подменить тег</button>
       <button type="button" @click="dispatch({ type: 'run' })">Запустить workflow</button>
