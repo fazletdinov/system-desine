@@ -168,38 +168,56 @@ ok "sync/starve: быстрая горутина получила замок $li
 build leak ./1-5/patterns/leak -tags labdemo
 out=$("$bin/leak")
 leaks=$(printf '%s\n' "$out" | sed -nE 's/^утекло горутин: ([0-9]+)$/\1/p')
-first_leak=$(printf '%s\n' "$leaks" | sed -n 1p)
-second_leak=$(printf '%s\n' "$leaks" | sed -n 2p)
-[ "$first_leak" = 0 ] || fail "patterns/leak: исправленная версия утекла $first_leak горутин:
+fixed_leak=$(printf '%s\n' "$leaks" | sed -n 1p)
+group_leak=$(printf '%s\n' "$leaks" | sed -n 2p)
+orig_leak=$(printf '%s\n' "$leaks" | sed -n 3p)
+[ "$fixed_leak" = 0 ] && [ "$group_leak" = 0 ] || fail "patterns/leak: исправленные версии утекли ($fixed_leak, $group_leak):
 $out"
-[ -n "$second_leak" ] && [ "$second_leak" -gt 0 ] || fail "patterns/leak: исходная версия не утекла ('$second_leak'):
+[ -n "$orig_leak" ] && [ "$orig_leak" -gt 0 ] || fail "patterns/leak: исходная версия не утекла ('$orig_leak'):
 $out"
 echo "$out" | grep -q 'goroutineleak profile: total' || fail "patterns/leak: нет профиля goroutineleak:
 $out"
-ok "patterns/leak: исходная версия утекла $second_leak горутин, исправленная — $first_leak"
+ok "patterns/leak: исходная версия утекла $orig_leak горутин, исправленные — $fixed_leak и $group_leak"
 
-# --- 10. patterns/limit: горутина на задачу и семафор ---
+# Тесты на synctest: errgroup-версия проходит, исходная падает, потому что горутины пережили вызов.
+go test -count=1 -tags labdemo -run '^TestProcessWorkItemsGroup$' ./1-5/patterns/leak/ >/dev/null ||
+	fail "patterns/leak: TestProcessWorkItemsGroup не прошёл"
+if out=$(go test -count=1 -tags labdemo -run '^TestProcessWorkItemsLeaks$' ./1-5/patterns/leak/ 2>&1); then
+	fail "patterns/leak: synctest не поймал утечку в TestProcessWorkItemsLeaks"
+fi
+echo "$out" | grep -q 'blocked goroutines remain' || fail "patterns/leak: нет сообщения synctest об оставшихся горутинах:
+$out"
+ok "patterns/leak: synctest.Test ловит горутины, пережившие вызов"
+
+# --- 10. patterns/limit: горутина на задачу против четырёх ограничителей ---
 build limit ./1-5/patterns/limit
 out=$("$bin/limit")
 free_peak=$(first_number "$out" 'горутина на задачу: .*пик горутин +[0-9]+ \(из них свои: +([0-9]+)\)')
-sem_peak=$(first_number "$out" 'семафор на канале: .*пик горутин +[0-9]+ \(из них свои: +([0-9]+)\)')
-sem_ms=$(first_number "$out" 'семафор на канале: +время +([0-9]+) мс')
 [ -n "$free_peak" ] && [ "$free_peak" -ge 150 ] || fail "patterns/limit: пик без ограничения $free_peak, ждали не меньше 150:
 $out"
-[ -n "$sem_peak" ] && [ "$sem_peak" -le 12 ] || fail "patterns/limit: пик с семафором $sem_peak, ждали не больше 12:
+for name in 'семафор на канале' 'пул воркеров' 'errgroup.SetLimit' 'semaphore.Weighted'; do
+	peak=$(first_number "$out" "$name: .*пик горутин +[0-9]+ \\(из них свои: +([0-9]+)\\)")
+	ms=$(first_number "$out" "$name: +время +([0-9]+) мс")
+	[ -n "$peak" ] && [ "$peak" -le 12 ] || fail "patterns/limit: $name — пик $peak, ждали не больше 12:
 $out"
-[ -n "$sem_ms" ] && [ "$sem_ms" -ge 400 ] || fail "patterns/limit: семафор уложился в $sem_ms мс — 200 задач по 20 мс при лимите 8 не могут быстрее 500:
+	[ -n "$ms" ] && [ "$ms" -ge 400 ] || fail "patterns/limit: $name уложился в $ms мс — 200 задач по 20 мс при лимите 8 не могут быстрее 500:
 $out"
-ok "patterns/limit: пик $free_peak горутин без лимита и $sem_peak с семафором на 8 ($sem_ms мс)"
+done
+done_n=$(first_number "$out" 'errgroup, отказ: +выполнено задач ([0-9]+) из')
+[ -n "$done_n" ] && [ "$done_n" -lt 200 ] || fail "patterns/limit: после отказа выполнено $done_n задач, отмена не сработала:
+$out"
+echo "$out" | grep -q 'Wait вернул "задача 50: отказ"' || fail "patterns/limit: Wait вернул не первую ошибку:
+$out"
+ok "patterns/limit: пик $free_peak горутин без лимита, не больше 12 у ограничителей; после отказа выполнено $done_n из 200"
 
 # --- 11. бенчмарки: работоспособность (числа снимаются отдельно, см. README) ---
-out=$(go test -run='^$' -bench=. -benchtime=100ms ./1-5/sync/ ./1-5/sched/ 2>&1) || fail "бенчмарки упали:
+out=$(go test -run='^$' -bench=. -benchtime=100ms ./1-5/sync/ ./1-5/sched/ ./1-5/patterns/limit/ 2>&1) || fail "бенчмарки упали:
 $out"
-for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkLongReadMutex BenchmarkLongReadRWMutex BenchmarkCounterCASLoop BenchmarkShardedCounter BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads; do
+for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkLongReadMutex BenchmarkLongReadRWMutex BenchmarkCounterCASLoop BenchmarkShardedCounter BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads BenchmarkLimiterOverhead; do
 	echo "$out" | grep -q "^$name" || fail "в бенчмарках нет $name:
 $out"
 done
 echo "$out" | grep -E '^Benchmark'
-ok "бенчмарки sync и sched отработали"
+ok "бенчмарки sync, sched и patterns/limit отработали"
 
 echo "Лаба 1.5: все проверки прошли."

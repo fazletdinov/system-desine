@@ -19,8 +19,8 @@
 ├── sync/                # урок 1.5.4: Mutex, RWMutex, atomic, false sharing, голодание
 │   ├── sync_test.go
 │   └── starve/
-└── patterns/            # урок 1.5.5: утечки и ограничение параллелизма
-    └── leak/  limit/
+└── patterns/            # урок 1.5.5: конвейер, утечки, ограничение параллелизма
+    └── pipeline/  leak/  limit/
 ```
 
 ## Запуск
@@ -36,8 +36,8 @@ go test -run='^$' -bench=. -benchtime=1s -count=5 -cpu=1,4,8 ./1-5/sync/
 ```
 
 Тег `labdemo` держит программы с намеренными гонками и утечками вне `go vet ./...` и
-`go test -race ./...` общего модуля: те остаются чистыми. Зависимостей, которых нет в `labs/go.mod`, лаба не
-добавляет: паддинг в `sync` считается вручную, а `errgroup` (`golang.org/x/sync`) — в мессенджере, урок 1.5.6.
+`go test -race ./...` общего модуля: те остаются чистыми. Единственная внешняя зависимость лабы —
+`golang.org/x/sync` v0.24.0 (`errgroup` и `semaphore` в `patterns`, урок 1.5.5); паддинг в `sync` считается вручную.
 
 ## Что показывает каждая программа
 
@@ -243,36 +243,89 @@ go test -run='^$' -bench='LongRead|Counter(Mutex|Atomic|CASLoop)$|ShardedCounter
 Ожидание дольше 1 мс переводит `Mutex` в режим голодания: замок передаётся ждущему напрямую, и никто не
 ждёт неограниченно. Поэтому максимум ожидания — единицы миллисекунд, а не секунды.
 
-### patterns/leak — урок 1.5.5, регионы `leak` и `leak-fix` (тег `labdemo`)
+### patterns/pipeline — урок 1.5.5, регионы `generator`, `stage`, `fanout`, `ordered`; тесты — `synctest`, `first-error`
 
-Функция `processWorkItems` из release notes Go 1.26: небуферизованный канал и ранний возврат по ошибке. После вызова
-программа гонит `runtime.GC()` и читает профиль `goroutineleak` (в 1.27 он общедоступен).
+Пакет, а не программа: генератор, стадия, раздача воркерам со слиянием и параллельная обработка с
+сохранением порядка на `errgroup.SetLimit`. Тесты идут в «пузыре» `testing/synctest` с виртуальным временем:
+
+```
+$ go test -count=1 -v ./1-5/patterns/pipeline/
+=== RUN   TestPipelineStopsWhenConsumerLeaves
+--- PASS: TestPipelineStopsWhenConsumerLeaves (0.00s)
+=== RUN   TestParallelMapVirtualTime
+--- PASS: TestParallelMapVirtualTime (0.00s)
+=== RUN   TestOrderedMapKeepsOrder
+--- PASS: TestOrderedMapKeepsOrder (0.00s)
+=== RUN   TestOrderedMapFirstErrorCancelsOthers
+--- PASS: TestOrderedMapFirstErrorCancelsOthers (0.00s)
+PASS
+```
+
+`TestParallelMapVirtualTime` проверяет, что восемь задач по секунде на четырёх воркерах заняли ровно 2 с
+виртуального времени, а `TestOrderedMapFirstErrorCancelsOthers` — что первая ошибка отменила остальных за 1 с,
+хотя каждая ждала бы час. Реального ожидания нет ни в одном тесте.
+
+### patterns/leak — урок 1.5.5, регионы `leak`, `leak-fix`, `leak-group`, `leak-test` (тег `labdemo`)
+
+Функция `processWorkItems` из release notes Go 1.26: небуферизованный канал и ранний возврат по ошибке. Рядом
+два исправления: буфер на число задач (`processWorkItemsFixed`) и `errgroup` (`processWorkItemsGroup`). После
+каждого вызова программа читает профиль `goroutineleak` (в 1.27 он общедоступен; запись профиля сама
+запускает цикл сборки мусора с поиском утечек).
 
 ```
 processWorkItemsFixed: ошибка "задача не удалась"
+утекло горутин: 0
+processWorkItemsGroup: ошибка "задача не удалась"
 утекло горутин: 0
 processWorkItems: ошибка "задача не удалась"
 утекло горутин: 9
 goroutineleak profile: total 9
 9 @ 0x… 0x… 0x… 0x… 0x…
-#	0x…	main.processWorkItems.func1+0x72	…/leak/main.go:56
+#	0x…	main.processWorkItems.func1+0x44	…/leak/main.go:69
 ```
 
-Исправление — буфер канала, равный числу задач. Профиль накопительный, поэтому исправленная версия идёт первой.
+Профиль накопительный, поэтому исправленные версии идут первыми. `leak_test.go` прогоняет все три функции в
+`synctest.Test`: тест с `processWorkItems` и тест с буферным исправлением падают («main bubble goroutine has
+exited but blocked goroutines remain»), потому что горутины пережили вызов; `errgroup`-версия проходит.
 
-### patterns/limit — урок 1.5.5, регион `limit`
+```bash
+go test -tags labdemo -run '^TestProcessWorkItemsGroup$' ./1-5/patterns/leak/   # ok
+go test -tags labdemo -run '^TestProcessWorkItemsLeaks$' ./1-5/patterns/leak/   # FAIL — намеренно
+```
 
-200 задач по 20 мс: горутина на задачу и семафор на буферизованном канале на 8. «Пик горутин» — максимум
-`runtime.NumGoroutine`, который опрашивает отдельная горутина-наблюдатель.
+### patterns/limit — урок 1.5.5, регионы `limit`, `pool`, `errgroup`, `weighted`, `first-error`, `bench`
+
+200 задач по 20 мс: горутина на задачу и четыре ограничителя на 8 — семафор на буферизованном канале, пул
+воркеров, `errgroup.SetLimit`, `semaphore.Weighted`. «Пик горутин» — максимум `runtime.NumGoroutine`, который
+опрашивает отдельная горутина-наблюдатель. Последний прогон — `errgroup.WithContext`, где задача 50 падает.
 
 ```
 горутина на задачу:  время   20 мс, пик горутин 202 (из них свои: 200)
-семафор на канале:   время  504 мс, пик горутин  10 (из них свои:   8)
+семафор на канале:   время  514 мс, пик горутин  10 (из них свои:   8)
+пул воркеров:        время  514 мс, пик горутин  10 (из них свои:   8)
+errgroup.SetLimit:   время  518 мс, пик горутин  10 (из них свои:   8)
+semaphore.Weighted:  время  517 мс, пик горутин  10 (из них свои:   8)
+errgroup, отказ:     время  124 мс, пик горутин  10 (из них свои:   8)
+errgroup, отказ:     выполнено задач 48 из 200, Wait вернул "задача 50: отказ"
 ```
 
-Лимит 8 даёт 200 / 8 × 20 мс = 500 мс. Место в семафоре занимается до запуска горутины, иначе все 200
-горутин уже созданы. `errgroup.SetLimit` показан в мессенджере (урок 1.5.6): `golang.org/x/sync` в `labs/`
-не подключён.
+Лимит 8 даёт 200 / 8 × 20 мс = 500 мс у любого ограничителя. Место в семафоре занимается до запуска горутины,
+иначе все 200 горутин уже созданы. Бенчмарк `LimiterOverhead` меряет цену самого ограничителя на почти пустой
+задаче:
+
+```bash
+go test -run='^$' -bench=LimiterOverhead -benchtime=1s -count=5 ./1-5/patterns/limit/
+```
+
+```
+BenchmarkLimiterOverhead/channel-semaphore-12         	 2495641	       548.3 ns/op
+BenchmarkLimiterOverhead/pool-12                      	 3977941	       297.9 ns/op
+BenchmarkLimiterOverhead/errgroup-12                  	 2166590	       585.7 ns/op
+BenchmarkLimiterOverhead/weighted-12                  	 2139986	       625.3 ns/op
+```
+
+(медианы пяти прогонов). Пул дешевле, потому что не создаёт горутину на задачу; на задаче длиннее
+нескольких микросекунд разница исчезает.
 
 ## Как читать `scenario.sh`
 

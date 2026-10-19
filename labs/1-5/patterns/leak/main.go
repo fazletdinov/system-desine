@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"labs/1-5/labenv"
 )
 
@@ -84,7 +86,7 @@ func processWorkItems(items []int) ([]int, error) {
 // #region leak-fix
 // processWorkItemsFixed отличается одной строкой: буфер канала равен числу задач,
 // поэтому каждая горутина отправляет результат и выходит, даже если читать уже некому.
-// Для настоящих сервисов добавьте ctx и errgroup — их показывает мессенджер (урок 1.5.6).
+// Вечной утечки нет, но после раннего возврата горутины ещё работают, и владельца у них нет.
 func processWorkItemsFixed(items []int) ([]int, error) {
 	ch := make(chan outcome, len(items))
 	for _, n := range items {
@@ -106,6 +108,32 @@ func processWorkItemsFixed(items []int) ([]int, error) {
 }
 
 // #endregion leak-fix
+
+// #region leak-group
+// processWorkItemsGroup — исправление для настоящего кода: errgroup. Wait дожидается всех
+// горутин, поэтому ни одна не переживает вызов, и возвращает первую ошибку.
+// Задачи здесь не умеют отменяться (process не принимает ctx), и Wait ждёт самую долгую;
+// с ctx и errgroup.WithContext остальные вышли бы сразу (пример — patterns/pipeline).
+func processWorkItemsGroup(items []int) ([]int, error) {
+	results := make([]int, len(items))
+	var g errgroup.Group
+	for i, n := range items {
+		g.Go(func() error {
+			v, err := process(n)
+			if err != nil {
+				return err
+			}
+			results[i] = v // своя ячейка у каждой горутины: гонки нет, порядок сохранён
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// #endregion leak-group
 
 func items() []int {
 	out := make([]int, taskCount)
@@ -162,7 +190,7 @@ func leakedProfile() (text string, count int, err error) {
 }
 
 // report вызывает функцию и печатает, сколько горутин осталось заблокированными.
-// Профиль накопительный, поэтому исправленную версию запускаем первой.
+// Профиль накопительный, поэтому исправленные версии запускаем первыми.
 func report(name string, process func([]int) ([]int, error), withProfile bool) error {
 	finished.Store(0)
 	_, err := process(items())
@@ -182,6 +210,10 @@ func main() {
 	labenv.Print(os.Stdout)
 
 	if err := report("processWorkItemsFixed", processWorkItemsFixed, false); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := report("processWorkItemsGroup", processWorkItemsGroup, false); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
