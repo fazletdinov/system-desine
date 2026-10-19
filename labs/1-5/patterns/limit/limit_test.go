@@ -51,7 +51,7 @@ func BenchmarkLimiterOverhead(b *testing.B) {
 		for b.Loop() {
 			g.Go(func() error { tiny(); return nil })
 		}
-		_ = g.Wait()
+		_ = g.Wait() // tiny всегда возвращает nil: ошибки нет по построению, ждём только завершения
 	})
 	b.Run("weighted", func(b *testing.B) {
 		ctx := context.Background()

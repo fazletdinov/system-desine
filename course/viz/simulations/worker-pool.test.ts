@@ -62,6 +62,13 @@ describe('simulateWorkerPool', () => {
     expect(rejectedAt.every((s) => s >= 4 && s <= 9)).toBe(true)
   })
 
+  it('semaphore: горутин не больше workers + queue, при перегрузке ровно workers + queue', () => {
+    const t = simulateWorkerPool({ ...base, mode: 'semaphore' }, 20)
+    expect(t.every((x) => x.goroutines <= base.workers + base.queue)).toBe(true)
+    expect(at(t, 20).goroutines).toBe(base.workers + base.queue)
+    expect(at(t, 20).memKiB).toBe((base.workers + base.queue) * 8)
+  })
+
   it('semaphore с очередью 0 отказывает сразу, когда все воркеры заняты', () => {
     const t = simulateWorkerPool({ ...base, mode: 'semaphore', queue: 0 }, 5)
     expect(t.at(-1)!.rejected).toBeGreaterThan(0)

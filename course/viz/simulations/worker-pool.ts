@@ -130,6 +130,12 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
       else rejected++
     }
 
+    // Горутины считаем сразу после приёма задач, до завершений: задача, которая закончится ровно на
+    // границе тика, весь тик жила и держала память. Снимок в конце тика её бы уже не увидел.
+    const busyAfterAdmission = workers.filter((w) => w.job !== null).length
+    // pool: воркеры + одна горутина-производитель. unbounded: все активные задачи. semaphore: каждая принятая задача.
+    const goroutines = p.mode === 'unbounded' ? active.length : p.mode === 'pool' ? p.workers + 1 : busyAfterAdmission + waiting.length
+
     if (p.mode === 'unbounded') {
       // CPU — workers ядер: при active > workers время задачи растёт пропорционально (processor sharing).
       const speed = Math.min(1, p.workers / Math.max(1, active.length))
@@ -168,9 +174,6 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
       p99 = percentile(sorted, 99)
     }
 
-    const busy = workers.filter((w) => w.job !== null).length
-    // pool: воркеры + одна горутина-производитель. unbounded: все активные задачи. semaphore: каждая принятая задача.
-    const goroutines = p.mode === 'unbounded' ? active.length : p.mode === 'pool' ? p.workers + 1 : busy + waiting.length
     // unbounded очереди нет: «в очереди» — готовые горутины, которым не хватило ядра.
     const buffered = p.mode === 'unbounded' ? Math.max(0, active.length - p.workers) : waiting.length
     const blocked = backlog.length
