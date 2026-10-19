@@ -169,6 +169,7 @@ func TestTaskJitterWithinBounds(t *testing.T) {
 	})
 }
 
+// #region no-overlap-test
 func TestTaskSlowIterationDoesNotOverlap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := &calls{}
@@ -191,6 +192,8 @@ func TestTaskSlowIterationDoesNotOverlap(t *testing.T) {
 		}
 	})
 }
+
+// #endregion no-overlap-test
 
 func TestTaskErrorLoggedAndContinues(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

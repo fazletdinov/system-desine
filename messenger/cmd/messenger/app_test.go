@@ -337,6 +337,7 @@ func TestNewAppRejectsBadConfig(t *testing.T) {
 	}
 }
 
+// #region background-test
 // TestAppBackgroundStops — сборка отдаёт фоновую очистку идемпотентности: по периоду
 // она удаляет просроченный ключ, а остановка через lifecycle проходит без ошибки.
 // Всё в виртуальном времени synctest: сутки TTL проходят мгновенно.
@@ -379,6 +380,8 @@ func TestAppBackgroundStops(t *testing.T) {
 		}
 	})
 }
+
+// #endregion background-test
 
 // TestProbesOutsideAPI — пробы отвечают мимо аутентификации и контракта; дренаж
 // переключает только готовность, API продолжает работать.

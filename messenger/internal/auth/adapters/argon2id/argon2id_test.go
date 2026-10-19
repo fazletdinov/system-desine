@@ -3,8 +3,14 @@ package argon2id_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"messenger/internal/auth/adapters/argon2id"
 	"messenger/internal/auth/domain"
@@ -184,5 +190,38 @@ func BenchmarkHashOWASP(b *testing.B) {
 		if _, err := h.Hash(context.Background(), pw); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// BenchmarkHashOWASPParallel — сколько длится один хеш, когда одновременно считаются par
+// хешей (урок 1.5.6). BenchmarkHashOWASP меряет хеш на пустой машине, а ограничитель
+// пускает до GOMAXPROCS хешей сразу: ядра делят кеш и полосу памяти, а по 19 МиБ на хеш
+// это главная нагрузка Argon2id. Метрика ms/hash — средняя длительность одного хеша
+// (задержка), а не ns/op — время волны из par хешей.
+func BenchmarkHashOWASPParallel(b *testing.B) {
+	procs := runtime.GOMAXPROCS(0)
+	pars := slices.Compact(slices.Sorted(slices.Values([]int{1, max(procs/2, 1), procs, 2 * procs})))
+	for _, par := range pars {
+		b.Run(fmt.Sprintf("par=%d", par), func(b *testing.B) {
+			h := newHasher(b, argon2id.OWASPMinimum)
+			pw := password(b, "правильный-пароль-длинный")
+			var total atomic.Int64 // суммарная длительность хешей, нс
+			waves := 0
+			for b.Loop() {
+				var wg sync.WaitGroup
+				for range par {
+					wg.Go(func() {
+						start := time.Now()
+						if _, err := h.Hash(context.Background(), pw); err != nil {
+							b.Error(err)
+						}
+						total.Add(int64(time.Since(start)))
+					})
+				}
+				wg.Wait()
+				waves++
+			}
+			b.ReportMetric(float64(total.Load())/float64(waves*par)/1e6, "ms/hash")
+		})
 	}
 }

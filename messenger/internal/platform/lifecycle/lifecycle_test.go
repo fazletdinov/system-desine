@@ -101,6 +101,7 @@ func TestRunStopsFrontBeforeBack(t *testing.T) {
 	})
 }
 
+// #region back-failure-test
 func TestRunBackFailureStopsFrontWithDrain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		j := &journal{}
@@ -130,6 +131,8 @@ func TestRunBackFailureStopsFrontWithDrain(t *testing.T) {
 		}
 	})
 }
+
+// #endregion back-failure-test
 
 func TestRunFrontFailure(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
