@@ -38,10 +38,14 @@ func New(next usecase.PasswordHasher, concurrency, queue int) (*Limiter, error) 
 	}, nil
 }
 
+// Hash может вернуть usecase.ErrOverloaded сразу, если заняты все N+Q мест, или ошибку
+// ctx, если срок истёк в очереди. Иначе — результат и ошибка next.Hash.
 func (l *Limiter) Hash(ctx context.Context, p domain.Password) (domain.PasswordHash, error) {
 	return limited(ctx, l, func() (domain.PasswordHash, error) { return l.next.Hash(ctx, p) })
 }
 
+// Verify может вернуть usecase.ErrOverloaded сразу, если заняты все N+Q мест, или ошибку
+// ctx, если срок истёк в очереди. Места общие с Hash. Иначе — результат next.Verify.
 func (l *Limiter) Verify(ctx context.Context, plaintext string, hash domain.PasswordHash) (bool, error) {
 	return limited(ctx, l, func() (bool, error) { return l.next.Verify(ctx, plaintext, hash) })
 }

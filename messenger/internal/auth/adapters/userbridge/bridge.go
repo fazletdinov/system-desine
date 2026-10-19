@@ -37,13 +37,12 @@ func New(register Registrar, find Finder) (*Bridge, error) {
 // #region translate
 func (b *Bridge) RegisterProfile(ctx context.Context, username, displayName string) (authusecase.Profile, error) {
 	u, err := b.register.Execute(ctx, userusecase.RegisterUserCommand{Username: username, DisplayName: displayName})
-	var invalid *userdomain.ValidationError
 	switch {
 	case err == nil:
-	case errors.As(err, &invalid):
+	case errors.Is(err, userdomain.ErrInvalid):
 		// Ошибку данных переводим в модель auth с тем же полем: клиенту всё равно,
 		// какой контекст проверял имя.
-		return authusecase.Profile{}, toAuthInvalid(invalid)
+		return authusecase.Profile{}, translateInvalid(err)
 	case errors.Is(err, userdomain.ErrUsernameTaken):
 		return authusecase.Profile{}, authdomain.ErrUsernameTaken
 	default:
@@ -72,16 +71,15 @@ func (b *Bridge) ValidateProfile(_ context.Context, username, displayName string
 	return nil
 }
 
+// translateInvalid переводит ошибку данных user в модель auth с тем же полем и причиной —
+// одно правило перевода для RegisterProfile и ValidateProfile. Ошибка модели user
+// наружу не выходит: auth не должен уметь её разбирать.
 func translateInvalid(err error) error {
 	var invalid *userdomain.ValidationError
 	if errors.As(err, &invalid) {
-		return toAuthInvalid(invalid)
+		return &authdomain.ValidationError{Field: invalid.Field, Reason: invalid.Reason}
 	}
 	return fmt.Errorf("userbridge: %w", err)
-}
-
-func toAuthInvalid(e *userdomain.ValidationError) *authdomain.ValidationError {
-	return &authdomain.ValidationError{Field: e.Field, Reason: e.Reason}
 }
 
 func (b *Bridge) UserIDByUsername(ctx context.Context, username string) (authdomain.UserID, error) {

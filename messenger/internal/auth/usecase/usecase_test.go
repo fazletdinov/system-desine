@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -118,6 +119,39 @@ func TestLoginVerifyErrorIsNotInvalidCredentials(t *testing.T) {
 	if err == nil || errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("ждали ошибку сервера, получили %v", err)
 	}
+}
+
+// Перегрузка хешера — не «неверный пароль»: клиент должен получить 503 и повторить,
+// а не 401 и решить, что пароль не тот. Касается и настоящей проверки, и фиктивной
+// (отказ по несуществующему имени тоже зовёт Verify).
+func TestOverloadedIsNotInvalidCredentials(t *testing.T) {
+	t.Parallel()
+	for _, username := range []string{"alice", "nobody"} {
+		t.Run("login "+username, func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t)
+			e.hasher.verifyErr = fmt.Errorf("hashlimit: %w", usecase.ErrOverloaded)
+			_, err := e.login.Execute(context.Background(), usecase.LoginCommand{Username: username, Password: alicePassword})
+			if !errors.Is(err, usecase.ErrOverloaded) || errors.Is(err, domain.ErrInvalidCredentials) {
+				t.Fatalf("ждали ErrOverloaded без ErrInvalidCredentials, получили %v", err)
+			}
+		})
+	}
+	t.Run("sign up", func(t *testing.T) {
+		t.Parallel()
+		hasher, prof := &countingHasher{hashErr: usecase.ErrOverloaded}, newProfiles()
+		uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore())
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = uc.Execute(context.Background(), usecase.SignUpCommand{Username: "bob", DisplayName: "Боб", Password: alicePassword})
+		if !errors.Is(err, usecase.ErrOverloaded) || errors.Is(err, domain.ErrInvalid) {
+			t.Fatalf("ждали ErrOverloaded, получили %v", err)
+		}
+		if prof.calls != 0 {
+			t.Fatalf("профиль создан %d раз, хотя хешер перегружен", prof.calls)
+		}
+	})
 }
 
 func TestSignUpOrder(t *testing.T) {
