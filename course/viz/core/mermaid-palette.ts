@@ -2,7 +2,7 @@
 // Смысл цветов совпадает с viz/palette.css: клиент синий, сервис фиолетовый, БД зелёная…
 export type ThemeName = 'dark' | 'light'
 
-export const MERMAID_CLASSES = ['client', 'service', 'db', 'cache', 'broker', 'network', 'deep'] as const
+export const MERMAID_CLASSES = ['client', 'service', 'db', 'cache', 'broker', 'network', 'deep', 'error'] as const
 export type MermaidClass = (typeof MERMAID_CLASSES)[number]
 
 interface ClassStyle {
@@ -21,6 +21,8 @@ const CLASS_STYLES: Record<ThemeName, Record<MermaidClass, ClassStyle>> = {
     broker: { fill: '#062a30', stroke: '#22d3ee', color: '#cffafe' },
     network: { fill: '#111b2e', stroke: '#94a3b8', color: '#e2e8f0' },
     deep: { fill: '#0f1b2e', stroke: '#38bdf8', color: '#e0f2fe', dashed: true },
+    // Ошибка: обводка — --viz-error тёмной темы.
+    error: { fill: '#2a0f12', stroke: '#f87171', color: '#fee2e2' },
   },
   light: {
     client: { fill: '#eff6ff', stroke: '#2563eb', color: '#1e3a8a' },
@@ -30,6 +32,8 @@ const CLASS_STYLES: Record<ThemeName, Record<MermaidClass, ClassStyle>> = {
     broker: { fill: '#ecfeff', stroke: '#0891b2', color: '#164e63' },
     network: { fill: '#f8fafc', stroke: '#64748b', color: '#1e293b' },
     deep: { fill: '#f0f9ff', stroke: '#0284c7', color: '#0c4a6e', dashed: true },
+    // Ошибка: обводка — --viz-error светлой темы.
+    error: { fill: '#fef2f2', stroke: '#dc2626', color: '#7f1d1d' },
   },
 }
 

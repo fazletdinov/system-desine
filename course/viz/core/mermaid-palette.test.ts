@@ -19,6 +19,15 @@ describe('withPaletteClasses', () => {
     expect(withPaletteClasses(seq, 'dark')).toBe(seq)
   })
 
+  it.each([
+    ['dark', '#f87171'],
+    ['light', '#dc2626'],
+  ] as const)('%s: класс error обведён цветом --viz-error', (theme, stroke) => {
+    const def = withPaletteClasses('flowchart LR', theme).split('\n').find((l) => l.trim().startsWith('classDef error '))
+    expect(def).toContain(`stroke:${stroke}`)
+    expect(def).not.toContain('stroke-dasharray')
+  })
+
   it('в тёмной и светлой теме цвета разные', () => {
     expect(withPaletteClasses('flowchart LR', 'dark')).not.toBe(withPaletteClasses('flowchart LR', 'light'))
   })
