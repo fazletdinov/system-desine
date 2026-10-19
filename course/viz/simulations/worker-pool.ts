@@ -21,7 +21,9 @@ export interface WorkerPoolTick {
   t: number // секунды от старта, конец тика
   goroutines: number
   memKiB: number // оценка: goroutines × GOROUTINE_KIB
-  queued: number
+  queued: number // buffered + blocked
+  buffered: number // pool: в буфере канала (≤ queue); semaphore: ждут места; unbounded: ждут ядро
+  blocked: number // pool: заблокированный производитель держит задачи у себя, канал полон
   done: number // накопленно
   rejected: number // накопленно
   p50ms: number
@@ -75,7 +77,8 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
   const ticks: WorkerPoolTick[] = []
   const active: Job[] = [] // unbounded: каждая задача — своя горутина
   const workers: Worker[] = Array.from({ length: p.workers }, () => ({ job: null })) // pool и semaphore
-  const waiting: Job[] = []
+  const waiting: Job[] = [] // pool: буфер канала ёмкости queue; semaphore: ждущие горутины
+  const backlog: Job[] = [] // pool: задачи, которые производитель не смог отправить в полный канал
   const window: { tick: number; latency: number }[] = []
   let carry = 0
   let done = 0
@@ -88,6 +91,18 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
     window.push({ tick, latency: atMs - job.arrivedMs })
   }
 
+  // Производитель, заблокированный на полном канале, дописывает задачи в буфер по мере освобождения мест.
+  const refill = (): void => {
+    while (backlog.length > 0 && waiting.length < p.queue) waiting.push(backlog.shift() as Job)
+  }
+
+  // Воркер берёт из буфера; при ёмкости 0 (рандеву) — прямо у заблокированного производителя.
+  const pull = (): Job | null => {
+    const job = waiting.shift() ?? backlog.shift() ?? null
+    refill()
+    return job
+  }
+
   for (let tick = 0; tick < seconds * TICKS_PER_SECOND; tick++) {
     const t0 = tick * TICK_MS
     carry += (arrivalRate(p, t0) * TICK_MS) / 1000
@@ -95,7 +110,10 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
     carry -= arrivals
 
     // Освободившиеся воркеры сначала разбирают очередь: иначе новая задача обгонит ждущие (нарушит FIFO).
-    for (const w of workers) if (w.job === null) w.job = waiting.shift() ?? null
+    for (const w of workers) {
+      if (w.job !== null) continue
+      w.job = pull()
+    }
 
     for (let i = 0; i < arrivals; i++) {
       const job: Job = { arrivedMs: t0, remainingMs: p.taskMs }
@@ -105,8 +123,10 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
       }
       const idle = workers.find((w) => w.job === null)
       if (idle) idle.job = job
-      // semaphore: сверх воркеров и очереди — сразу отказ; pool: производитель ждёт у канала, а не отказывает.
-      else if (p.mode === 'pool' || waiting.length < p.queue) waiting.push(job)
+      // Канал-буфер ёмкости queue. Когда он полон: pool — производитель блокируется и держит задачу у себя,
+      // semaphore — сразу отказ.
+      else if (waiting.length < p.queue) waiting.push(job)
+      else if (p.mode === 'pool') backlog.push(job)
       else rejected++
     }
 
@@ -126,7 +146,7 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
         let used = 0
         while (used < TICK_MS) {
           if (w.job === null) {
-            const next = waiting.shift()
+            const next = pull()
             if (!next) break
             w.job = next
           }
@@ -152,8 +172,9 @@ export function simulateWorkerPool(p: WorkerPoolParams, seconds: number): Worker
     // pool: воркеры + одна горутина-производитель. unbounded: все активные задачи. semaphore: каждая принятая задача.
     const goroutines = p.mode === 'unbounded' ? active.length : p.mode === 'pool' ? p.workers + 1 : busy + waiting.length
     // unbounded очереди нет: «в очереди» — готовые горутины, которым не хватило ядра.
-    const queued = p.mode === 'unbounded' ? Math.max(0, active.length - p.workers) : waiting.length
-    ticks.push({ t: (tick + 1) / TICKS_PER_SECOND, goroutines, memKiB: goroutines * GOROUTINE_KIB, queued, done, rejected, p50ms: p50, p99ms: p99 })
+    const buffered = p.mode === 'unbounded' ? Math.max(0, active.length - p.workers) : waiting.length
+    const blocked = backlog.length
+    ticks.push({ t: (tick + 1) / TICKS_PER_SECOND, goroutines, memKiB: goroutines * GOROUTINE_KIB, queued: buffered + blocked, buffered, blocked, done, rejected, p50ms: p50, p99ms: p99 })
   }
   return ticks
 }
@@ -213,6 +234,6 @@ function captionFor(p: WorkerPoolParams, ticks: readonly WorkerPoolTick[]): Capt
   if (p.mode === 'unbounded')
     return [{ text: `${second}по горутине на задачу, ${load}. Живых ` }, term('горутин', 'goroutine'), { text: ` ${now.goroutines}, оценка памяти ${now.memKiB} КиБ; предела нет.` }]
   if (p.mode === 'pool')
-    return [term('Пул', 'worker-pool'), { text: ` из ${p.workers} воркеров, ${load}. Очередь ${now.queued}, p99 ${Math.round(now.p99ms)} мс: когда очередь полна, производитель ждёт — это ` }, term('backpressure', 'backpressure'), { text: '.' }]
+    return [term('Пул', 'worker-pool'), { text: ` из ${p.workers} воркеров, ${load}. В буфере канала ${now.buffered} из ${p.queue}, у производителя ждёт ${now.blocked}, p99 ${Math.round(now.p99ms)} мс: когда буфер полон, производитель блокируется — это ` }, term('backpressure', 'backpressure'), { text: '.' }]
   return [term('Семафор', 'semaphore'), { text: ` на ${p.workers} места и очередь ${p.queue}, ${load}. Отказов (503) ${now.rejected}, p99 ${Math.round(now.p99ms)} мс.` }]
 }

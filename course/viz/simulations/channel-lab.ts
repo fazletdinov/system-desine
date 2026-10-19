@@ -27,6 +27,9 @@ export interface ChannelLabState {
   nil: boolean
   closed: boolean
   buf: number[]
+  // Индексы кольцевого буфера, как recvx/sendx в hchan: откуда читать и куда писать; всегда по модулю cap.
+  recvx: number
+  sendx: number
   sendq: { g: string; value: number }[]
   recvq: string[]
   gs: Goroutine[]
@@ -49,11 +52,15 @@ const start = (cap: Cap, nil = false): ChannelLabState => ({
   nil,
   closed: false,
   buf: [],
+  recvx: 0,
+  sendx: 0,
   sendq: [],
   recvq: [],
   gs: GOROUTINE_IDS.map((id) => ({ id, state: 'running' })),
   log: [],
 })
+
+const advance = (i: number, cap: number): number => (i + 1) % cap
 
 const withLog = (s: ChannelLabState, kind: LogKind, text: string): ChannelLabState => ({ ...s, log: [...s.log, { kind, text }] })
 
@@ -83,7 +90,7 @@ function send(s: ChannelLabState, id: string, value: number): ChannelLabState {
     const next = wake({ ...s, recvq: restRecv }, receiver, { value, ok: true })
     return withLog(next, 'handoff', `${id} → ${receiver}: ${value} передано напрямую, минуя буфер`)
   }
-  if (s.buf.length < s.cap) return withLog({ ...s, buf: [...s.buf, value] }, 'buffered', `${id}: ${value} лёг в буфер (${s.buf.length + 1}/${s.cap})`)
+  if (s.buf.length < s.cap) return withLog({ ...s, buf: [...s.buf, value], sendx: advance(s.sendx, s.cap) }, 'buffered', `${id}: ${value} лёг в буфер (${s.buf.length + 1}/${s.cap})`)
   const blocked = patchG({ ...s, sendq: [...s.sendq, { g: id, value }] }, id, { state: 'blocked-send', holding: value })
   return withLog(blocked, 'blocked', `${id} заблокирована на отправке ${value}: ${s.cap === 0 ? 'нет получателя' : 'буфер полон'}`)
 }
@@ -94,8 +101,10 @@ function recv(s: ChannelLabState, id: string): ChannelLabState {
   const [sender, ...restSend] = s.sendq
   if (head !== undefined) {
     // Буфер не пуст: получатель берёт голову, а ждущий отправитель встаёт в хвост, чтобы сохранить FIFO.
-    if (sender === undefined) return withLog(wake({ ...s, buf: restBuf }, id, { value: head, ok: true }), 'handoff', `${id} взяла ${head} из буфера`)
-    const next = wake(wake({ ...s, buf: [...restBuf, sender.value], sendq: restSend }, id, { value: head, ok: true }), sender.g)
+    const recvx = advance(s.recvx, s.cap)
+    if (sender === undefined) return withLog(wake({ ...s, buf: restBuf, recvx }, id, { value: head, ok: true }), 'buffered', `${id} взяла ${head} из буфера`)
+    const sendx = advance(s.sendx, s.cap)
+    const next = wake(wake({ ...s, buf: [...restBuf, sender.value], recvx, sendx, sendq: restSend }, id, { value: head, ok: true }), sender.g)
     return withLog(next, 'woke', `${id} взяла ${head} из буфера; ${sender.g} проснулась, её ${sender.value} встало в хвост буфера`)
   }
   if (sender !== undefined) {

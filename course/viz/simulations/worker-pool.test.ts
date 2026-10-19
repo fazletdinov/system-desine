@@ -26,6 +26,17 @@ describe('simulateWorkerPool', () => {
     expect(t.at(-1)!.rejected).toBe(0)
   })
 
+  it('pool: буфер канала не больше queue, остальное ждёт у производителя; ползунок меняет картину', () => {
+    const q8 = simulateWorkerPool({ ...base, mode: 'pool', queue: 8 }, 20)
+    const q32 = simulateWorkerPool({ ...base, mode: 'pool', queue: 32 }, 20)
+    expect(q8.every((x) => x.buffered <= 8)).toBe(true)
+    expect(q32.every((x) => x.buffered <= 32)).toBe(true)
+    expect(q8.every((x) => x.queued === x.buffered + x.blocked)).toBe(true)
+    expect(at(q8, 20).buffered).toBe(8)
+    expect(at(q32, 20).buffered).toBe(32)
+    expect(at(q8, 20).blocked).toBeGreaterThan(at(q32, 20).blocked)
+  })
+
   it('semaphore: p99 ограничена (queue / workers + 1) × taskMs × 1.1, отказы есть', () => {
     const t = simulateWorkerPool({ ...base, mode: 'semaphore' }, 20)
     const bound = (base.queue / base.workers + 1) * base.taskMs * 1.1

@@ -14,8 +14,15 @@ const STATE_TEXT: Record<GState, string> = {
 
 const LOG_LINES = 6
 const recent = computed(() => props.state.log.slice(-LOG_LINES).reverse())
-// Ячейки кольца: у канала с cap=0 буфера нет — рисуем одну щель «рандеву».
-const cells = computed(() => Array.from({ length: props.state.cap }, (_, i) => props.state.buf[i] ?? null))
+// Ячейки кольца, как в hchan: значение лежит в слоте recvx + k (по модулю cap), следующая запись — в слот sendx.
+// У канала с cap=0 буфера нет — рисуем одну щель «рандеву».
+const cells = computed(() => {
+  const { cap, buf, recvx, sendx } = props.state
+  return Array.from({ length: cap }, (_, i) => {
+    const k = (i - recvx + cap) % cap
+    return { value: k < buf.length ? (buf[k] as number) : null, head: i === recvx, tail: i === sendx }
+  })
+})
 const gotText = (got: { value: number | null; ok: boolean }): string => `получено ${got.value ?? '0 (ноль)'}, ok=${got.ok}`
 </script>
 
@@ -39,9 +46,12 @@ const gotText = (got: { value: number | null; ok: boolean }): string => `пол�
           <div class="cell rendezvous">рандеву</div>
         </div>
         <div v-else class="ring" role="img" :aria-label="`Буфер: занято ${state.buf.length} из ${state.cap}`">
-          <div v-for="(c, i) in cells" :key="i" class="cell" :class="{ full: c !== null }">{{ c ?? '·' }}</div>
+          <div v-for="(c, i) in cells" :key="i" class="slot">
+            <div class="cell" :class="{ full: c.value !== null }">{{ c.value ?? '·' }}</div>
+            <span class="idx">{{ i }}<template v-if="c.head"> recvx</template><template v-if="c.tail"> sendx</template></span>
+          </div>
         </div>
-        <p v-if="!state.nil && state.cap > 0" class="meta">занято {{ state.buf.length }} из {{ state.cap }}</p>
+        <p v-if="!state.nil && state.cap > 0" class="meta">занято {{ state.buf.length }} из {{ state.cap }}; recvx={{ state.recvx }} — откуда читать, sendx={{ state.sendx }} — куда писать</p>
       </section>
       <section class="queue" aria-label="Очередь ждущих получателей">
         <h4>recvq</h4>
@@ -77,6 +87,8 @@ h4 { margin: 0 0 6px; font-size: 15px; }
 .chan.nil { border-style: dotted; border-color: var(--viz-network); }
 .tag { margin-left: 6px; padding: 1px 6px; border: 1px solid var(--viz-error); border-radius: 6px; font-size: 12px; color: var(--viz-error); }
 .ring { display: flex; flex-wrap: wrap; gap: 6px; }
+.slot { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.idx { font-size: 12px; color: var(--viz-muted); }
 .cell { min-width: 44px; min-height: 40px; display: grid; place-items: center; border: 2px solid var(--viz-edge); border-radius: 8px; font-size: 18px; font-variant-numeric: tabular-nums; color: var(--viz-muted); }
 .cell.full { border-color: var(--viz-broker); color: var(--viz-text); font-weight: 700; background: color-mix(in srgb, var(--viz-broker) 18%, var(--viz-node-bg)); }
 .cell.rendezvous { font-size: 14px; border-style: dashed; padding: 0 10px; }

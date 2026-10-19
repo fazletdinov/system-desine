@@ -54,8 +54,11 @@ const charts = computed<ChartDef[]>(() => {
     {
       key: 'q',
       title: 'Очередь',
-      summary: `ждут обработки: ${l.queued}`,
-      series: [{ label: 'в очереди', color: 'var(--viz-cache)', dash: '', value: (t) => t.queued, axis: 'left' }],
+      summary: `в буфере ${l.buffered}, у производителя ${l.blocked}`,
+      series: [
+        { label: 'в буфере канала (≤ очереди)', color: 'var(--viz-cache)', dash: '', value: (t) => t.buffered, axis: 'left' },
+        { label: 'ждут у производителя', color: 'var(--viz-error)', dash: '8 4', value: (t) => t.blocked, axis: 'left' },
+      ],
     },
     {
       key: 'l',

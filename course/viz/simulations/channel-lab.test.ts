@@ -49,6 +49,23 @@ describe('channel-lab', () => {
     expect(s.sendq).toEqual([])
   })
 
+  it('взятие из буфера журналируется как buffered, а не handoff', () => {
+    const s = run(3, send('G1', 1), recv('G2'))
+    expect(lastLog(s).kind).toBe('buffered')
+  })
+
+  it('индексы кольца: после N отправок и M получений на cap=3 recvx = M mod 3, sendx = N mod 3', () => {
+    const s = run(3, send('G1', 1), send('G1', 2), send('G1', 3), recv('G2'), recv('G2'), send('G1', 4), send('G1', 5), recv('G2'), recv('G2'))
+    expect([s.recvx, s.sendx]).toEqual([4 % 3, 5 % 3])
+    expect(s.buf).toEqual([5])
+  })
+
+  it('индексы кольца: значение проснувшегося отправителя занимает слот sendx', () => {
+    const s = run(3, send('G1', 1), send('G1', 2), send('G1', 3), send('G2', 4), recv('G3'))
+    expect([s.recvx, s.sendx]).toEqual([1, 1])
+    expect(s.buf).toEqual([2, 3, 4])
+  })
+
   it('получение из пустого канала блокирует получателя', () => {
     const s = run(0, recv('G2'))
     expect(g(s, 'G2').state).toBe('blocked-recv')

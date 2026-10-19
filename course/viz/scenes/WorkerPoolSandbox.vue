@@ -25,14 +25,14 @@ const modes: { value: PoolMode; text: string }[] = [
 const sliders = [
   { key: 'lambda', label: 'Поток λ, задач/с', unit: '' },
   { key: 'workers', label: 'Воркеров', unit: '' },
-  { key: 'queue', label: 'Очередь', unit: '' },
+  { key: 'queue', label: 'Буфер очереди (ёмкость канала)', unit: '' },
   { key: 'taskMs', label: 'Время задачи, мс', unit: '' },
 ] as const
 </script>
 
 <template>
   <VizFrame label="Песочница: пул воркеров">
-    <p class="intro">Поток задач сильнее, чем умеют обработать воркеры. Сравните три способа: горутина на каждую задачу, пул с очередью и семафор, который отказывает сверх очереди. Память — оценка, а не измерение.</p>
+    <p class="intro">Поток задач сильнее, чем умеют обработать воркеры. Сравните три способа: горутина на каждую задачу, пул с буферным каналом (когда он полон, производитель блокируется) и семафор, который отказывает сверх очереди. Память — оценка, а не измерение.</p>
     <SegmentedToggle label="Режим" :options="modes" :model-value="state.params.mode" @update:model-value="(mode) => set({ mode })" />
     <div class="sliders">
       <label v-for="s in sliders" :key="s.key" class="slider">
