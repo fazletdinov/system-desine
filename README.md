@@ -1,5 +1,7 @@
 # System Design на практике
 
+[![ci](https://github.com/fazletdinov/system-desine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fazletdinov/system-desine/actions/workflows/ci.yml?query=branch%3Amain)
+
 Личный курс по проектированию высоконагруженных систем на Go: сайт курса с пошаговыми визуализациями (`course/`) и сквозной проект-мессенджер (`messenger/`, с модуля 1).
 
 ## Запуск курса
@@ -25,7 +27,7 @@ npm run check:workflows # actionlint по .github/workflows
 npm run check:base      # сборка курса под подпутём /check-base/, как на GitHub Pages: нет ссылок мимо базового пути
 ```
 
-Курс публикуется на GitHub Pages (workflow `pages`) после публикации репозитория; адрес появится здесь вместе с первым прогоном.
+Опубликованный курс: https://fazletdinov.github.io/system-desine/ (workflow `pages`, обновляется после каждого зелёного `ci` на `main`). Образ мессенджера: `ghcr.io/fazletdinov/messenger` (теги `main`, `sha-<коммит>`, версии).
 
 ## CI
 
