@@ -125,10 +125,18 @@ const (
 	// меньше срока запроса, а всплеск входов сверх этого получает 503 сразу, а не
 	// копит горутины и память.
 	defaultHashQueueFactor = 4
+	// maxHashConcurrency — потолок одновременных хешей: 256 × 19 МиБ ≈ 4,75 ГиБ памяти
+	// только на хеши — больше не бывает осмысленным ни на одной машине, а опечатка
+	// в переменной (лишние нули) иначе дала бы переполнение очереди или OOM.
+	maxHashConcurrency = 256
+	// maxHashQueue — потолок очереди: те же 4 ждущих на место при максимуме мест.
+	// Каждый ждущий — горутина с запросом; бесконечная очередь — та же перегрузка.
+	maxHashQueue = defaultHashQueueFactor * maxHashConcurrency
 )
 
-// intEnv читает целое из окружения; пустая переменная — значение по умолчанию.
-func intEnv(name string, def, minimum int) (int, error) {
+// intEnv читает целое из окружения в пределах [minimum, maximum]; пустая переменная —
+// значение по умолчанию.
+func intEnv(name string, def, minimum, maximum int) (int, error) {
 	raw := os.Getenv(name)
 	if raw == "" {
 		return def, nil
@@ -137,8 +145,8 @@ func intEnv(name string, def, minimum int) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%s: ожидается целое число, получено %q", name, raw)
 	}
-	if n < minimum {
-		return 0, fmt.Errorf("%s: должно быть не меньше %d, получено %d", name, minimum, n)
+	if n < minimum || n > maximum {
+		return 0, fmt.Errorf("%s: должно быть от %d до %d, получено %d", name, minimum, maximum, n)
 	}
 	return n, nil
 }
@@ -151,11 +159,12 @@ func loadConcurrency(cfg *config) error {
 	}
 	// Хеш — чистая работа CPU: больше GOMAXPROCS одновременных вычислений не ускорят,
 	// а память (19 МиБ на хеш) умножат.
-	if cfg.HashConcurrency, err = intEnv(envHashConcurrency, runtime.GOMAXPROCS(0), 1); err != nil {
+	// Умолчание тоже под потолком: GOMAXPROCS бывает больше 256 на крупных машинах.
+	if cfg.HashConcurrency, err = intEnv(envHashConcurrency, min(runtime.GOMAXPROCS(0), maxHashConcurrency), 1, maxHashConcurrency); err != nil {
 		return err
 	}
 	// Очередь 0 допустима: «все места заняты — отказ сразу».
-	if cfg.HashQueue, err = intEnv(envHashQueue, defaultHashQueueFactor*cfg.HashConcurrency, 0); err != nil {
+	if cfg.HashQueue, err = intEnv(envHashQueue, defaultHashQueueFactor*cfg.HashConcurrency, 0, maxHashQueue); err != nil {
 		return err
 	}
 	return nil

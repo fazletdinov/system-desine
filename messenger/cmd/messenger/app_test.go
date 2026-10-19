@@ -26,6 +26,7 @@ import (
 
 	"messenger/internal/auth/adapters/argon2id"
 	"messenger/internal/auth/adapters/jwt"
+	"messenger/internal/platform/idempotency"
 	"messenger/internal/platform/lifecycle"
 	"messenger/internal/platform/openapitest"
 )
@@ -336,8 +337,9 @@ func TestNewAppRejectsBadConfig(t *testing.T) {
 	}
 }
 
-// TestAppBackgroundStops — сборка отдаёт фоновую очистку идемпотентности; она
-// работает по периоду и останавливается через lifecycle без ошибки.
+// TestAppBackgroundStops — сборка отдаёт фоновую очистку идемпотентности: по периоду
+// она удаляет просроченный ключ, а остановка через lifecycle проходит без ошибки.
+// Всё в виртуальном времени synctest: сутки TTL проходят мгновенно.
 func TestAppBackgroundStops(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		logs := &syncBuffer{}
@@ -349,20 +351,31 @@ func TestAppBackgroundStops(t *testing.T) {
 		if len(a.back) != 1 || a.back[0].Name() != "idempotency-sweeper" {
 			t.Fatalf("фоновые компоненты: %v, ждали idempotency-sweeper", a.back)
 		}
+		// Ключ идемпотентности — через API, как его создаёт клиент. Сервер в сети в
+		// памяти: в пузыре synctest настоящая сеть не годится.
+		srv := httptest.NewTestServer(t, a.handler)
+		c := client{t: t, base: "http://messenger", http: srv.Client()}
+		bob := c.signUp("bob", bobPassword)
+		c.signUp("alice", alicePassword)
+		token := c.token("alice", alicePassword)
+		body := `{"kind":"group","title":"Команда","member_ids":["` + bob + `"]}`
+		c.expect(c.do(http.MethodPost, "/v1/chats", token, body, "Idempotency-Key", uuid.NewString()), http.StatusCreated, "группа с ключом")
+
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
 		go func() { done <- lifecycle.Run(ctx, log, lifecycle.Stages{Back: a.back}) }()
 
-		// Период с джиттером не больше 1.1 × Every: за два периода — хотя бы одна очистка.
-		synctest.Sleep(2 * defaultIdempotencySweepEvery)
+		// Через TTL ключ просрочен; ещё два периода (с джиттером ≤ 1.1 × Every) — и
+		// очистка его точно прошла.
+		synctest.Sleep(idempotency.TTL + 2*defaultIdempotencySweepEvery)
 		cancel()
 
 		if err := <-done; err != nil {
 			t.Fatalf("lifecycle.Run: %v", err)
 		}
 		out := logs.String()
-		if !strings.Contains(out, `"removed":0`) || !strings.Contains(out, "фоновые компоненты остановлены") {
-			t.Fatalf("журнал: %s", out)
+		if strings.Count(out, `"removed":1`) != 1 || !strings.Contains(out, "фоновые компоненты остановлены") {
+			t.Fatalf("журнал: ждали ровно одну очистку с removed=1 и остановку фона:\n%s", out)
 		}
 	})
 }
@@ -509,7 +522,7 @@ func TestLoadTimeoutsIncludesBackStop(t *testing.T) {
 
 func TestLoadConcurrencyConfig(t *testing.T) {
 	_, path := writeKeyFile(t)
-	procs := runtime.GOMAXPROCS(0)
+	procs := min(runtime.GOMAXPROCS(0), maxHashConcurrency)
 	type want struct {
 		sweep              time.Duration
 		concurrency, queue int
@@ -528,6 +541,11 @@ func TestLoadConcurrencyConfig(t *testing.T) {
 		{"не число", map[string]string{envHashConcurrency: "abc"}, want{}, envHashConcurrency},
 		{"отрицательная очередь", map[string]string{envHashQueue: "-1"}, want{}, envHashQueue},
 		{"очередь — мусор", map[string]string{envHashQueue: "4x"}, want{}, envHashQueue},
+		{"мест на потолке", map[string]string{envHashConcurrency: "256"}, want{time.Minute, 256, 1024}, ""},
+		{"мест больше потолка", map[string]string{envHashConcurrency: "257"}, want{}, envHashConcurrency},
+		// Без потолка 4 × это значение переполнило бы int и дало отрицательную очередь.
+		{"мест — на грани переполнения", map[string]string{envHashConcurrency: "4611686018427387904"}, want{}, envHashConcurrency},
+		{"очередь больше потолка", map[string]string{envHashQueue: "1025"}, want{}, envHashQueue},
 		{"отрицательный период очистки", map[string]string{envIdempotencySweepEvery: "-1s"}, want{}, envIdempotencySweepEvery},
 		{"нулевой период очистки", map[string]string{envIdempotencySweepEvery: "0s"}, want{}, envIdempotencySweepEvery},
 	}

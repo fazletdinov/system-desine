@@ -205,6 +205,35 @@ func TestRunNilAfterCleanStop(t *testing.T) {
 	})
 }
 
+// Компонент, вернувший context.Canceled после своей отмены (идиома «return
+// ctx.Err()»), остановился штатно; та же ошибка до отмены — сбой.
+func TestRunCanceledAfterStopIsClean(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		idiom := fake{name: "sweeper", run: func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := runAsync(ctx, lifecycle.Stages{Front: []lifecycle.Component{idiom}, Back: []lifecycle.Component{idiom}})
+		synctest.Wait()
+
+		cancel()
+
+		if err := <-done; err != nil {
+			t.Fatalf("Run: %v, want nil — context.Canceled после отмены не сбой", err)
+		}
+	})
+	synctest.Test(t, func(t *testing.T) {
+		early := fake{name: "sweeper", run: func(context.Context) error { return context.Canceled }}
+
+		err := lifecycle.Run(t.Context(), discard(), lifecycle.Stages{Back: []lifecycle.Component{early}})
+
+		if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "sweeper") {
+			t.Fatalf("Run: %v, want сбой sweeper — его ctx не отменяли", err)
+		}
+	})
+}
+
 // Без Front фоновые компоненты всё равно работают до отмены ctx, а не
 // останавливаются сразу «после выхода всех Front».
 func TestRunWithoutFrontRunsBackUntilCancel(t *testing.T) {

@@ -17,16 +17,23 @@ import (
 type Component interface {
 	Name() string
 	// Run работает до отмены ctx и тогда возвращает nil; ошибка до отмены — сбой.
+	// После отмены context.Canceled (идиома «вернуть ctx.Err()») тоже считается
+	// штатной остановкой; любая другая ошибка — сбой, даже после отмены.
 	Run(ctx context.Context) error
 }
 
 // Stages — компоненты в порядке остановки: сначала все Front, затем все Back.
+//
+// Run не ограничивает срок остановки Front: каждый Front обязан ограничить его сам
+// (HTTP — через httpserver.Stop.Timeout), иначе зависший Front держит остановку
+// до SIGKILL. Срок Back ограничивает Run — BackStopTimeout.
 type Stages struct{ Front, Back []Component }
 
 // BackStopTimeout — срок выхода Back после их отмены. Фоновой задаче достаточно
 // закончить текущую итерацию; 2 с — с запасом для очистки в памяти и коротких
 // запросов в базу, и при этом вместе с DRAIN_DELAY + SHUTDOWN_TIMEOUT укладывается
-// в grace period платформы (это проверяет loadTimeouts при старте).
+// в grace period платформы (это проверяет loadTimeouts при старте). Не уложившийся
+// Back продолжает работать и после возврата Run — см. контракт Run.
 const BackStopTimeout = 2 * time.Second
 
 // ErrStoppedEarly — компонент вернул nil, хотя его не останавливали: его работа
@@ -46,6 +53,11 @@ var ErrStoppedEarly = errors.New("завершился до остановки")
 //
 // Возвращает первую по времени ошибку компонента (с его именем) или ошибку срока;
 // nil — штатная остановка, даже если ctx отменён.
+//
+// Контракт для вызывающего: если Run вернул ошибку срока, зависший Back (и горутина,
+// которая ждёт его выхода) переживает Run — остановить горутину снаружи в Go нельзя.
+// Поэтому после ошибки Run вызывающий обязан завершить процесс (main — os.Exit(1)),
+// а не запускать компоненты заново.
 func Run(ctx context.Context, log *slog.Logger, s Stages) error {
 	// failCtx отменяется сигналом (через ctx) или сбоем любого компонента — это
 	// команда «останавливаемся» для Front.
@@ -65,8 +77,12 @@ func Run(ctx context.Context, log *slog.Logger, s Stages) error {
 		g.Go(func() error {
 			defer onExit()
 			err := c.Run(ctx)
-			if err == nil && ctx.Err() == nil {
+			switch {
+			case err == nil && ctx.Err() == nil:
 				err = ErrStoppedEarly
+			case errors.Is(err, context.Canceled) && ctx.Err() != nil:
+				// Компонент вернул ошибку своей же отмены — это штатная остановка.
+				err = nil
 			}
 			if err != nil {
 				err = fmt.Errorf("компонент %s: %w", c.Name(), err)
@@ -94,7 +110,7 @@ func Run(ctx context.Context, log *slog.Logger, s Stages) error {
 
 	backDone := make(chan struct{})
 	// Владелец — Run; горутина выходит, когда выйдут все Back. Если какой-то Back
-	// завис, она переживает Run — но процесс после ошибки Run завершается.
+	// завис, она переживает Run — поэтому после ошибки Run процесс завершается.
 	go func() { _ = back.Wait(); close(backDone) }()
 	timer := time.NewTimer(BackStopTimeout)
 	defer timer.Stop()
