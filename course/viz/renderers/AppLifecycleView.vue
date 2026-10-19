@@ -37,7 +37,7 @@ const exitClass = computed(() => (props.state.exit === 0 ? 'ok' : 'bad'))
     </div>
     <p class="scale">
       <template v-if="showDrainMark">Черта на {{ fmt(drainEnd ?? 0) }} с — конец DRAIN_DELAY ({{ DRAIN_DELAY_S }} с после начала дренажа); после неё начинается Shutdown (до {{ SHUTDOWN_TIMEOUT_S }} с).</template>
-      <template v-else>Второй сигнал пришёл раньше конца DRAIN_DELAY: до Shutdown дело не дошло.</template>
+      <template v-else>Конец DRAIN_DELAY на шкале не отмечен: процесс вышел раньше, чем он наступил.</template>
     </p>
 
     <div class="lanes">
