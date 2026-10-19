@@ -21,6 +21,11 @@ updates:
     groups:
       npm-minor:
         update-types: [minor, patch]
+    # TypeScript 7 — компилятор на Go без JS-API, а vue-tsc вызывает typescript/lib/tsc.
+    # Снять, когда vue-tsc начнёт поддерживать 7.x.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   # Обновляет SHA закреплённых actions вместе с комментарием версии.
   - package-ecosystem: github-actions
     directory: /
@@ -38,4 +43,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 14
+    # Линия Go одна на весь репозиторий: go.mod, GO_VERSION в ci.yml, образы, тексты уроков.
+    # Бот приносит патчи; переход на новую минорную версию — отдельная задача, а не PR бота.
+    ignore:
+      - dependency-name: golang
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 # endregion dependabot

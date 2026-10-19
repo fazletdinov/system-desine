@@ -1,4 +1,4 @@
-FROM golang:1.27.0-trixie
+FROM golang:1.26.9-trixie
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends tcpdump iproute2 iputils-ping curl dnsutils openssl procps strace \
