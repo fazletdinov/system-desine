@@ -225,7 +225,7 @@ ok "patterns/limit: пик $free_peak горутин без лимита, не �
 # --- 11. бенчмарки: работоспособность (числа снимаются отдельно, см. README) ---
 out=$(go test -run='^$' -bench=. -benchtime=100ms ./1-5/sync/ ./1-5/sched/ ./1-5/patterns/limit/ ./1-5/alloc/ 2>&1) || fail "бенчмарки упали:
 $out"
-for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkLongReadMutex BenchmarkLongReadRWMutex BenchmarkCounterCASLoop BenchmarkShardedCounter BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads BenchmarkLimiterOverhead BenchmarkAppendGrow BenchmarkAppendPrealloc BenchmarkBufferNew BenchmarkBufferPool BenchmarkSlicePointers BenchmarkSliceValues; do
+for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkLongReadMutex BenchmarkLongReadRWMutex BenchmarkCounterCASLoop BenchmarkShardedCounter BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads BenchmarkLimiterOverhead BenchmarkAppendGrow BenchmarkAppendPrealloc BenchmarkBufferNew BenchmarkBufferPool BenchmarkSlicePointers BenchmarkSliceValues BenchmarkKeySprintf BenchmarkKeyAppend; do
 	echo "$out" | grep -q "^$name" || fail "в бенчмарках нет $name:
 $out"
 done

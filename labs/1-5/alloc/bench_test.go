@@ -4,6 +4,7 @@ package alloc
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strconv"
 	"sync"
@@ -16,6 +17,7 @@ const elems = 1000
 var (
 	sinkInts []int
 	sinkSum  int64
+	sinkStr  string
 )
 
 // #region append
@@ -137,3 +139,34 @@ func BenchmarkSliceValues(b *testing.B) {
 }
 
 // #endregion slice-of-pointers
+
+// #region sprintf
+
+// BenchmarkKeySprintf — ключ кэша через fmt.Sprintf: формат разбирается при каждом вызове, аргументы
+// идут через ...any.
+func BenchmarkKeySprintf(b *testing.B) {
+	b.ReportAllocs()
+	id := int64(0)
+	for b.Loop() {
+		sinkStr = fmt.Sprintf("chat:%d:%d", id, id+1)
+		id++
+	}
+}
+
+// BenchmarkKeyAppend — тот же ключ, собранный вручную: байты копятся в массиве на стеке, в кучу
+// попадает только итоговая строка.
+func BenchmarkKeyAppend(b *testing.B) {
+	b.ReportAllocs()
+	id := int64(0)
+	var buf [64]byte
+	for b.Loop() {
+		k := append(buf[:0], "chat:"...)
+		k = strconv.AppendInt(k, id, 10)
+		k = append(k, ':')
+		k = strconv.AppendInt(k, id+1, 10)
+		sinkStr = string(k)
+		id++
+	}
+}
+
+// #endregion sprintf

@@ -27,7 +27,7 @@
 │   ├── escape/cases/    # примеры для escape-анализа (ключи escape:<случай>/<вариант>)
 │   ├── escape/dump/     # -gcflags=-m=1 → JSON для песочницы escape-lab
 │   ├── stack/           # рост стека копированием, начальный размер по среднему
-│   └── bench_test.go    # предвыделение, sync.Pool, []*T против []T
+│   └── bench_test.go    # предвыделение, sync.Pool, []*T против []T, fmt.Sprintf
 ├── gc/                  # урок 1.5.9: сборщик мусора
 │   ├── gctrace/         # GOGC и GOMEMLIMIT: циклы, доля CPU, цель кучи
 │   ├── limiter/         # ограничитель CPU сборщика выше GOMEMLIMIT
@@ -423,6 +423,10 @@ heap». Две тонкости, которые видны в данных: у `
 неявных переменных (`make`, `new`, `&T{}`, `ir.MaxImplicitStackVarSize`), у явной `var a [N]byte` он
 128 КиБ (`ir.MaxStackVarSize`).
 
+Первую тонкость проверяет при выполнении тест `escape/cases/runtime_test.go` (регион `runtime-allocs`,
+`testing.AllocsPerRun`): `slice/var` при n = 4 (32 байта) — 0 аллокаций, при n = 5 — 1; `elems/values` при
+n = 8 — 0, при n = 9 — 1. Тест идёт в общем `go test -race ./...`.
+
 ### alloc/stack — урок 1.5.8, регионы `stack-growth`, `starting-size`
 
 ```
@@ -435,7 +439,7 @@ heap». Две тонкости, которые видны в данных: у `
 Стек растёт удвоением с копированием: на глубине 100 000 он 8 МиБ. Начальный размер стека новых горутин
 рантайм считает при каждой сборке по среднему стеку отсканированных горутин (Go 1.19).
 
-### alloc/bench_test.go — урок 1.5.8, регионы `append`, `pool`, `slice-of-pointers`
+### alloc/bench_test.go — урок 1.5.8, регионы `append`, `pool`, `slice-of-pointers`, `sprintf`
 
 ```bash
 go test -run='^$' -bench=. -count=10 ./1-5/alloc/ > alloc-bench.txt && benchstat alloc-bench.txt
@@ -477,6 +481,25 @@ geomean                           ¹
 
 У `SliceValues` аллокаций нет вовсе: массив из 1000 элементов по
 32 байта не убегает и меньше порога стека.
+
+Регион `sprintf` — ключ кэша через `fmt.Sprintf` и тот же ключ через `strconv.AppendInt` в массив на
+стеке (пара добавлена отдельным прогоном):
+
+```bash
+go test -run='^$' -bench=Key -count=10 ./1-5/alloc/ > alloc-bench-sprintf.txt && benchstat alloc-bench-sprintf.txt
+```
+
+```
+              │ alloc-bench-sprintf.txt │
+              │         sec/op          │
+KeySprintf-12               105.6n ± 2%
+KeyAppend-12                42.12n ± 4%
+
+              │ alloc-bench-sprintf.txt │
+              │        allocs/op        │
+KeySprintf-12                2.000 ± 0%
+KeyAppend-12                 1.000 ± 0%
+```
 
 ### gc/gctrace — урок 1.5.9, регион `gctrace`
 
