@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime"
+	"strconv"
 	"time"
 
 	"messenger/internal/auth/adapters/argon2id"
+	"messenger/internal/auth/adapters/hashlimit"
 	authhttp "messenger/internal/auth/adapters/httpapi"
 	"messenger/internal/auth/adapters/jwt"
 	authmemory "messenger/internal/auth/adapters/memory"
@@ -26,7 +30,9 @@ import (
 	"messenger/internal/platform/idempotency"
 	idemmemory "messenger/internal/platform/idempotency/memory"
 	"messenger/internal/platform/idgen"
+	"messenger/internal/platform/lifecycle"
 	"messenger/internal/platform/middleware"
+	"messenger/internal/platform/periodic"
 	"messenger/internal/platform/problem"
 	userhttp "messenger/internal/user/adapters/httpapi"
 	usermemory "messenger/internal/user/adapters/memory"
@@ -38,12 +44,23 @@ const (
 	// сети открытым текстом. TLS — на шлюзе (модуль 6.7); в образе (урок 1.16)
 	// MESSENGER_ADDR=:8080 задан в Dockerfile.
 	defaultAddr = "127.0.0.1:8080"
-	addrEnv     = "MESSENGER_ADDR"
-	keyFileEnv  = "MESSENGER_JWT_KEY_FILE"
 	// timeoutDetail — тот же текст, что problem.Respond отдаёт на DeadlineExceeded:
 	// клиенту всё равно, кто заметил истёкший срок — адаптер или middleware.
 	timeoutDetail          = "повторите запрос позже"
 	methodNotAllowedDetail = "метод не поддерживается для этого пути"
+)
+
+// Переменные окружения — константами: имя повторяется в чтении, в тексте ошибки и в
+// тестах, и опечатка в литерале молча оставила бы значение по умолчанию.
+const (
+	envAddr                  = "MESSENGER_ADDR"
+	envJWTKeyFile            = "MESSENGER_JWT_KEY_FILE"
+	envRequestTimeout        = "MESSENGER_REQUEST_TIMEOUT"
+	envShutdownTimeout       = "MESSENGER_SHUTDOWN_TIMEOUT"
+	envDrainDelay            = "MESSENGER_DRAIN_DELAY"
+	envIdempotencySweepEvery = "MESSENGER_IDEMPOTENCY_SWEEP_EVERY"
+	envHashConcurrency       = "MESSENGER_HASH_CONCURRENCY"
+	envHashQueue             = "MESSENGER_HASH_QUEUE"
 )
 
 // #region config
@@ -76,22 +93,82 @@ func durationEnv(name string, def time.Duration, allowZero bool) (time.Duration,
 
 func loadTimeouts(cfg *config) error {
 	var err error
-	if cfg.RequestTimeout, err = durationEnv("MESSENGER_REQUEST_TIMEOUT", defaultRequestTimeout, false); err != nil {
+	if cfg.RequestTimeout, err = durationEnv(envRequestTimeout, defaultRequestTimeout, false); err != nil {
 		return err
 	}
-	if cfg.ShutdownTimeout, err = durationEnv("MESSENGER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout, false); err != nil {
+	if cfg.ShutdownTimeout, err = durationEnv(envShutdownTimeout, defaultShutdownTimeout, false); err != nil {
 		return err
 	}
-	if cfg.DrainDelay, err = durationEnv("MESSENGER_DRAIN_DELAY", defaultDrainDelay, true); err != nil {
+	if cfg.DrainDelay, err = durationEnv(envDrainDelay, defaultDrainDelay, true); err != nil {
 		return err
 	}
-	if total := cfg.DrainDelay + cfg.ShutdownTimeout; total >= terminationGrace {
-		return fmt.Errorf("MESSENGER_DRAIN_DELAY + MESSENGER_SHUTDOWN_TIMEOUT = %s: должно быть меньше %s, иначе процесс убьют SIGKILL посреди остановки", total, terminationGrace)
+	// После HTTP останавливаются фоновые компоненты — их срок тоже в бюджете остановки.
+	if total := cfg.DrainDelay + cfg.ShutdownTimeout + lifecycle.BackStopTimeout; total >= terminationGrace {
+		return fmt.Errorf("%s + %s + срок фоновых компонентов %s = %s: должно быть меньше %s, иначе процесс убьют SIGKILL посреди остановки",
+			envDrainDelay, envShutdownTimeout, lifecycle.BackStopTimeout, total, terminationGrace)
 	}
 	return nil
 }
 
 // #endregion config
+
+const (
+	// defaultIdempotencySweepEvery — период фоновой очистки ключей идемпотентности.
+	// Ключ живёт сутки (idempotency.TTL), так что лишняя минута жизни просроченной
+	// записи ничего не стоит, а проход по карте раз в минуту — копейки CPU.
+	defaultIdempotencySweepEvery = time.Minute
+	// sweepJitter — разброс периода очистки ±10 %: экземпляры, стартовавшие вместе
+	// после выкладки, не чистят общее хранилище (Postgres в 2a) одновременно.
+	sweepJitter = 0.1
+	// defaultHashQueueFactor — очередь хешера по умолчанию: 4 ждущих на каждое место
+	// вычисления. При ≈ 18 мс на хеш в одиночку (до ~40 мс при N параллельных, урок 1.5.6) последний в очереди ждёт порядка 4 × 40 мс — заметно
+	// меньше срока запроса, а всплеск входов сверх этого получает 503 сразу, а не
+	// копит горутины и память.
+	defaultHashQueueFactor = 4
+	// maxHashConcurrency — потолок одновременных хешей: 256 × 19 МиБ ≈ 4,75 ГиБ памяти
+	// только на хеши — больше не бывает осмысленным ни на одной машине, а опечатка
+	// в переменной (лишние нули) иначе дала бы переполнение очереди или OOM.
+	maxHashConcurrency = 256
+	// maxHashQueue — потолок очереди: те же 4 ждущих на место при максимуме мест.
+	// Каждый ждущий — горутина с запросом; бесконечная очередь — та же перегрузка.
+	maxHashQueue = defaultHashQueueFactor * maxHashConcurrency
+)
+
+// intEnv читает целое из окружения в пределах [minimum, maximum]; пустая переменная —
+// значение по умолчанию.
+func intEnv(name string, def, minimum, maximum int) (int, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: ожидается целое число, получено %q", name, raw)
+	}
+	if n < minimum || n > maximum {
+		return 0, fmt.Errorf("%s: должно быть от %d до %d, получено %d", name, minimum, maximum, n)
+	}
+	return n, nil
+}
+
+// loadConcurrency читает период фоновой очистки и ограничение хеширования.
+func loadConcurrency(cfg *config) error {
+	var err error
+	if cfg.IdempotencySweepEvery, err = durationEnv(envIdempotencySweepEvery, defaultIdempotencySweepEvery, false); err != nil {
+		return err
+	}
+	// Хеш — чистая работа CPU: больше GOMAXPROCS одновременных вычислений не ускорят,
+	// а память (19 МиБ на хеш) умножат.
+	// Умолчание тоже под потолком: GOMAXPROCS бывает больше 256 на крупных машинах.
+	if cfg.HashConcurrency, err = intEnv(envHashConcurrency, min(runtime.GOMAXPROCS(0), maxHashConcurrency), 1, maxHashConcurrency); err != nil {
+		return err
+	}
+	// Очередь 0 допустима: «все места заняты — отказ сразу».
+	if cfg.HashQueue, err = intEnv(envHashQueue, defaultHashQueueFactor*cfg.HashConcurrency, 0, maxHashQueue); err != nil {
+		return err
+	}
+	return nil
+}
 
 // publicRoutes — маршруты, открытые без аутентификации: метод и путь без параметров.
 // Всё остальное закрыто: забытый здесь маршрут получит 401, а не откроется всем.
@@ -109,18 +186,26 @@ type config struct {
 	ShutdownTimeout time.Duration
 	// DrainDelay — сколько после SIGTERM ещё принимать запросы, отвечая /readyz 503.
 	DrainDelay time.Duration
+	// IdempotencySweepEvery — период фоновой очистки ключей идемпотентности.
+	IdempotencySweepEvery time.Duration
+	// HashConcurrency — сколько хешей паролей считать одновременно.
+	HashConcurrency int
+	// HashQueue — сколько вызовов хеширования ждут места; сверх — 503 overloaded.
+	HashQueue int
 }
 
-// app — то, что сборка отдаёт main: обработчик и пробы (main переводит их в дренаж по SIGTERM).
+// app — то, что сборка отдаёт main: обработчик, пробы (main переводит их в дренаж по
+// SIGTERM) и фоновые компоненты — их main запускает и останавливает через lifecycle.
 type app struct {
 	handler http.Handler
 	probes  *health.Probes
+	back    []lifecycle.Component
 }
 
 // addrFromEnv — адрес сервера; его же читает подкоманда healthcheck, чтобы постучаться
 // в тот порт, который слушает сервер.
 func addrFromEnv() string {
-	if addr := os.Getenv(addrEnv); addr != "" {
+	if addr := os.Getenv(envAddr); addr != "" {
 		return addr
 	}
 	return defaultAddr
@@ -133,9 +218,12 @@ func loadConfig() (config, error) {
 	if err := loadTimeouts(&cfg); err != nil {
 		return config{}, err
 	}
-	path := os.Getenv(keyFileEnv)
+	if err := loadConcurrency(&cfg); err != nil {
+		return config{}, err
+	}
+	path := os.Getenv(envJWTKeyFile)
 	if path == "" {
-		return config{}, errors.New("задайте " + keyFileEnv + " — ключ создаёт go run ./cmd/keygen -out jwt.pem")
+		return config{}, errors.New("задайте " + envJWTKeyFile + " — ключ создаёт go run ./cmd/keygen -out jwt.pem")
 	}
 	pemBytes, err := os.ReadFile(path)
 	if err != nil {
@@ -184,6 +272,10 @@ func newApp(cfg config, log *slog.Logger) (*app, error) {
 	idemStore := idemmemory.NewStore()
 	chatAPI.Register(mux, chatgen.MiddlewareFunc(idempotency.Middleware(idemStore, clk, log, "POST /v1/chats")))
 	// #endregion idempotency-wiring
+	sweeper, err := newIdempotencySweeper(idemStore, clk, cfg.IdempotencySweepEvery, log)
+	if err != nil {
+		return nil, fmt.Errorf("сборка: %w", err)
+	}
 
 	bearer, err := httpauth.NewBearer(verifier)
 	if err != nil {
@@ -224,11 +316,30 @@ func newApp(cfg config, log *slog.Logger) (*app, error) {
 			api.ServeHTTP(w, r)
 		}
 	})
-	return &app{handler: root, probes: probes}, nil
+	return &app{handler: root, probes: probes, back: []lifecycle.Component{sweeper}}, nil
 	// #endregion root-mux
 }
 
 // #endregion wiring
+
+// newIdempotencySweeper — фоновая очистка просроченных ключей идемпотентности. Без неё
+// ключ, к которому клиент не вернулся, жил бы в памяти вечно.
+func newIdempotencySweeper(store idempotency.Sweeper, clk idempotency.Clock, every time.Duration, log *slog.Logger) (*periodic.Task, error) {
+	return periodic.New(periodic.Config{
+		Name:   "idempotency-sweeper",
+		Every:  every,
+		Jitter: sweepJitter,
+		Log:    log,
+		Fn: func(ctx context.Context) error {
+			removed, err := store.Sweep(ctx, clk.Now())
+			if err != nil {
+				return fmt.Errorf("очистка ключей идемпотентности: %w", err)
+			}
+			log.Debug("очистка ключей идемпотентности", "removed", removed)
+			return nil
+		},
+	})
+}
 
 // #region auth-wiring
 // newAuth собирает контекст auth: регистрацию (создаёт профиль в user через мост
@@ -247,12 +358,17 @@ func newAuth(cfg config, users *usermemory.Store, clk clock.System, ids idgen.UU
 	if err != nil {
 		return nil, nil, err
 	}
-	hasher, err := argon2id.New(cfg.HasherParams)
+	argon, err := argon2id.New(cfg.HasherParams)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Ограничитель — один на регистрацию и вход: оба считают одинаково дорогой хеш.
+	hasher, err := hashlimit.New(argon, cfg.HashConcurrency, cfg.HashQueue)
 	if err != nil {
 		return nil, nil, err
 	}
 	creds := authmemory.NewStore()
-	signUp, err := authusecase.NewSignUp(hasher, bridge, creds)
+	signUp, err := authusecase.NewSignUp(hasher, bridge, bridge, creds)
 	if err != nil {
 		return nil, nil, err
 	}

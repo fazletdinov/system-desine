@@ -4,10 +4,20 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"messenger/internal/auth/adapters/httpapi/gen"
 	"messenger/internal/auth/domain"
+	"messenger/internal/auth/usecase"
 	"messenger/internal/platform/problem"
+)
+
+const (
+	// overloadedRetryAfter — через сколько звать клиента обратно при полной очереди хешера.
+	// Один хеш с боевыми параметрами считается ≈ 18 мс в одиночку, до ~40 мс при N параллельных (урок 1.5.6), так что за секунду очередь из 4·N ждущих
+	// успевает разойтись много раз; дольше — клиент ждал бы зря.
+	overloadedRetryAfter = time.Second
+	overloadedDetail     = "повторите через секунду"
 )
 
 func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) {
@@ -28,6 +38,8 @@ func problemFor(err error) (problem.Problem, bool) {
 		return problem.Invalid(invalid.Field, invalid.Reason), true
 	case errors.Is(err, domain.ErrUsernameTaken):
 		return problem.Problem{Code: problem.CodeUsernameTaken, Detail: domain.ErrUsernameTaken.Error()}, true
+	case errors.Is(err, usecase.ErrOverloaded):
+		return problem.Problem{Code: problem.CodeOverloaded, Detail: overloadedDetail, RetryAfter: overloadedRetryAfter}, true
 	default:
 		return problem.Problem{}, false
 	}

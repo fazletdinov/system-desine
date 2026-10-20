@@ -17,10 +17,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Ветка 1.26, а не go-version-file: в go.mod записано 1.26.0, и govulncheck нашёл бы
+  # Ветка 1.27, а не go-version-file: в go.mod записано 1.27.0, и govulncheck нашёл бы
   # уязвимости стандартной библиотеки, закрытые в патчах.
-  GO_VERSION: "1.26.x"
-  GOLANGCI_LINT_VERSION: v2.12.2
+  GO_VERSION: "1.27.x"
+  GOLANGCI_LINT_VERSION: v2.14.0
   GOVULNCHECK_VERSION: v1.8.0
   ACTIONLINT_VERSION: v1.7.12
   TRIVY_VERSION: v0.74.0
@@ -144,7 +144,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: messenger/go.sum
-          # Без check-latest setup-go берёт подходящую 1.26.x из образа раннера, а она
+          # Без check-latest setup-go берёт подходящую 1.27.x из образа раннера, а она
           # может отставать от последнего патча; здесь важен именно последний.
           check-latest: true
       # govulncheck смотрит, вызывается ли уязвимый код, а не только есть ли модуль в go.sum.
@@ -197,7 +197,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: labs/go.mod
       # check-labs.ts не тянет npm-зависимостей: npm ci не нужен. Сценарий 1c запускает
-      # privileged-контейнер — раннеры GitHub это разрешают.
+      # privileged-контейнер — раннеры GitHub это разрешают. Сценарий лабы 1.5 (scenario.sh)
+      # идёт там же: Go-программы без Docker, намеренные гонки собираются с тегом labdemo.
       - run: node scripts/check-labs.ts
         working-directory: course
 

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import VizFrame from '../components/VizFrame.vue'
 import Player from '../components/Player.vue'
+import SegmentedToggle from '../components/SegmentedToggle.vue'
 import LayerCacheView from '../renderers/LayerCacheView.vue'
 import { layerCacheSimulation, type LayerAction } from '../simulations/layer-cache'
 
@@ -11,6 +12,22 @@ const steps = computed(() => layerCacheSimulation.steps(state.value))
 const dispatch = (action: LayerAction): void => {
   state.value = layerCacheSimulation.apply(state.value, action)
 }
+const orderOptions = [
+  { value: 'correct', text: 'COPY go.mod раньше' },
+  { value: 'naive', text: 'COPY . . сразу' },
+] as const
+const dockerignoreOptions = [
+  { value: true, text: '.dockerignore вкл' },
+  { value: false, text: '.dockerignore выкл' },
+] as const
+const cacheMountOptions = [
+  { value: true, text: 'cache mount вкл' },
+  { value: false, text: 'cache mount выкл' },
+] as const
+const stageOptions = [
+  { value: true, text: 'multi-stage вкл' },
+  { value: false, text: 'multi-stage выкл' },
+] as const
 </script>
 
 <template>
@@ -23,22 +40,10 @@ const dispatch = (action: LayerAction): void => {
       <button type="button" @click="dispatch({ type: 'edit', file: 'readme' })">Изменить README</button>
       <button type="button" @click="dispatch({ type: 'reset' })">Сброс</button>
     </div>
-    <div class="panel" role="radiogroup" aria-label="Порядок инструкций">
-      <button type="button" role="radio" :aria-checked="state.order === 'correct'" :class="{ on: state.order === 'correct' }" @click="dispatch({ type: 'order', order: 'correct' })">COPY go.mod раньше</button>
-      <button type="button" role="radio" :aria-checked="state.order === 'naive'" :class="{ on: state.order === 'naive' }" @click="dispatch({ type: 'order', order: 'naive' })">COPY . . сразу</button>
-    </div>
-    <div class="panel" role="radiogroup" aria-label=".dockerignore">
-      <button type="button" role="radio" :aria-checked="state.dockerignore" :class="{ on: state.dockerignore }" @click="dispatch({ type: 'dockerignore', on: true })">.dockerignore вкл</button>
-      <button type="button" role="radio" :aria-checked="!state.dockerignore" :class="{ on: !state.dockerignore }" @click="dispatch({ type: 'dockerignore', on: false })">.dockerignore выкл</button>
-    </div>
-    <div class="panel" role="radiogroup" aria-label="cache mount">
-      <button type="button" role="radio" :aria-checked="state.cacheMount" :class="{ on: state.cacheMount }" @click="dispatch({ type: 'cacheMount', on: true })">cache mount вкл</button>
-      <button type="button" role="radio" :aria-checked="!state.cacheMount" :class="{ on: !state.cacheMount }" @click="dispatch({ type: 'cacheMount', on: false })">cache mount выкл</button>
-    </div>
-    <div class="panel" role="radiogroup" aria-label="multi-stage">
-      <button type="button" role="radio" :aria-checked="state.multiStage" :class="{ on: state.multiStage }" @click="dispatch({ type: 'stage', multi: true })">multi-stage вкл</button>
-      <button type="button" role="radio" :aria-checked="!state.multiStage" :class="{ on: !state.multiStage }" @click="dispatch({ type: 'stage', multi: false })">multi-stage выкл</button>
-    </div>
+    <SegmentedToggle label="Порядок инструкций" :options="orderOptions" :model-value="state.order" @update:model-value="(order) => dispatch({ type: 'order', order })" />
+    <SegmentedToggle label=".dockerignore" :options="dockerignoreOptions" :model-value="state.dockerignore" @update:model-value="(on) => dispatch({ type: 'dockerignore', on })" />
+    <SegmentedToggle label="cache mount" :options="cacheMountOptions" :model-value="state.cacheMount" @update:model-value="(on) => dispatch({ type: 'cacheMount', on })" />
+    <SegmentedToggle label="multi-stage" :options="stageOptions" :model-value="state.multiStage" @update:model-value="(multi) => dispatch({ type: 'stage', multi })" />
     <Player :steps="steps" label="Песочница: кэш слоёв">
       <template #default="{ step }">
         <LayerCacheView :state="step.state" />

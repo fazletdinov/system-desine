@@ -12,3 +12,8 @@ func TestStoreContract(t *testing.T) {
 	t.Parallel()
 	storetest.Run(t, func(*testing.T) idempotency.Store { return memory.NewStore() })
 }
+
+func TestStoreSweeper(t *testing.T) {
+	t.Parallel()
+	storetest.RunSweeper(t, func(*testing.T) storetest.SweepStore { return memory.NewStore() })
+}

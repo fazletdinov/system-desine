@@ -410,3 +410,48 @@ func TestCreateTokenErrors(t *testing.T) {
 		})
 	}
 }
+
+// #region overloaded-test
+// Очередь хешера полна — 503 overloaded с Retry-After: клиент (и балансировщик) знает,
+// что повторить можно, и когда. Ответ сверяется с контрактом обёрткой openapitest.
+func TestOverloaded(t *testing.T) {
+	overloaded := func(prefix string) error {
+		return fmt.Errorf("%s: хеширование: %w", prefix, usecase.ErrOverloaded)
+	}
+	signUp := fakeSignUp{fn: func(context.Context, usecase.SignUpCommand) (usecase.Profile, error) {
+		return usecase.Profile{}, overloaded("sign up")
+	}}
+	login := fakeLogin{fn: func(context.Context, usecase.LoginCommand) (usecase.Token, error) {
+		return usecase.Token{}, overloaded("login")
+	}}
+	tests := []struct {
+		name string
+		call func(t *testing.T, h http.Handler) *httptest.ResponseRecorder
+	}{
+		{"POST /v1/users", func(t *testing.T, h http.Handler) *httptest.ResponseRecorder {
+			return post(t, h, "application/json", signUpBody)
+		}},
+		{"POST /v1/tokens", func(t *testing.T, h http.Handler) *httptest.ResponseRecorder {
+			return postToken(t, h, "", loginBody)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, _ := newServer(t, signUp, login)
+
+			w := tt.call(t, h)
+
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status %d, want 503; body %s", w.Code, w.Body)
+			}
+			if b := decodeError(t, w); b.Code != "overloaded" {
+				t.Errorf("code %q, want overloaded", b.Code)
+			}
+			if got := w.Header().Get("Retry-After"); got != "1" {
+				t.Errorf("Retry-After %q, want 1", got)
+			}
+		})
+	}
+}
+
+// #endregion overloaded-test

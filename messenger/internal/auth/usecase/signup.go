@@ -16,33 +16,45 @@ type SignUpCommand struct {
 
 // SignUp — регистрация: профиль в контексте user плюс учётные данные здесь (ADR-0004).
 type SignUp struct {
-	hasher   PasswordHasher
-	profiles ProfileRegistrar
-	creds    CredentialsSaver
+	hasher    PasswordHasher
+	profiles  ProfileRegistrar
+	validator ProfileValidator
+	creds     CredentialsSaver
 }
 
-func NewSignUp(hasher PasswordHasher, profiles ProfileRegistrar, creds CredentialsSaver) (*SignUp, error) {
-	if hasher == nil || profiles == nil || creds == nil {
+func NewSignUp(hasher PasswordHasher, profiles ProfileRegistrar, validator ProfileValidator, creds CredentialsSaver) (*SignUp, error) {
+	if hasher == nil || profiles == nil || validator == nil || creds == nil {
 		return nil, errors.New("sign up: nil-зависимость")
 	}
-	return &SignUp{hasher: hasher, profiles: profiles, creds: creds}, nil
+	return &SignUp{hasher: hasher, profiles: profiles, validator: validator, creds: creds}, nil
 }
 
 // #region signup
 func (uc *SignUp) Execute(ctx context.Context, cmd SignUpCommand) (Profile, error) {
+	// #region signup-order
+	// Порядок — от дешёвого к дорогому: политика пароля и правила имён стоят микросекунды,
+	// а хеш пароля намеренно медленный и жадный до памяти. Дорогой шаг — после всех
+	// дешёвых проверок, иначе опечатка в имени тратит полный хеш и место в очереди хешера.
 	pw, err := domain.NewPassword(cmd.Password)
 	if err != nil {
 		return Profile{}, err
 	}
-	// Хешируем до создания профиля: если хешер сломан, узнаем это, ничего не создав.
-	hash, err := uc.hasher.Hash(pw)
+	if err := uc.validator.ValidateProfile(ctx, cmd.Username, cmd.DisplayName); err != nil {
+		return Profile{}, fmt.Errorf("sign up: %w", err)
+	}
+	// Хешируем до создания профиля: если хешер сломан или перегружен, узнаем это,
+	// ничего не создав.
+	hash, err := uc.hasher.Hash(ctx, pw)
 	if err != nil {
 		return Profile{}, fmt.Errorf("sign up: хеширование: %w", err)
 	}
+	// Имя проверено, но занятость проверяет только сам RegisterProfile: между проверкой
+	// и созданием его мог занять другой запрос.
 	profile, err := uc.profiles.RegisterProfile(ctx, cmd.Username, cmd.DisplayName)
 	if err != nil {
 		return Profile{}, fmt.Errorf("sign up: %w", err)
 	}
+	// #endregion signup-order
 	creds, err := domain.NewCredentials(profile.ID, hash)
 	if err != nil {
 		// Без %w: пустой id от соседнего контекста — сбой сервера, а не ошибка данных клиента.

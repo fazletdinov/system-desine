@@ -107,9 +107,18 @@ linters:
           files: ["**/internal/auth/**", "!**/internal/auth/adapters/userbridge/**"]
           deny:
             - pkg: messenger/internal/user
-              desc: "auth не зависит от user: порты ProfileRegistrar и UserLookup, адаптер userbridge"
+              desc: "auth не зависит от user: порты ProfileRegistrar, ProfileValidator и UserLookup, адаптер userbridge"
             - pkg: messenger/internal/chat
               desc: "auth не знает про чаты"
+        # Ограничитель хеширования — декоратор над портом: знает только порт (и типы
+        # домена в его сигнатуре), а не конкретный хешер и не HTTP (спека 1.5a, §4.7).
+        hashlimit:
+          list-mode: strict
+          files: ["**/internal/auth/adapters/hashlimit/**", "!$test"]
+          allow:
+            - $gostd
+            - messenger/internal/auth/usecase
+            - messenger/internal/auth/domain
         # Контексты не знают о пробах: проверки готовности (Postgres в 2a) регистрирует
         # composition root — так контекст не зависит от того, как его здоровье спрашивают.
         contexts-no-health:
@@ -118,6 +127,28 @@ linters:
           deny:
             - pkg: messenger/internal/platform/health
               desc: "пробы собирает composition root (ADR-0008)"
+        # Компоненты собирает и запускает composition root: контекст не решает, когда
+        # его фоновая работа стартует и в каком порядке останавливается (урок 1.5.6).
+        contexts-no-lifecycle:
+          list-mode: lax
+          files: ["**/internal/user/**", "**/internal/chat/**", "**/internal/auth/**"]
+          deny:
+            - pkg: messenger/internal/platform/lifecycle
+              desc: "компоненты собирает composition root (cmd/messenger)"
+        # Жизненный цикл и периодическая работа — чисто технические пакеты: только
+        # стандартная библиотека (и errgroup), без контекстов и без друг друга —
+        # periodic.Task подходит под lifecycle.Component структурно, импорт не нужен.
+        lifecycle:
+          list-mode: strict
+          files: ["**/internal/platform/lifecycle/**", "!$test"]
+          allow:
+            - $gostd
+            - golang.org/x/sync/errgroup
+        periodic:
+          list-mode: strict
+          files: ["**/internal/platform/periodic/**", "!$test"]
+          allow:
+            - $gostd
         platform:
           list-mode: lax
           files: ["**/internal/platform/**"]

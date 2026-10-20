@@ -757,8 +757,8 @@ func TestUnauthenticated(t *testing.T) {
 	// Личность в контексте, какой её положил бы middleware. Он сам отсекает пустой
 	// заголовок, но адаптер не должен на это полагаться: формат id проверяет он.
 	identities := map[string]string{
-		"нет личности":            "",
-		"не UUID":                 "alice",
+		"нет личности": "",
+		"не UUID":      "alice",
 		"UUID в верхнем регистре": strings.ToUpper(aliceID),
 		"одни пробелы":            "   ",
 	}

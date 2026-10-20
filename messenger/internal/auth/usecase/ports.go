@@ -2,17 +2,24 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"messenger/internal/auth/domain"
 )
 
 // #region ports
+// ErrOverloaded — часть контракта PasswordHasher: хешер отказал сразу, потому что
+// очередь на вычисление полна. Объявлена здесь, у порта, чтобы адаптер HTTP переводил
+// её в 503, не зная, какая реализация ограничивает хеширование.
+var ErrOverloaded = errors.New("auth: слишком много одновременных вычислений хеша")
+
 type PasswordHasher interface {
-	Hash(p domain.Password) (domain.PasswordHash, error)
+	// Hash и Verify могут вернуть ErrOverloaded (очередь полна) или ошибку ctx (истёк срок ожидания).
+	Hash(ctx context.Context, p domain.Password) (domain.PasswordHash, error)
 	// Verify сравнивает пароль с хешем. Время сравнения не зависит от того, в каком
-	// байте они расходятся. Ошибка — только если хеш испорчен, а не «не совпал».
-	Verify(plaintext string, hash domain.PasswordHash) (bool, error)
+	// байте они расходятся. Кроме ошибок выше — ошибка, если хеш испорчен, а не «не совпал».
+	Verify(ctx context.Context, plaintext string, hash domain.PasswordHash) (bool, error)
 }
 
 // Profile — профиль пользователя глазами auth: ровно то, что нужно ответу регистрации.
@@ -28,6 +35,14 @@ type Profile struct {
 type ProfileRegistrar interface {
 	// Ошибки данных — *domain.ValidationError, занятое имя — domain.ErrUsernameTaken.
 	RegisterProfile(ctx context.Context, username, displayName string) (Profile, error)
+}
+
+// ProfileValidator проверяет имя и отображаемое имя по правилам контекста user, ничего
+// не создавая. Регистрация зовёт его до хеширования: отказ из-за опечатки в имени
+// не должен стоить полного хеша пароля — намеренно медленного и дорогого по памяти.
+type ProfileValidator interface {
+	// ValidateProfile — *domain.ValidationError с полем username или display_name, как RegisterProfile.
+	ValidateProfile(ctx context.Context, username, displayName string) error
 }
 
 type UserLookup interface {

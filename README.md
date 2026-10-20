@@ -4,6 +4,16 @@
 
 Личный курс по проектированию высоконагруженных систем на Go: сайт курса с пошаговыми визуализациями (`course/`) и сквозной проект-мессенджер (`messenger/`, с модуля 1).
 
+## Что в курсе
+
+- Модуль 0 и 0b — основы и сети (`course/modules/00-foundation`, `00b-network`).
+- Модуль 1 — Go-сервис: мессенджер от домена до образа, CI и публикации (уроки 1.1–1.20).
+- Модуль 1.5, часть 1.5a — конкурентность в Go (`course/modules/01-5-go-concurrency`, шесть уроков): горутины и планировщик, каналы, модель памяти и гонки, `sync` и атомики, паттерны конкурентности, жизненный цикл и фоновая работа. Лаба — `labs/1-5`, в мессенджере появляются жизненный цикл компонентов, фоновая очистка идемпотентности и ограничение одновременных хешей. Часть 1.5b (рантайм: netpoller, стек и аллокатор, GC, профилирование) — следующая.
+
+## Версия Go
+
+Весь репозиторий — на Go 1.27.2: в `messenger/go.mod` и `labs/go.mod` стоят `go 1.27.0` и `toolchain go1.27.2` (1.27.0 уязвим: CVE-2026-78667, CVE-2026-78669, CVE-2026-97031 исправлены в 1.27.2). Локальный Go по умолчанию тоже должен быть 1.27.2, например `mise use -g go@1.27.2`: иначе более старый Go (скажем, 1.26) по строке `toolchain` сам скачает 1.27.2 при каждом запуске команды, а редактор с `gopls` на старом Go будет пытаться скачать неподходящий инструментарий.
+
 ## Запуск курса
 
 ```bash
@@ -39,7 +49,7 @@ Workflow лежат в `.github/workflows/` (урок 1.18 — `ci.yml`, уро�
 
 ## Лабораторные
 
-Практика модулей лежит в `labs/` — отдельный Go-модуль (`labs/go.mod`, Go 1.26, без внешних зависимостей). Каталог модуля 0b:
+Практика модулей лежит в `labs/` — отдельный Go-модуль (`labs/go.mod`, Go 1.27.2; единственная внешняя зависимость — `golang.org/x/sync` для `errgroup` и `semaphore` в уроке 1.5.5). Каталог модуля 0b:
 
 - `labs/0b/compose.yaml` и `Dockerfile` — стенд из трёх контейнеров в сети `172.28.0.0/24`: `client`, `server` и `dns` (CoreDNS с зоной `messenger.example`); в образ собраны программы лабораторной и инструменты (`tcpdump`, `ss`, `dig`, `curl` с HTTP/3, `openssl`, `strace`);
 - `labs/0b/netem.sh 40ms 1%` — задержка и потери через netem на `client` и `server` (половина RTT на каждом конце), `labs/0b/netem.sh off` — снять; нужен модуль ядра `sch_netem`;
@@ -64,13 +74,21 @@ docker compose run --rm lab        # оболочка внутри окруже�
 docker compose run --rm -T lab /lab/scenario.sh
 ```
 
-Проверка — из `course/`: `npm run check:labs` (gofmt, `go vet`, `go test -race` по `labs/`, `docker compose config` и сценарий 1c).
+Лабораторная модуля 1.5a — `labs/1-5/`: маленькие программы без Docker (`sched`, `chan`, `race`, `sync`, `patterns`), по одной группе на урок 1.5.1–1.5.5. Каждая печатает версию Go, `GOMAXPROCS` и `NumCPU`; намеренные гонки и утечки собираются только с тегом `labdemo`, чтобы не попадать в `go vet` и `-race`. `labs/1-5/scenario.sh` запускает всё и проверяет ключевые строки, команды — в `labs/1-5/README.md`.
+
+```bash
+cd labs
+go run ./1-5/sched/cost
+bash 1-5/scenario.sh
+```
+
+Проверка — из `course/`: `npm run check:labs` (gofmt, `go vet`, `go test -race` по `labs/`, `docker compose config`, сценарии 1.5 и 1c).
 
 Код лабораторных попадает в уроки только импортом региона: в Go-файле регион размечен `// #region имя` … `// #endregion имя`, в уроке — `<<< @/../labs/0b/cmd/tcpecho/main.go#server{go}`. Так урок всегда показывает тот код, который проверен тестами. Вывод команд в уроках — реальный, с пометкой «у вас числа будут другими, порядок — такой».
 
 ## Мессенджер
 
-Сквозной проект курса лежит в `messenger/` — отдельный Go-модуль (`messenger/go.mod`, Go 1.26). Код раскладывается по контекстам (`internal/user`, `internal/chat`, `internal/auth`) и слоям `domain` ← `usecase` ← `adapters` ← `cmd`; правило зависимостей проверяет линтер `depguard` (настройка — `messenger/.golangci.yml`, решения — `messenger/docs/adr/`).
+Сквозной проект курса лежит в `messenger/` — отдельный Go-модуль (`messenger/go.mod`, Go 1.27.2). Код раскладывается по контекстам (`internal/user`, `internal/chat`, `internal/auth`) и слоям `domain` ← `usecase` ← `adapters` ← `cmd`; правило зависимостей проверяет линтер `depguard` (настройка — `messenger/.golangci.yml`, решения — `messenger/docs/adr/`).
 
 ```bash
 cd messenger
@@ -79,7 +97,7 @@ MESSENGER_JWT_KEY_FILE=jwt.pem go run ./cmd/messenger                        # H
 MESSENGER_JWT_KEY_FILE=jwt.pem MESSENGER_ADDR=:8080 go run ./cmd/messenger   # слушать все интерфейсы — явное решение
 ```
 
-Без `MESSENGER_JWT_KEY_FILE` сервер не стартует. Сроки задаются окружением: `MESSENGER_REQUEST_TIMEOUT` (по умолчанию 10 с), `MESSENGER_SHUTDOWN_TIMEOUT` (10 с) и `MESSENGER_DRAIN_DELAY` (5 с) — при старте проверяется, что дренаж и остановка вместе укладываются в 30 с до SIGKILL. `keygen` не перезаписывает существующий файл: новый ключ сделал бы недействительными все выданные токены. Файлы `*.pem` в git не попадают (`messenger/.gitignore`). Клиент регистрируется (`POST /v1/users` с паролем), получает токен (`POST /v1/tokens`) и передаёт его в `Authorization: Bearer …`. Данные живут в памяти и пропадают при остановке; по умолчанию сервер слушает только loopback. Сквозной сценарий с `curl` — в уроке 1.14.
+Без `MESSENGER_JWT_KEY_FILE` сервер не стартует. Сроки задаются окружением: `MESSENGER_REQUEST_TIMEOUT` (по умолчанию 10 с), `MESSENGER_SHUTDOWN_TIMEOUT` (10 с) и `MESSENGER_DRAIN_DELAY` (5 с) — при старте проверяется, что дренаж, остановка HTTP и 2 с на фоновые компоненты вместе укладываются в 30 с до SIGKILL. Фоновая работа и нагрузка: `MESSENGER_IDEMPOTENCY_SWEEP_EVERY` — период очистки ключей идемпотентности (Go-длительность, например `30s`; по умолчанию 1 мин, больше нуля), `MESSENGER_HASH_CONCURRENCY` — сколько хешей паролей считать одновременно (целое от 1 до 256; по умолчанию `GOMAXPROCS`, но не больше 256), `MESSENGER_HASH_QUEUE` — сколько вызовов ждут места (целое от 0 до 1024; по умолчанию 4 × `MESSENGER_HASH_CONCURRENCY`; 0 — отказ сразу, если все места заняты; сверх очереди — 503 `overloaded` с `Retry-After`). Нечисловое или выходящее за пределы значение — ошибка старта с именем переменной. Второй SIGINT/SIGTERM во время остановки завершает процесс сразу с кодом 1. `keygen` не перезаписывает существующий файл: новый ключ сделал бы недействительными все выданные токены. Файлы `*.pem` в git не попадают (`messenger/.gitignore`). Клиент регистрируется (`POST /v1/users` с паролем), получает токен (`POST /v1/tokens`) и передаёт его в `Authorization: Bearer …`. Данные живут в памяти и пропадают при остановке; по умолчанию сервер слушает только loopback. Сквозной сценарий с `curl` — в уроке 1.14.
 
 API описан контрактом `messenger/api/openapi.yaml` (contract-first, ADR-0006): типы запросов и ответов и интерфейсы обработчиков сгенерированы из него в пакеты `internal/*/adapters/httpapi/gen`. После правки контракта — `go generate ./...` из `messenger/`; сгенерированные файлы коммитятся, а `npm run check:messenger` падает, если они отстали от контракта.
 
@@ -92,14 +110,14 @@ go run ./cmd/keygen -out jwt.pem && docker compose up --build   # http://127.0.0
 
 Образ — multi-stage сборка на distroless (`messenger/Dockerfile`, урок 1.16), процесс работает от UID 65532 с файловой системой только для чтения, без capabilities, с лимитами 256 МБ памяти и 1 CPU (`messenger/compose.yaml`, урок 1.17). Ключ подписи приходит секретом-файлом в `/run/secrets/jwt_key`, а не переменной окружения. На Docker Desktop файл `0600` читается процессом контейнера; на «голом» Docker Engine (Linux без Desktop) — нет, и сервер падает с `permission denied`: для учебного ключа `chmod 0444 jwt.pem`, почему — в уроке 1.17. Пробы: `/livez` (процесс жив) и `/readyz` (готов принимать трафик; по SIGTERM сразу 503, затем дренаж и остановка). `HEALTHCHECK` образа вызывает `messenger healthcheck`. Порт опубликован только на loopback хоста.
 
-Проверка — из `course/`: `npm run check:messenger` — `gofmt`, свежесть `go generate`, `go vet`, `golangci-lint run`, `go test -race` по `messenger/` и ссылки `<<< @/../messenger/…#регион` во всех уроках (нет файла, нет региона или строка с `<<<`, которую не разобрать, — ошибка). Нужен **golangci-lint v2** (`version: "2"` в конфиге; v1 его не прочитает), например `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`; скрипт ищет его сначала в `~/go/bin`, потом в `PATH`.
+Проверка — из `course/`: `npm run check:messenger` — `gofmt`, свежесть `go generate`, `go vet`, `golangci-lint run`, `go test -race` по `messenger/` и ссылки `<<< @/../messenger/…#регион` во всех уроках (нет файла, нет региона или строка с `<<<`, которую не разобрать, — ошибка). Нужен **golangci-lint v2** (`version: "2"` в конфиге; v1 его не прочитает), например `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0`; скрипт ищет его сначала в `~/go/bin`, потом в `PATH`.
 
-Каждый урок модуля 1 заканчивается тегом `m01-lNN` (сейчас — от `m01-l01` до `m01-l20`) — состоянием кода после урока: `git checkout m01-l03` показывает код после урока 1.3, а `git -c core.quotePath=false diff --stat m01-l02 m01-l03 -- messenger` — что в нём изменилось. На каждом теге `go build ./...` и `go test -race ./...` проходят в `messenger/` и `labs/`.
+Каждый урок модуля 1 заканчивается тегом `m01-lNN` (сейчас — от `m01-l01` до `m01-l20`), каждый урок модуля 1.5a — тегом `m01-5-lNN` (от `m01-5-l01` до `m01-5-l06`) — состоянием кода после урока: `git checkout m01-l03` показывает код после урока 1.3, а `git -c core.quotePath=false diff --stat m01-l02 m01-l03 -- messenger` — что в нём изменилось. На каждом теге `go build ./...` и `go test -race ./...` проходят в `messenger/` и `labs/`.
 
 ## Как добавить урок
 
 1. Файл `course/modules/NN-slug/NN-lesson.md` (из пути вычисляется строка «Модуль N · Урок M» над заголовком) с frontmatter `title:` — он сам появится в меню.
-   Папки модулей начинаются с двух цифр (`00-foundation`, `00b-network`, `01-go-service`, `01-5-concurrency`), остальные папки в меню не попадают. Порядок модулей задаёт числовое поле `order:` в `index.md` модуля (`0`, `0.5`, `1`, `1.5`…): имена вроде `02.5-` и `02a-` по алфавиту сортируются неверно. Без `order:` берётся число из первых двух цифр имени.
+   Папки модулей начинаются с двух цифр (`00-foundation`, `00b-network`, `01-go-service`, `01-5-go-concurrency`), остальные папки в меню не попадают. Порядок модулей задаёт числовое поле `order:` в `index.md` модуля (`0`, `0.5`, `1`, `1.5`…): имена вроде `02.5-` и `02a-` по алфавиту сортируются неверно. Без `order:` берётся число из первых двух цифр имени.
 2. Термины: `<T id="...">слово</T>`, определение — в `course/glossary/terms.yaml`. `id` пишется только литералом в двойных кавычках; поле `long` в глоссарии не должно содержать `<T>`.
 3. Визуализация: сценарий в `course/viz/simulations/` (чистая функция + тест), рендерер в `course/viz/renderers/`, сцена в `course/viz/scenes/`; цвета — из `course/viz/palette.css` (см. `course/viz/README.md`). Сцена подключается в самом уроке через `<script setup>` с `import`.
 4. После добавления термина или урока перезапустите `npm run dev`: список терминов и меню считаются при загрузке конфига.

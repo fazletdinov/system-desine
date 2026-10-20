@@ -6,16 +6,51 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"messenger/internal/platform/httpserver"
 )
 
+// newServer — сервер с таймаутом запроса в 1 с; New с ним не ошибается.
+func newServer(t *testing.T, addr string, h http.Handler) *http.Server {
+	t.Helper()
+	srv, err := httpserver.New(addr, h, slog.New(slog.DiscardHandler), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+func TestNewRejectsNonPositiveRequestTimeout(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		if _, err := httpserver.New("127.0.0.1:0", http.NotFoundHandler(), slog.New(slog.DiscardHandler), d); err == nil {
+			t.Errorf("New с таймаутом %v: ждали ошибку", d)
+		}
+	}
+}
+
+func TestNewWriteTimeoutCoversRequestTimeout(t *testing.T) {
+	srv, err := httpserver.New("127.0.0.1:0", http.NotFoundHandler(), slog.New(slog.DiscardHandler), 7*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ответ о таймауте (503) должен успеть уйти до того, как сервер оборвёт запись.
+	if srv.WriteTimeout <= 7*time.Second {
+		t.Fatalf("WriteTimeout %v не больше таймаута запроса", srv.WriteTimeout)
+	}
+	if srv.ReadHeaderTimeout == 0 || srv.ReadTimeout == 0 || srv.IdleTimeout == 0 {
+		t.Fatalf("таймауты не выставлены: %+v", srv)
+	}
+}
+
+// Run — тонкая обёртка «занять порт + Serve»: два теста на настоящей сети проверяют
+// именно её. Остановка проверяется на Serve в сети в памяти, под synctest.
 func TestRunStopsOnCancel(t *testing.T) {
-	srv := httpserver.New("127.0.0.1:0", http.NotFoundHandler(), slog.New(slog.DiscardHandler), time.Second)
+	srv := newServer(t, "127.0.0.1:0", http.NotFoundHandler())
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- httpserver.Run(ctx, srv, httpserver.Stop{Timeout: time.Second}) }()
@@ -33,200 +68,246 @@ func TestRunStopsOnCancel(t *testing.T) {
 }
 
 func TestRunReturnsListenError(t *testing.T) {
-	// Занимаем порт сами: второй ListenAndServe на нём должен упасть сразу.
+	// Занимаем порт сами: Run на нём должен упасть сразу.
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ln.Close() })
-	srv := httpserver.New(ln.Addr().String(), http.NotFoundHandler(), slog.New(slog.DiscardHandler), time.Second)
+	srv := newServer(t, ln.Addr().String(), http.NotFoundHandler())
 
 	if err := httpserver.Run(context.Background(), srv, httpserver.Stop{Timeout: time.Second}); err == nil {
 		t.Fatal("Run: want error, порт занят")
 	}
 }
 
-// freeAddr находит свободный порт: ListenAndServe сам порт не сообщает.
-func freeAddr(t *testing.T) string {
-	t.Helper()
-	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	if err := ln.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return addr
+// pipeListener — сеть в памяти для Serve: dial создаёт net.Pipe и отдаёт серверный
+// конец в Accept. Всё ожидание — на каналах пузыря synctest, поэтому время в тестах
+// виртуальное, а synctest.Wait видит, когда сервер и клиент «устоялись». Это не
+// httptest.NewTestServer: тот сам вызывает Serve и Shutdown, а проверяем мы именно их.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
 }
 
-// startInFlight запускает Run с обработчиком, который ждёт release, и отправляет
-// запрос; возвращает, когда обработчик уже работает. Если тест упадёт раньше, чем
-// вызовет cancel и release, их вызовет t.Cleanup — горутины сервера не утекут.
-func startInFlight(t *testing.T, shutdownTimeout time.Duration) (cancel context.CancelFunc, release func(), runErr, reqErr <-chan error) {
+func newPipeListener() *pipeListener {
+	return &pipeListener{conns: make(chan net.Conn), closed: make(chan struct{})}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+// errRefused — порт закрыт: Serve уже не принимает соединения.
+var errRefused = errors.New("pipe: соединение отклонено")
+
+func (l *pipeListener) dial(ctx context.Context, _, _ string) (net.Conn, error) {
+	client, server := net.Pipe()
+	select {
+	case l.conns <- server:
+		return client, nil
+	case <-l.closed:
+	case <-ctx.Done():
+	}
+	_, _ = client.Close(), server.Close()
+	return nil, errRefused
+}
+
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string { return "pipe" }
+func (pipeAddr) String() string  { return "pipe" }
+
+// running — Serve, запущенный в горутине пузыря, и клиент к нему.
+type running struct {
+	client *http.Client
+	cancel context.CancelFunc // «сигнал»: отменяет ctx Serve
+	done   chan struct{}      // закрыт, когда Serve вернулся
+	err    error              // результат Serve; читать после done
+}
+
+// serve запускает Serve на сети в памяти. Вызывать внутри synctest.Test.
+func serve(t *testing.T, h http.Handler, stop httpserver.Stop) *running {
 	t.Helper()
-	entered, rel := make(chan struct{}), make(chan struct{})
-	var once sync.Once
-	release = func() { once.Do(func() { close(rel) }) }
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ln := newPipeListener()
+	ctx, cancel := context.WithCancel(t.Context())
+	r := &running{
+		client: &http.Client{Transport: &http.Transport{DialContext: ln.dial}},
+		cancel: cancel,
+		done:   make(chan struct{}),
+	}
+	srv := newServer(t, "", h)
+	go func() {
+		defer close(r.done)
+		r.err = httpserver.Serve(ctx, srv, ln, stop)
+	}()
+	return r
+}
+
+// returned — вернулся ли Serve к этому моменту; после synctest.Wait — без гонки.
+func (r *running) returned() bool {
+	select {
+	case <-r.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// wait ждёт возврата Serve и закрывает простаивающие соединения клиента, чтобы их
+// горутины не пережили пузырь.
+func (r *running) wait() error {
+	<-r.done
+	r.client.CloseIdleConnections()
+	return r.err
+}
+
+// get шлёт запрос в горутине; результат — в канале.
+func (r *running) get(ctx context.Context) <-chan error {
+	errc := make(chan error, 1)
+	go func() {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://messenger/", nil)
+		if err != nil {
+			errc <- err
+			return
+		}
+		resp, err := r.client.Do(req)
+		if err == nil {
+			err = resp.Body.Close()
+		}
+		errc <- err
+	}()
+	return errc
+}
+
+// blocking — обработчик, который ждёт release; entered закрывается, когда запрос внутри.
+func blocking() (h http.Handler, entered, release chan struct{}) {
+	entered, release = make(chan struct{}), make(chan struct{})
+	h = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		close(entered)
-		<-rel
+		<-release
 		w.WriteHeader(http.StatusNoContent)
 	})
-	addr := freeAddr(t)
-	srv := httpserver.New(addr, h, slog.New(slog.DiscardHandler), time.Second)
-	ctx, cancelRun := context.WithCancel(context.Background())
-	// Cleanup идёт в обратном порядке: сначала отпускаем обработчик, потом останавливаем Run.
-	t.Cleanup(cancelRun)
-	t.Cleanup(release)
-	runc, reqc := make(chan error, 1), make(chan error, 1)
-	go func() { runc <- httpserver.Run(ctx, srv, httpserver.Stop{Timeout: shutdownTimeout}) }()
-	go func() { reqc <- getUntilServed(t.Context(), "http://"+addr+"/") }()
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("запрос не дошёл до обработчика")
-	}
-	return cancelRun, release, runc, reqc
+	return h, entered, release
 }
 
-// getUntilServed повторяет запрос, пока сервер не начнёт слушать порт.
-func getUntilServed(ctx context.Context, url string) error {
-	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err == nil {
-			return resp.Body.Close()
-		}
-		var opErr *net.OpError
-		if !errors.As(err, &opErr) || opErr.Op != "dial" {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+func noContent() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 }
 
 func TestRunWaitsForInFlightRequest(t *testing.T) {
-	cancel, release, runErr, reqErr := startInFlight(t, 5*time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		h, entered, release := blocking()
+		r := serve(t, h, httpserver.Stop{Timeout: 5 * time.Second})
+		reqErr := r.get(t.Context())
+		<-entered
 
-	cancel()
-	select {
-	case err := <-runErr:
-		t.Fatalf("Run вернулся (%v), не дождавшись запроса", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	release()
+		r.cancel()
+		synctest.Sleep(time.Second)
+		if r.returned() {
+			t.Fatalf("Serve вернулся (%v), не дождавшись запроса", r.err)
+		}
+		close(release)
 
-	if err := <-reqErr; err != nil {
-		t.Errorf("запрос оборвался: %v", err)
-	}
-	if err := <-runErr; err != nil {
-		t.Errorf("Run: %v, want nil", err)
-	}
+		if err := <-reqErr; err != nil {
+			t.Errorf("запрос оборвался: %v", err)
+		}
+		if err := r.wait(); err != nil {
+			t.Errorf("Serve: %v, want nil", err)
+		}
+	})
 }
 
 func TestRunForceClosesAfterShutdownTimeout(t *testing.T) {
-	cancel, _, runErr, reqErr := startInFlight(t, 50*time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		h, entered, release := blocking()
+		const timeout = 50 * time.Millisecond
+		r := serve(t, h, httpserver.Stop{Timeout: timeout})
+		reqErr := r.get(t.Context())
+		<-entered
+		start := time.Now()
 
-	cancel()
+		r.cancel()
 
-	if err := <-runErr; !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Run: %v, want DeadlineExceeded", err)
-	}
-	// Close оборвал соединение: клиент получил ошибку, а не ждёт вечно.
-	select {
-	case err := <-reqErr:
-		if err == nil {
+		if err := r.wait(); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Serve: %v, want DeadlineExceeded", err)
+		}
+		if elapsed := time.Since(start); elapsed != timeout {
+			t.Fatalf("Serve вернулся через %v, ждали Timeout = %v", elapsed, timeout)
+		}
+		// Close оборвал соединение: клиент получил ошибку, а не ждёт вечно.
+		if err := <-reqErr; err == nil {
 			t.Error("запрос завершился успешно, хотя соединение должно быть закрыто")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("соединение не закрыто после таймаута Shutdown")
-	}
-}
-
-func TestNewWriteTimeoutCoversRequestTimeout(t *testing.T) {
-	srv := httpserver.New("127.0.0.1:0", http.NotFoundHandler(), slog.New(slog.DiscardHandler), 7*time.Second)
-	// Ответ о таймауте (503) должен успеть уйти до того, как сервер оборвёт запись.
-	if srv.WriteTimeout <= 7*time.Second {
-		t.Fatalf("WriteTimeout %v не больше таймаута запроса", srv.WriteTimeout)
-	}
-	if srv.ReadHeaderTimeout == 0 || srv.ReadTimeout == 0 || srv.IdleTimeout == 0 {
-		t.Fatalf("таймауты не выставлены: %+v", srv)
-	}
+		// Обработчик Close не прерывает: отпускаем его, чтобы пузырь завершился.
+		close(release)
+	})
 }
 
 func TestRunDrainsBeforeShutdown(t *testing.T) {
-	addr := freeAddr(t)
-	var drainedAt, stoppedAt atomic.Int64
-	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	srv := httpserver.New(addr, h, slog.New(slog.DiscardHandler), time.Second)
-	// Хуки RegisterOnShutdown Shutdown запускает в отдельных горутинах: Run может
-	// вернуться раньше, чем хук отработает, поэтому ждём его явно.
-	stopped := make(chan struct{})
-	srv.RegisterOnShutdown(func() { stoppedAt.Store(time.Now().UnixNano()); close(stopped) })
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	var drains atomic.Int32
-	runc := make(chan error, 1)
-	go func() {
-		runc <- httpserver.Run(ctx, srv, httpserver.Stop{
-			Drain:      func() { drains.Add(1); drainedAt.Store(time.Now().UnixNano()) },
-			DrainDelay: 200 * time.Millisecond,
+	synctest.Test(t, func(t *testing.T) {
+		const drainDelay = 5 * time.Second
+		var drainedAt time.Time
+		drains := 0
+		r := serve(t, noContent(), httpserver.Stop{
+			// Drain вызывает горутина Serve; читаем после её возврата.
+			Drain:      func() { drains++; drainedAt = time.Now() },
+			DrainDelay: drainDelay,
 			Timeout:    time.Second,
 		})
-	}()
-	if err := getUntilServed(t.Context(), "http://"+addr+"/"); err != nil {
-		t.Fatal(err)
-	}
+		if err := <-r.get(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		signaled := time.Now()
 
-	cancel()
+		r.cancel()
 
-	if err := <-runc; err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Shutdown не вызван")
-	}
-	if drains.Load() != 1 {
-		t.Fatalf("Drain вызван %d раз", drains.Load())
-	}
-	if gap := time.Duration(stoppedAt.Load() - drainedAt.Load()); gap < 200*time.Millisecond {
-		t.Fatalf("Shutdown через %v после Drain, ждали не меньше DrainDelay", gap)
-	}
+		if err := r.wait(); err != nil {
+			t.Fatalf("Serve: %v", err)
+		}
+		if drains != 1 || !drainedAt.Equal(signaled) {
+			t.Fatalf("Drain вызван %d раз, через %v после отмены; ждали один раз сразу", drains, drainedAt.Sub(signaled))
+		}
+		// Shutdown без начатых запросов возвращается сразу: Serve выходит ровно через DrainDelay.
+		if elapsed := time.Since(drainedAt); elapsed != drainDelay {
+			t.Fatalf("Shutdown через %v после Drain, ждали DrainDelay = %v", elapsed, drainDelay)
+		}
+	})
 }
 
 func TestRunServesDuringDrainDelay(t *testing.T) {
-	addr := freeAddr(t)
-	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	srv := httpserver.New(addr, h, slog.New(slog.DiscardHandler), time.Second)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	drained := make(chan struct{})
-	runc := make(chan error, 1)
-	go func() {
-		runc <- httpserver.Run(ctx, srv, httpserver.Stop{Drain: func() { close(drained) }, DrainDelay: 500 * time.Millisecond, Timeout: time.Second})
-	}()
-	if err := getUntilServed(t.Context(), "http://"+addr+"/"); err != nil {
-		t.Fatal(err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		const drainDelay = 5 * time.Second
+		drained := make(chan struct{})
+		r := serve(t, noContent(), httpserver.Stop{Drain: func() { close(drained) }, DrainDelay: drainDelay, Timeout: time.Second})
 
-	cancel()
-	<-drained
-	// Балансировщик ещё не знает о дренаже и шлёт запросы — их надо обслужить.
-	if err := getUntilServed(t.Context(), "http://"+addr+"/"); err != nil {
-		t.Fatalf("запрос во время дренажа: %v", err)
-	}
+		r.cancel()
+		<-drained
+		// Балансировщик ещё не знает о дренаже и шлёт запросы — их надо обслужить.
+		synctest.Sleep(drainDelay - time.Second)
+		if err := <-r.get(t.Context()); err != nil {
+			t.Fatalf("запрос во время дренажа: %v", err)
+		}
 
-	if err := <-runc; err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+		if err := r.wait(); err != nil {
+			t.Fatalf("Serve: %v", err)
+		}
+		// После Shutdown порт закрыт: новый запрос не проходит.
+		if err := <-r.get(t.Context()); err == nil || !strings.Contains(err.Error(), errRefused.Error()) {
+			t.Fatalf("запрос после остановки: %v, ждали отказ в соединении", err)
+		}
+	})
 }

@@ -439,7 +439,7 @@ import _ "github.com/google/go-cmp/cmp"
 
 ```
 messenger/
-├── go.mod                      # module messenger, go 1.26
+├── go.mod                      # module messenger, go 1.27
 ├── .golangci.yml               # depguard: правила слоёв и контекстов
 ├── docs/adr/
 │   ├── 0000-template.md

@@ -40,7 +40,7 @@ for (const path of files) {
     }
     const dir = mkdtempSync(join(tmpdir(), 'go-snippet-'))
     try {
-      writeFileSync(join(dir, 'go.mod'), 'module snippet\n\ngo 1.26\n')
+      writeFileSync(join(dir, 'go.mod'), 'module snippet\n\ngo 1.27\n')
       writeFileSync(join(dir, 'main.go'), buildGoFile(snippet, template))
       const unformatted = execFileSync('gofmt', ['-l', 'main.go'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
       if (unformatted !== '') failures.push(`${rel}:${snippet.line}: gofmt требует форматирования`)

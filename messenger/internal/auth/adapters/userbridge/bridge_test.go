@@ -130,6 +130,42 @@ func TestRegisterProfileErrors(t *testing.T) {
 	}
 }
 
+// ValidateProfile — те же правила и то же поле в ошибке, что у RegisterProfile, но без
+// создания профиля: регистрация зовёт её до дорогого хеша.
+func TestValidateProfile(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, username, displayName string
+		wantField                   string // "" — имена корректны
+	}{
+		{name: "корректные имена", username: "alice", displayName: "Алиса"},
+		{name: "имя не по правилам", username: "Не Имя!", displayName: "Алиса", wantField: "username"},
+		{name: "имя короче 3 символов", username: "al", displayName: "Алиса", wantField: "username"},
+		{name: "пустое отображаемое имя", username: "alice", displayName: "  ", wantField: "display_name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := bridge(t, errors.New("RegisterProfile не должен вызываться"), nil)
+			err := b.ValidateProfile(context.Background(), tt.username, tt.displayName)
+			if tt.wantField == "" {
+				if err != nil {
+					t.Fatalf("ждали nil, получили %v", err)
+				}
+				return
+			}
+			var ve *authdomain.ValidationError
+			if !errors.As(err, &ve) || ve.Field != tt.wantField || ve.Reason == "" {
+				t.Fatalf("ждали auth ValidationError по %s, получили %v", tt.wantField, err)
+			}
+			var userVE *userdomain.ValidationError
+			if errors.As(err, &userVE) {
+				t.Fatal("ошибка модели user просочилась в auth")
+			}
+		})
+	}
+}
+
 func TestUserIDByUsername(t *testing.T) {
 	t.Parallel()
 	id, err := bridge(t, nil, nil).UserIDByUsername(context.Background(), "alice")
