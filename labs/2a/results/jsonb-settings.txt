@@ -1,0 +1,100 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+# из labs/: docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/jsonb/settings.sql 2>&1'
+
+=== 1. Настройки столбцами: тип, умолчание и допустимые значения держит база ===
+CREATE TABLE settings_columns (
+    user_id         bigint  PRIMARY KEY,
+    theme           text    NOT NULL DEFAULT 'system'
+        CHECK (theme IN ('light', 'dark', 'system')),
+    notify_mentions boolean NOT NULL DEFAULT true,
+    language        text    NOT NULL DEFAULT 'ru'
+);
+CREATE TABLE
+INSERT INTO settings_columns (user_id, theme) VALUES (1, 'dark');
+INSERT 0 1
+INSERT INTO settings_columns (user_id, theme) VALUES (2, 42);
+psql:/lab/jsonb/settings.sql:25: ERROR:  new row for relation "settings_columns" violates check constraint "settings_columns_theme_check"
+DETAIL:  Failing row contains (2, 42, t, ru).
+SQLSTATE 23514
+
+=== 2. Настройки в JSONB: одна колонка, любая форма ===
+CREATE TABLE settings_jsonb (
+    user_id  bigint PRIMARY KEY,
+    settings jsonb  NOT NULL DEFAULT '{}'
+);
+CREATE TABLE
+INSERT INTO settings_jsonb VALUES
+    (1, '{"theme": "dark", "notify": {"mentions": true}, "language": "ru"}'),
+    (2, '{"theme": "light", "notify": {"mentions": false}, "beta": ["new_composer"]}'),
+    (3, '{}');
+INSERT 0 3
+SELECT user_id,
+       settings ->> 'theme'                          AS theme,
+       settings -> 'notify' ->> 'mentions'           AS mentions,
+       coalesce(settings ->> 'language', 'ru')       AS language
+FROM settings_jsonb
+ORDER BY user_id;
+ user_id | theme | mentions | language 
+---------+-------+----------+----------
+       1 | dark  | true     | ru
+       2 | light | false    | ru
+       3 |       |          | ru
+(3 rows)
+
+SELECT user_id FROM settings_jsonb WHERE settings @> '{"beta": ["new_composer"]}';
+ user_id 
+---------
+       2
+(1 row)
+
+SELECT user_id FROM settings_jsonb WHERE settings ? 'notify' ORDER BY user_id;
+ user_id 
+---------
+       1
+       2
+(2 rows)
+
+
+=== 3. Частичное обновление ===
+UPDATE settings_jsonb SET settings = settings || '{"theme": "system"}' WHERE user_id = 1;
+UPDATE 1
+UPDATE settings_jsonb SET settings = jsonb_set(settings, '{notify,mentions}', 'false') WHERE user_id = 1;
+UPDATE 1
+SELECT settings FROM settings_jsonb WHERE user_id = 1;
+                               settings                               
+----------------------------------------------------------------------
+ {"theme": "system", "notify": {"mentions": false}, "language": "ru"}
+(1 row)
+
+
+=== 4. Чего JSONB не проверяет ===
+INSERT INTO settings_jsonb VALUES (4, '{"theme": 42}'), (5, '{"thme": "dark"}');
+INSERT 0 2
+SELECT user_id, settings ->> 'theme' AS theme FROM settings_jsonb WHERE user_id IN (4, 5) ORDER BY user_id;
+ user_id | theme 
+---------+-------
+       4 | 42
+       5 | 
+(2 rows)
+
+
+=== 5. Проверки возвращаются через CHECK ===
+DELETE FROM settings_jsonb WHERE user_id IN (4, 5);
+DELETE 2
+ALTER TABLE settings_jsonb
+    ADD CONSTRAINT settings_is_object
+        CHECK (jsonb_typeof(settings) = 'object'),
+    ADD CONSTRAINT settings_known_keys
+        CHECK (settings - ARRAY['theme', 'notify', 'language', 'beta'] = '{}'::jsonb),
+    ADD CONSTRAINT settings_theme_valid
+        CHECK (settings -> 'theme' IS NULL
+               OR settings -> 'theme' <@ '["light", "dark", "system"]'::jsonb);
+ALTER TABLE
+INSERT INTO settings_jsonb VALUES (4, '{"theme": 42}');
+psql:/lab/jsonb/settings.sql:91: ERROR:  new row for relation "settings_jsonb" violates check constraint "settings_theme_valid"
+DETAIL:  Failing row contains (4, {"theme": 42}).
+SQLSTATE 23514
+INSERT INTO settings_jsonb VALUES (5, '{"thme": "dark"}');
+psql:/lab/jsonb/settings.sql:95: ERROR:  new row for relation "settings_jsonb" violates check constraint "settings_known_keys"
+DETAIL:  Failing row contains (5, {"thme": "dark"}).
+SQLSTATE 23514

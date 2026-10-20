@@ -1,0 +1,32 @@
+машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+
+CPU(s):                                  12
+Model name:                              12th Gen Intel(R) Core(TM) i5-12400
+Thread(s) per core:                      2
+Core(s) per socket:                      6
+Socket(s):                               1
+CPU(s) scaling MHz:                      91%
+L1d cache:                               288 KiB (6 instances)
+L2 cache:                                7.5 MiB (6 instances)
+L3 cache:                                18 MiB (1 instance)
+               total        used        free      shared  buff/cache   available
+Mem:            31Gi        14Gi       4.2Gi       2.8Gi        13Gi        16Gi
+Swap:          8.0Gi       3.8Gi       4.2Gi
+Docker: 29.9.1
+образ: postgres:18.6-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+
+# настройки PostgreSQL, от которых зависят WAL и время (все — умолчания образа):
+        name        | setting | unit 
+--------------------+---------+------
+ block_size         | 8192    | 
+ checkpoint_timeout | 300     | s
+ fsync              | on      | 
+ full_page_writes   | on      | 
+ max_wal_size       | 1024    | MB
+ shared_buffers     | 16384   | 8kB
+ synchronous_commit | on      | 
+ wal_buffers        | 512     | 8kB
+ wal_compression    | off     | 
+ wal_level          | replica | 
+(10 rows)
+

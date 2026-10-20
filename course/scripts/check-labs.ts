@@ -42,4 +42,12 @@ if (scenario15.trim().split('\n').at(-1) !== 'Лаба 1.5: все провер�
   console.error(`Сценарий лабы 1.5:\n${scenario15}`)
   process.exit(1)
 }
-console.log('Лабораторные: gofmt, go vet, go test -race, compose config и сценарии 1c и 1.5 — без ошибок.')
+// Сценарий лабы 2a — PostgreSQL из 2a/compose.yaml (сценарий сам поднимает и убирает его),
+// SQL-скрипты уроков 2.2–2.7 и программа keys на 10⁵ строк.
+run('docker', ['compose', '-f', '2a/compose.yaml', 'config', '-q'])
+const scenario2a = run('bash', ['2a/scenario.sh'], 300_000)
+if (scenario2a.trim().split('\n').at(-1) !== 'Лаба 2a: все проверки прошли.') {
+  console.error(`Сценарий лабы 2a:\n${scenario2a}`)
+  process.exit(1)
+}
+console.log('Лабораторные: gofmt, go vet, go test -race, compose config и сценарии 1c, 1.5 и 2a — без ошибок.')
