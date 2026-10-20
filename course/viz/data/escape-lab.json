@@ -1,0 +1,20 @@
+[
+{"case":"chan","variant":"value","file":"chan.go","line":9,"where":"stack","compiler":"chan.go:8:20: ch does not escape\nchan.go:9:7: &point{...} does not escape"},
+{"case":"chan","variant":"pointer","file":"chan.go","line":18,"where":"heap","compiler":"chan.go:17:22: ch does not escape\nchan.go:18:7: &point{...} escapes to heap"},
+{"case":"closure","variant":"local","file":"closure.go","line":22,"where":"stack","compiler":"closure.go:22:12: func literal does not escape"},
+{"case":"closure","variant":"escaping","file":"closure.go","line":30,"where":"heap","compiler":"closure.go:30:2: moved to heap: n\nclosure.go:31:9: func literal escapes to heap"},
+{"case":"elems","variant":"values","file":"elems.go","line":9,"where":"stack","compiler":"elems.go:9:11: make([]point, 0, 8) does not escape\nelems.go:11:13: append does not escape"},
+{"case":"elems","variant":"pointers","file":"elems.go","line":23,"where":"heap","compiler":"elems.go:21:11: make([]*point, 0, 8) does not escape\nelems.go:23:13: append does not escape\nelems.go:23:17: &point{...} escapes to heap"},
+{"case":"iface","variant":"concrete","file":"iface.go","line":22,"where":"stack","compiler":"iface.go:22:7: &point{...} does not escape\niface.go:23:17: inlining call to describe"},
+{"case":"iface","variant":"println","file":"iface.go","line":31,"where":"heap","compiler":"iface.go:31:7: &point{...} escapes to heap\niface.go:32:13: inlining call to fmt.Println\niface.go:32:13: ... argument does not escape"},
+{"case":"iface","variant":"any","file":"iface.go","line":39,"where":"heap","compiler":"iface.go:39:7: &point{...} escapes to heap"},
+{"case":"inline","variant":"inlined","file":"inline.go","line":21,"where":"stack","compiler":"inline.go:21:15: inlining call to newPoint\ninline.go:21:15: &point{...} does not escape"},
+{"case":"inline","variant":"noinline","file":"inline.go","line":15,"where":"heap","compiler":"inline.go:15:49: &point{...} escapes to heap"},
+{"case":"large","variant":"fits","file":"large.go","line":13,"where":"stack","compiler":"large.go:13:11: make([]byte, 65536) does not escape"},
+{"case":"large","variant":"over","file":"large.go","line":21,"where":"heap","compiler":"large.go:21:11: make([]byte, 65544) escapes to heap"},
+{"case":"return","variant":"value","file":"return.go","line":9,"where":"stack","compiler":"return.go:9:10: new(point) does not escape"},
+{"case":"return","variant":"pointer","file":"return.go","line":19,"where":"heap","compiler":"return.go:19:10: new(point) escapes to heap"},
+{"case":"slice","variant":"const","file":"slice.go","line":9,"where":"stack","compiler":"slice.go:9:11: make([]int, 16) does not escape\nslice.go:10:12: inlining call to sum"},
+{"case":"slice","variant":"var","file":"slice.go","line":19,"where":"stack","compiler":"slice.go:19:11: make([]int, n) does not escape\nslice.go:20:12: inlining call to sum"},
+{"case":"slice","variant":"returned","file":"slice.go","line":27,"where":"heap","compiler":"slice.go:27:13: make([]int, n) escapes to heap"}
+]
