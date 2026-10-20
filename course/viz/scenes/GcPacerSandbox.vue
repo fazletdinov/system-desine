@@ -5,7 +5,8 @@ import VizFrame from '../components/VizFrame.vue'
 import SegmentedToggle from '../components/SegmentedToggle.vue'
 import GcPacerView from '../renderers/GcPacerView.vue'
 import { captionSegments } from '../core/caption'
-import { BURST_FACTOR, BURST_S, DEFAULT_GOGC, LIMITS, TICK_MS, TICKS_PER_SECOND, gcPacerSimulation as sim, type GcPacerAction, type GcPacerParams } from '../simulations/gc-pacer'
+import { prefersReducedMotion } from '../core/motion'
+import { BURST_FACTOR, BURST_S, DEFAULT_GOGC, LIMITS, TICKS_PER_SECOND, gcPacerSimulation as sim, tickerPlan, type GcPacerAction, type GcPacerParams } from '../simulations/gc-pacer'
 
 const state = ref(sim.initial())
 const step = computed(() => sim.steps(state.value)[0]!)
@@ -27,15 +28,17 @@ const stop = (): void => {
   timer = undefined
   running.value = false
 }
-// Модель идёт в реальном времени: один тик 100 мс за 100 мс.
+const advance = (ticks: number): void => {
+  for (let i = 0; i < ticks; i++) dispatch({ type: 'tick' })
+}
+// Модель идёт в реальном времени; при prefers-reduced-motion — крупными шагами по секунде.
 const toggleRun = (): void => {
   if (running.value) return stop()
   running.value = true
-  timer = setInterval(() => dispatch({ type: 'tick' }), TICK_MS)
+  const plan = tickerPlan(prefersReducedMotion())
+  timer = setInterval(() => advance(plan.ticksPerUpdate), plan.intervalMs)
 }
-const stepSecond = (): void => {
-  for (let i = 0; i < TICKS_PER_SECOND; i++) dispatch({ type: 'tick' })
-}
+const stepSecond = (): void => advance(TICKS_PER_SECOND)
 const reset = (): void => {
   stop()
   lastGogc.value = DEFAULT_GOGC

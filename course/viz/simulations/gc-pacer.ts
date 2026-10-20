@@ -25,6 +25,12 @@ export const MARK_CPU_S_PER_MIB = 0.001
 // (minTriggerRatioNum = 45, maxTriggerRatioNum = 61 из triggerRatioDen = 64).
 const MIN_TRIGGER = 45 / 64
 const MAX_TRIGGER = 61 / 64
+// Темп живого прогона: обычно 10 обновлений в секунду (тик за тиком); при prefers-reduced-motion —
+// одно обновление в секунду сразу на 10 тиков, чтобы график не прокручивался непрерывно.
+export function tickerPlan(reducedMotion: boolean): { intervalMs: number; ticksPerUpdate: number } {
+  return reducedMotion ? { intervalMs: 1000, ticksPerUpdate: TICKS_PER_SECOND } : { intervalMs: TICK_MS, ticksPerUpdate: 1 }
+}
+
 export const LEAK_MIB_PER_S = 5
 export const BURST_FACTOR = 3
 export const BURST_S = 3

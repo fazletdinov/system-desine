@@ -12,6 +12,8 @@ import {
   WINDOW_S,
   gcPacerSimulation as sim,
   heapGoal,
+  tickerPlan,
+  TICK_MS,
   type GcPacerAction,
   type GcPacerParams,
   type GcPacerState,
@@ -132,6 +134,14 @@ describe('gc-pacer: песочница', () => {
     expect(s.params).toEqual(DEFAULT_PARAMS)
     expect(s.history).toHaveLength(0)
     expect(run(start(), 3)).toEqual(run(start(), 3))
+  })
+
+  it('темп прогона: обычно тик за тиком, при reduced motion — секунда модели за одно обновление', () => {
+    expect(tickerPlan(false)).toEqual({ intervalMs: TICK_MS, ticksPerUpdate: 1 })
+    const reduced = tickerPlan(true)
+    expect(reduced.ticksPerUpdate).toBe(TICKS_PER_SECOND)
+    // Модель идёт в реальном времени в обоих режимах.
+    expect(reduced.intervalMs).toBe(reduced.ticksPerUpdate * TICK_MS)
   })
 
   it('история ограничена окном графика', () => {

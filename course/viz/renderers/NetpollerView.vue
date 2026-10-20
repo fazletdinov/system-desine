@@ -14,6 +14,7 @@ const M_TEXT = {
   go: 'выполняет Go-код',
   syscall: 'в системном вызове',
   findRunnable: 'findRunnable: ищет работу',
+  netpoll: 'заблокирован в epoll_wait',
 } as const
 
 const fmt = (ms: number): string => String(Math.round(ms * 100) / 100).replace('.', ',')
@@ -32,8 +33,9 @@ const result = computed(() => {
     <p class="sys"><span class="lbl">последний системный вызов</span><code>{{ state.syscall ?? '—' }}</code></p>
     <div class="grid">
       <section class="card sched" aria-label="Поток и процессор">
-        <h4>Поток M с процессором P</h4>
+        <h4>Поток M и процессор P</h4>
         <p class="m" :class="{ idle: state.m.g === null }">{{ mLine }}</p>
+        <p class="pline" :class="{ released: !state.m.p }">{{ state.m.p ? 'P у этого M' : 'P отдан в список свободных' }}</p>
         <span class="lbl">локальная очередь P</span>
         <ul class="row"><li v-for="g in state.runq" :key="g" class="g">{{ g }}</li><li v-if="state.runq.length === 0" class="empty">пусто</li></ul>
       </section>
@@ -73,6 +75,8 @@ h4 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--viz-muted)
 .kernel { border-top-color: var(--viz-network); }
 .m { font-weight: 700; }
 .m.idle { color: var(--viz-muted); }
+.pline { font-size: 13px; color: var(--viz-muted); }
+.pline.released { color: var(--viz-text); font-weight: 700; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
 .g { display: inline-block; min-width: 2.2em; padding: 2px 8px; border: 2px solid var(--viz-edge); border-radius: 6px; font-weight: 700; text-align: center; }
 .empty { font-size: 13px; color: var(--viz-muted); }

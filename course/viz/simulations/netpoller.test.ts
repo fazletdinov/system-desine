@@ -46,6 +46,28 @@ describe('netpoller', () => {
     expect(fs.every((f) => f.socketBytes === 0)).toBe(true)
   })
 
+  it('в epoll_wait с ожиданием M блокируется только без P; G выполняется только на M с P', () => {
+    const blocking = frames('deadline').filter((f) => f.m.where === 'netpoll')
+    expect(blocking.length).toBeGreaterThan(0)
+    for (const v of VARIANTS) {
+      for (const f of frames(v)) {
+        if (f.m.where === 'netpoll') expect(f.m.p).toBe(false)
+        if (f.m.g !== null) expect(f.m.p).toBe(true)
+      }
+    }
+  })
+
+  it('порядок findRunnable: быстрый netpoll(0) раньше кражи, блокирующий epoll_wait — после неё', () => {
+    const quick = netpollerScenario('data').find((s) => s.state.syscall?.startsWith('epoll_wait(epfd, events, 128, 0)'))!
+    expect(captionText(quick.caption)).toContain('до кражи')
+    const block = captionText(netpollerScenario('deadline').find((s) => s.state.m.where === 'netpoll')!.caption)
+    const at = (needle: string): number => block.indexOf(needle)
+    expect(at('netpoll(0)')).toBeGreaterThanOrEqual(0)
+    expect(at('netpoll(0)')).toBeLessThan(at('украсть'))
+    expect(at('украсть')).toBeLessThan(at('отдаёт P'))
+    expect(at('отдаёт P')).toBeLessThan(at('блокируется в epoll_wait'))
+  })
+
   it('время не убывает', () => {
     for (const v of VARIANTS) frames(v).forEach((f, i, all) => i > 0 && expect(f.t).toBeGreaterThanOrEqual(all[i - 1]!.t))
   })
