@@ -15,6 +15,9 @@ const (
 	metricStacks     = "/memory/classes/heap/stacks:bytes"
 	metricObjects    = "/memory/classes/heap/objects:bytes"
 	metricScanStack  = "/gc/scan/stack:bytes"
+	// metricStartStack — с какого стека стартуют новые горутины: рантайм пересчитывает его каждой
+	// сборкой как среднее занятое плюс защитная зона, округлённое до степени двойки (stack.go).
+	metricStartStack = "/gc/stack/starting-size:bytes"
 
 	// fdReserve — дескрипторы сверх соединений: stdin/stdout/stderr, слушающий сокет, epoll и
 	// eventfd netpoller'а, файлы /proc при замере. 64 — с запасом: точное число зависит от версии Go.
@@ -104,6 +107,7 @@ type snapshot struct {
 	stacks     uint64
 	objects    uint64
 	scanStack  uint64
+	startStack uint64
 	tcp        tcpStat
 }
 
@@ -125,7 +129,7 @@ func takeSnapshot() (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
-	s := []metrics.Sample{{Name: metricGoroutines}, {Name: metricStacks}, {Name: metricObjects}, {Name: metricScanStack}}
+	s := []metrics.Sample{{Name: metricGoroutines}, {Name: metricStacks}, {Name: metricObjects}, {Name: metricScanStack}, {Name: metricStartStack}}
 	metrics.Read(s)
 	return snapshot{
 		rssKiB:     rss,
@@ -133,6 +137,7 @@ func takeSnapshot() (snapshot, error) {
 		stacks:     s[1].Value.Uint64(),
 		objects:    s[2].Value.Uint64(),
 		scanStack:  s[3].Value.Uint64(),
+		startStack: s[4].Value.Uint64(),
 		tcp:        tcp,
 	}, nil
 }

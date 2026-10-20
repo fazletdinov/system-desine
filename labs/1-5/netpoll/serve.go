@@ -179,6 +179,7 @@ func report(before, after snapshot, n int) {
 	fmt.Printf("стеки горутин:    до %10.0f КиБ, после %10.0f КиБ\n", kib(before.stacks), kib(after.stacks))
 	fmt.Printf("куча (объекты):   до %10.0f КиБ, после %10.0f КиБ\n", kib(before.objects), kib(after.objects))
 	fmt.Printf("стеки для GC:     до %10.0f КиБ, после %10.0f КиБ (/gc/scan/stack:bytes)\n", kib(before.scanStack), kib(after.scanStack))
+	fmt.Printf("начальный стек:   до %10d Б,   после %10d Б (/gc/stack/starting-size:bytes)\n", before.startStack, after.startStack)
 	fmt.Printf("sockstat до:      %s\n", before.tcp.line)
 	fmt.Printf("sockstat после:   %s\n", after.tcp.line)
 	pageKiB := float64(syscall.Getpagesize()) / 1024
