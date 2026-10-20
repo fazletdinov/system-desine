@@ -23,7 +23,7 @@
 - Green Tea включён по умолчанию (`internal/buildcfg/exp.go: GreenTeaGC: true`); отключение — флаг сборки `GOEXPERIMENT=nogreenteagc`.
 - `runtime/metrics` в 1.27: `/memory/classes/heap/stacks:bytes`, `/memory/classes/os-stacks:bytes`, `/gc/scan/stack:bytes`, `/gc/stack/starting-size:bytes`, `/sched/goroutines:goroutines`, `/gc/heap/goal:bytes`, `/gc/heap/live:bytes`, `/gc/pauses:seconds`, `/gc/gogc:percent`, `/gc/gomemlimit:bytes`, `/gc/limiter/last-enabled:gc-cycle`, `/cpu/classes/gc/{mark/assist,mark/dedicated,mark/idle,pause,total}:cpu-seconds`.
 - `internal/runtime/gc/sizeclasses.go`: `NumSizeClasses = 68`; tiny-аллокатор — `_TinySize = 16`; `mcache` — на P.
-- `gcBackgroundUtilization = 0.25`; ограничитель CPU GC (`mgclimit.go`) — «очень консервативный предел 50 %», дырявое ведро, работает только при заданном `GOMEMLIMIT`.
+- `gcBackgroundUtilization = 0.25`; ограничитель CPU GC (`mgclimit.go`) — «очень консервативный предел 50 %», дырявое ведро, включён всегда (лимит памяти в `mgclimit.go` не проверяется; рулинг R12), главный сценарий — живая куча выше `GOMEMLIMIT`.
 - `stackMin = 2048`; начальный размер стека пересчитывается каждой сборкой по среднему (`stack.go`).
 - `MemProfileRate = 512 * 1024`; CPU-профилировщик по умолчанию 100 Гц.
 - `net/http/pprof`: `Index`, `Cmdline`, `Profile`, `Symbol`, `Trace`, `Handler(name string) http.Handler`. `pprof.Profile` сам отвечает ошибкой, если `seconds` больше `WriteTimeout` сервера.

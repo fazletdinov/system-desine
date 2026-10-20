@@ -63,7 +63,26 @@ describe('gc-pacer: модель', () => {
     expect(mean(s.history.slice(-TICKS_PER_SECOND), (t) => t.gcCpu)).toBeGreaterThanOrEqual(0.95)
   })
 
-  it('ограничитель работает только при заданном GOMEMLIMIT: без лимита переключатель ни на что не влияет', () => {
+  it('ограничитель включён и без GOMEMLIMIT: срезает долю GC выше 50 %, если она туда доходит', () => {
+    const heavy = { gogc: 25, liveMiB: 100, allocMiBps: 400 }
+    const limited = run(start({ ...heavy, limiter: true }), 10)
+    const unlimited = run(start({ ...heavy, limiter: false }), 10)
+    expect(Math.max(...unlimited.history.map((t) => t.gcCpu))).toBeGreaterThan(LIMITER_CAP)
+    expect(limited.history.every((t) => t.gcCpu <= LIMITER_CAP)).toBe(true)
+  })
+
+  it('подпись без лимита называет ограничитель включённым всегда, когда он срезает долю GC', () => {
+    let s = start({ gogc: 25, liveMiB: 100, allocMiBps: 400, limiter: true })
+    const texts: string[] = []
+    for (let i = 0; i < 10 * TICKS_PER_SECOND; i++) {
+      s = sim.apply(s, { type: 'tick' })
+      texts.push(captionText(sim.steps(s)[0]!.caption))
+    }
+    expect(texts.some((t) => t.includes('включён всегда'))).toBe(true)
+    expect(texts.every((t) => !t.includes('null'))).toBe(true)
+  })
+
+  it('без лимита при обычной нагрузке ограничитель не срабатывает: переключатель ни на что не влияет', () => {
     const a = run(start({ limiter: true }), 5)
     const b = run(start({ limiter: false }), 5)
     expect(a.history).toEqual(b.history)

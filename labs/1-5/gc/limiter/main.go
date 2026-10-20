@@ -101,7 +101,7 @@ func main() {
 	lim := []metrics.Sample{{Name: metricLimit}}
 	metrics.Read(lim)
 	if lim[0].Value.Uint64() == math.MaxInt64 {
-		fmt.Fprintln(os.Stderr, "limiter: GOMEMLIMIT не задан — ограничитель CPU сборщика работает только с ним; запустите, например, с GOMEMLIMIT=64MiB")
+		fmt.Fprintln(os.Stderr, "limiter: GOMEMLIMIT не задан — программа показывает ограничитель CPU сборщика в его главном сценарии, когда живая куча выше лимита памяти (сам ограничитель включён всегда); запустите, например, с GOMEMLIMIT=64MiB")
 		os.Exit(2)
 	}
 	fmt.Printf("GOMEMLIMIT: %d МиБ, живая куча растёт на %d МиБ за окно %s, горутин-источников мусора: %d\n",

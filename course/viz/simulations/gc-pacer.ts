@@ -117,8 +117,9 @@ function trigger(live: number, goal: number, alloc: number): number {
   return Math.min(hi, Math.max(lo, goal - runway))
 }
 
-// Ограничитель работает только при заданном GOMEMLIMIT: без лимита спирали смерти быть не может.
-const limiterActive = (p: GcPacerParams): boolean => p.limiter && p.limitMiB !== null
+// Ограничитель в рантайме включён всегда, задан GOMEMLIMIT или нет (mgclimit.go лимит не проверяет).
+// Главный сценарий — живая куча выше лимита, но без лимита он тоже срезает долю GC выше 50 %.
+const limiterActive = (p: GcPacerParams): boolean => p.limiter
 
 function gcShare(p: GcPacerParams, heap: number, goal: number, alloc: number, markLeft: number): number {
   const timeLeft = Math.max(0, goal - heap) / alloc
@@ -259,10 +260,12 @@ function situation(s: GcPacerState, now: GcTick, recentCpu: number): CaptionSegm
     return [{ text: `${second}память процесса дошла до лимита контейнера ${MEM_LIMIT_MIB} МиБ, и ядро убило его — ` }, term('OOM-kill', 'oom-kill'), { text: '. Оркестратор перезапускает контейнер с пустой кучей.' }]
   if (p.gogc === null && p.limitMiB === null)
     return [{ text: `${second}GOGC=off и лимита нет: цели кучи не существует, сборщик не запускается ни разу, куча ${r(now.heapMiB)} МиБ растёт на весь поток аллокаций, пока контейнер не упрётся в стену.` }]
-  if (recentCpu >= 0.9)
+  if (recentCpu >= 0.9 && p.limitMiB !== null)
     return [{ text: `${second}живая куча ${r(now.liveMiB)} МиБ не помещается под ` }, GOMEMLIMIT, { text: ` = ${p.limitMiB} МиБ. Цель ниже живых данных, цикл начинается сразу после предыдущего, и сборщик забирает ${pct(recentCpu)} CPU: программа почти стоит. Это ` }, term('спираль смерти', 'death-spiral'), { text: '; так было бы без ограничителя из Go 1.19.' }]
   if (limiterActive(p) && now.goalMiB !== null && now.goalMiB <= now.liveMiB)
     return [{ text: `${second}живая куча ${r(now.liveMiB)} МиБ выше того, что разрешает ` }, GOMEMLIMIT, { text: ` = ${p.limitMiB} МиБ, но ограничитель CPU GC не даёт сборщику взять больше ${pct(LIMITER_CAP)}: сейчас ${pct(recentCpu)}. Куча выходит за лимит, зато программа продолжает работать. Модель упрощает дырявое ведро рантайма до жёсткого потолка.` }]
+  if (limiterActive(p) && p.limitMiB === null && now.gcCpu >= LIMITER_CAP)
+    return [{ text: `${second}лимита памяти нет, но сборщику нужно больше ${pct(LIMITER_CAP)} CPU: ` }, GOGC, { text: ` = ${p.gogc} оставляет мусору слишком мало места при таком потоке аллокаций. Ограничитель CPU GC включён всегда, задан GOMEMLIMIT или нет, и срезает долю до ${pct(LIMITER_CAP)}: помощь разметке прекращается, куча перерастает цель. Модель упрощает дырявое ведро рантайма до жёсткого потолка.` }]
   if (p.limitMiB !== null && now.goalMiB !== null && p.gogc !== null && now.goalMiB < now.liveMiB * (1 + p.gogc / 100))
     return [{ text: `${second}естественная цель ${r(now.liveMiB * (1 + p.gogc / 100))} МиБ не помещается под ` }, GOMEMLIMIT, { text: ` = ${p.limitMiB} МиБ, поэтому цель урезана до ${r(now.goalMiB)} МиБ. Мусору меньше места, циклы идут чаще: всего ${s.cycles}.` }]
   const goal = now.goalMiB === null ? '' : `Цель ${r(now.goalMiB)} МиБ`
