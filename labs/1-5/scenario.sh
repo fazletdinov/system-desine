@@ -5,6 +5,8 @@
 # Проверки написаны как «условие || fail»: fail завершает скрипт, так что «A && B || C» тут ветвление.
 # shellcheck disable=SC2015
 set -euo pipefail
+# Вывод программ и шаблоны — по-русски: без UTF-8-локали sed и grep режут кириллицу по байтам.
+export LC_ALL=C.UTF-8
 
 cd "$(dirname "$0")/.."
 
@@ -116,7 +118,7 @@ echo "$out" | grep -Eq '^обычный bool: +(завершилось|зави�
 $out"
 echo "$out" | grep -Eq '^atomic\.Bool: +завершилось$' || fail "race/flagloop: версия с atomic.Bool не завершилась:
 $out"
-plain=$(first_number "$out" 'обычный bool: +([а-я]+)')
+plain=$(first_number "$out" 'обычный bool: +(завершилось|зависло)')
 build flagloop-race ./1-5/race/flagloop -tags labdemo -race
 set +e
 race_out=$("$bin/flagloop-race" 2>&1)
