@@ -22,8 +22,14 @@ CREATE TABLE settings_columns (
 );
 
 INSERT INTO settings_columns (user_id, theme) VALUES (1, 'dark');
-INSERT INTO settings_columns (user_id, theme) VALUES (2, 42);
+-- Тип boolean не принимает строку, которая не похожа на логическое значение.
+INSERT INTO settings_columns (user_id, notify_mentions) VALUES (2, 'often');
 -- #endregion columns
+\echo SQLSTATE :SQLSTATE
+-- #region columns-check
+-- Тип text число не остановит: 42 станет строкой '42'. Отвергает её CHECK со списком значений.
+INSERT INTO settings_columns (user_id, theme) VALUES (2, 42);
+-- #endregion columns-check
 \echo SQLSTATE :SQLSTATE
 
 \echo
@@ -78,7 +84,8 @@ SELECT user_id, settings ->> 'theme' AS theme FROM settings_jsonb WHERE user_id 
 DELETE FROM settings_jsonb WHERE user_id IN (4, 5);
 
 -- Корень — объект; ключи — только известные (jsonb - text[] убирает перечисленные ключи, должно
--- остаться пустое); theme, если есть, — одна из трёх строк.
+-- остаться пустое); theme, если есть, — строка и одна из трёх. Проверка типа нужна: без неё
+-- «<@ '["light", "dark", "system"]'» пропустила бы и массив ["dark", "light"] — он тоже «содержится».
 ALTER TABLE settings_jsonb
     ADD CONSTRAINT settings_is_object
         CHECK (jsonb_typeof(settings) = 'object'),
@@ -86,7 +93,8 @@ ALTER TABLE settings_jsonb
         CHECK (settings - ARRAY['theme', 'notify', 'language', 'beta'] = '{}'::jsonb),
     ADD CONSTRAINT settings_theme_valid
         CHECK (settings -> 'theme' IS NULL
-               OR settings -> 'theme' <@ '["light", "dark", "system"]'::jsonb);
+               OR (jsonb_typeof(settings -> 'theme') = 'string'
+                   AND settings ->> 'theme' IN ('light', 'dark', 'system')));
 
 INSERT INTO settings_jsonb VALUES (4, '{"theme": 42}');
 -- #endregion jsonb-checks
@@ -94,4 +102,8 @@ INSERT INTO settings_jsonb VALUES (4, '{"theme": 42}');
 -- #region jsonb-checks-typo
 INSERT INTO settings_jsonb VALUES (5, '{"thme": "dark"}');
 -- #endregion jsonb-checks-typo
+\echo SQLSTATE :SQLSTATE
+-- #region jsonb-checks-array
+INSERT INTO settings_jsonb VALUES (6, '{"theme": ["dark", "light"]}');
+-- #endregion jsonb-checks-array
 \echo SQLSTATE :SQLSTATE

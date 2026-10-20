@@ -12,8 +12,13 @@ CREATE TABLE settings_columns (
 CREATE TABLE
 INSERT INTO settings_columns (user_id, theme) VALUES (1, 'dark');
 INSERT 0 1
+INSERT INTO settings_columns (user_id, notify_mentions) VALUES (2, 'often');
+psql:/lab/jsonb/settings.sql:26: ERROR:  invalid input syntax for type boolean: "often"
+LINE 1: ...ings_columns (user_id, notify_mentions) VALUES (2, 'often');
+                                                              ^
+SQLSTATE 22P02
 INSERT INTO settings_columns (user_id, theme) VALUES (2, 42);
-psql:/lab/jsonb/settings.sql:25: ERROR:  new row for relation "settings_columns" violates check constraint "settings_columns_theme_check"
+psql:/lab/jsonb/settings.sql:31: ERROR:  new row for relation "settings_columns" violates check constraint "settings_columns_theme_check"
 DETAIL:  Failing row contains (2, 42, t, ru).
 SQLSTATE 23514
 
@@ -88,13 +93,18 @@ ALTER TABLE settings_jsonb
         CHECK (settings - ARRAY['theme', 'notify', 'language', 'beta'] = '{}'::jsonb),
     ADD CONSTRAINT settings_theme_valid
         CHECK (settings -> 'theme' IS NULL
-               OR settings -> 'theme' <@ '["light", "dark", "system"]'::jsonb);
+               OR (jsonb_typeof(settings -> 'theme') = 'string'
+                   AND settings ->> 'theme' IN ('light', 'dark', 'system')));
 ALTER TABLE
 INSERT INTO settings_jsonb VALUES (4, '{"theme": 42}');
-psql:/lab/jsonb/settings.sql:91: ERROR:  new row for relation "settings_jsonb" violates check constraint "settings_theme_valid"
+psql:/lab/jsonb/settings.sql:99: ERROR:  new row for relation "settings_jsonb" violates check constraint "settings_theme_valid"
 DETAIL:  Failing row contains (4, {"theme": 42}).
 SQLSTATE 23514
 INSERT INTO settings_jsonb VALUES (5, '{"thme": "dark"}');
-psql:/lab/jsonb/settings.sql:95: ERROR:  new row for relation "settings_jsonb" violates check constraint "settings_known_keys"
+psql:/lab/jsonb/settings.sql:103: ERROR:  new row for relation "settings_jsonb" violates check constraint "settings_known_keys"
 DETAIL:  Failing row contains (5, {"thme": "dark"}).
+SQLSTATE 23514
+INSERT INTO settings_jsonb VALUES (6, '{"theme": ["dark", "light"]}');
+psql:/lab/jsonb/settings.sql:107: ERROR:  new row for relation "settings_jsonb" violates check constraint "settings_theme_valid"
+DETAIL:  Failing row contains (6, {"theme": ["dark", "light"]}).
 SQLSTATE 23514

@@ -39,7 +39,8 @@ const (
 	mib        = 1024 * 1024
 )
 
-// keyKind — вариант первичного ключа: имя в выводе и определение столбца id.
+// keyKind — вариант первичного ключа: имя в выводе и определение столбца id (без PRIMARY KEY —
+// ограничение с явным именем добавляет measure).
 type keyKind struct {
 	name   string
 	column string
@@ -48,9 +49,9 @@ type keyKind struct {
 // Значение id всегда генерирует база (DEFAULT или identity): все три варианта получают
 // одинаковый поток COPY без столбца id, и различие остаётся только в ключе.
 var kinds = []keyKind{
-	{name: "bigint", column: "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY"},
-	{name: "uuidv4", column: "id uuid DEFAULT gen_random_uuid() PRIMARY KEY"},
-	{name: "uuidv7", column: "id uuid DEFAULT uuidv7() PRIMARY KEY"},
+	{name: "bigint", column: "id bigint GENERATED ALWAYS AS IDENTITY"},
+	{name: "uuidv4", column: "id uuid DEFAULT gen_random_uuid()"},
+	{name: "uuidv7", column: "id uuid DEFAULT uuidv7()"},
 }
 
 type config struct {
@@ -159,8 +160,10 @@ func prepare(ctx context.Context, conn *pgx.Conn) error {
 func measure(ctx context.Context, conn *pgx.Conn, k keyKind, rows int) (result, error) {
 	table := pgx.Identifier{schema, "t_" + k.name}
 	// autovacuum выключен: его проход по таблице посреди вставки добавил бы в окно замера свой WAL.
-	ddl := fmt.Sprintf("CREATE TABLE %s (%s, n bigint NOT NULL) WITH (autovacuum_enabled = false)",
-		table.Sanitize(), k.column)
+	// Имя ограничения PK задано явно: по нему ниже ищется индекс, а не по умолчанию «<таблица>_pkey».
+	pkey := "t_" + k.name + "_pk"
+	ddl := fmt.Sprintf("CREATE TABLE %s (%s, n bigint NOT NULL, CONSTRAINT %s PRIMARY KEY (id)) WITH (autovacuum_enabled = false)",
+		table.Sanitize(), k.column, pgx.Identifier{pkey}.Sanitize())
 	if _, err := conn.Exec(ctx, ddl); err != nil {
 		return result{}, fmt.Errorf("создание таблицы: %w", err)
 	}
@@ -169,7 +172,7 @@ func measure(ctx context.Context, conn *pgx.Conn, k keyKind, rows int) (result, 
 	if r.load, err = load(ctx, conn, table, 0, rows); err != nil {
 		return result{}, err
 	}
-	index := pgx.Identifier{schema, "t_" + k.name + "_pkey"}.Sanitize()
+	index := pgx.Identifier{schema, pkey}.Sanitize()
 	if err := conn.QueryRow(ctx,
 		`SELECT pg_relation_size($1::regclass), pg_relation_size($2::regclass), s.leaf_pages, s.avg_leaf_density
 		 FROM pgstatindex($2::regclass) AS s`,
@@ -222,6 +225,9 @@ func load(ctx context.Context, conn *pgx.Conn, table pgx.Identifier, from, count
 }
 
 // walPosition — текущая позиция WAL и счётчик полных образов страниц из pg_stat_wal.
+// Оба счётчика общие для всего кластера, а не для нашей таблицы: в окно замера попадает и чужой
+// WAL. Здесь это допустимо — база одноразовая, кроме keys в неё никто не пишет, autovacuum у таблиц
+// выключен, а повторные прогоны совпадают в пределах 1–2 % (results/keys-n1000000-*.txt).
 func walPosition(ctx context.Context, conn *pgx.Conn) (lsn string, fpi int64, err error) {
 	// Статистика процессов попадает в pg_stat_wal не сразу, а раз в секунду; без принудительного
 	// сброса последние пачки COPY не попали бы в счётчик.

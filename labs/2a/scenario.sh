@@ -102,16 +102,19 @@ ok "constraints.sql: 23502, 23514, 23505, 23503, 23P01 и 0A000; отложен�
 # --- 3. antipatterns.sql: запрос, который ломается, и исправление (урок 2.7) ---
 out=$(sql antipatterns.sql)
 errors_expected "$out" antipatterns.sql 5
-has "$out" antipatterns.sql 'SQLSTATE 22007' 'SQLSTATE 23503' 'SQLSTATE 23514' ' 20 | Обед' '(4 rows)' \
-	'В пятницу некому чинить'
+has "$out" antipatterns.sql 'SQLSTATE 22007' 'SQLSTATE 23503' 'SQLSTATE 23514' ' 20 | Обед' '(4 rows)'
+# Строка результата WITH RECURSIVE (id 4 на глубине 3) — в эхо запросов её нет, только в выводе.
+printf '%s\n' "$out" | grep -qE '^ +4 \| +3 \| +В пятницу некому чинить$' || fail "antipatterns.sql: рекурсивный запрос не дошёл до третьего уровня:
+$out"
 printf '%s\n' "$out" | grep -qE '^ f +\| t +\|' || fail "antipatterns.sql: float и numeric сравнились одинаково:
 $out"
 ok "antipatterns.sql: EAV, полиморфная связь, список через запятую, наивное дерево и float — сломались и исправлены"
 
 # --- 4. jsonb/: настройки в JSONB и GIN (урок 2.6) ---
 out=$(sql jsonb/settings.sql)
-errors_expected "$out" jsonb/settings.sql 3
-has "$out" jsonb/settings.sql 'settings_theme_valid' 'settings_known_keys' '{"theme": "system", "notify": {"mentions": false}, "language": "ru"}'
+errors_expected "$out" jsonb/settings.sql 5
+has "$out" jsonb/settings.sql 'SQLSTATE 22P02' 'settings_theme_valid' 'settings_known_keys' \
+	'Failing row contains (6, {"theme": ["dark", "light"]})' '{"theme": "system", "notify": {"mentions": false}, "language": "ru"}'
 out=$(sql jsonb/gin.sql)
 errors_expected "$out" jsonb/gin.sql 0
 has "$out" jsonb/gin.sql 'Bitmap Index Scan on settings_gin_path' 'Filter: ((settings ->> '\''language'\''::text) = '\''kk'\''::text)'
@@ -119,7 +122,7 @@ row_columns=$(first_number "$out" ' columns +\| [^|]+\| +([0-9]+)')
 row_jsonb=$(first_number "$out" ' jsonb +\| [^|]+\| +([0-9]+)')
 [ -n "$row_columns" ] && [ -n "$row_jsonb" ] && less "$row_columns" "$row_jsonb" || fail "jsonb/gin.sql: строка столбцами $row_columns байт, в JSONB $row_jsonb, ждали JSONB больше:
 $out"
-ok "jsonb: CHECK ловит чужой тип и опечатку в ключе; строка $row_columns байт столбцами против $row_jsonb в JSONB; @> идёт по GIN"
+ok "jsonb: столбец boolean отвергает строку (22P02), CHECK ловит число, массив и опечатку в ключе; строка $row_columns байт столбцами против $row_jsonb в JSONB; @> идёт по GIN"
 
 # --- 5. keys: bigint, UUIDv4, UUIDv7 (урок 2.3) ---
 go build -o "$bin/keys" ./2a/keys
