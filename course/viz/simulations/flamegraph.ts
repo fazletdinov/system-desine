@@ -5,7 +5,10 @@ import type { Simulation, Step } from '../core/types'
 import rawData from '../data/flame-messenger.json'
 
 // Данные — реальные профили мессенджера, свёрнутые программой labs/1-5/fold из вывода
-// go tool pprof -traces: по объекту на тип выборки, стеки от корня к листу.
+// go tool pprof -traces. В файле — общая таблица кадров frames и по объекту на тип выборки,
+// где стек — индексы в frames от корня к листу ({"f": [0, 4, 9], "v": …}): имена функций
+// повторяются в сотнях стеков, и индексы ужимают файл в несколько раз. Разбор ниже
+// разворачивает индексы в имена — дальше модуль работает с FoldedProfile.
 export const SAMPLE_KINDS = ['cpu', 'alloc_space', 'inuse_space'] as const
 export type SampleKind = (typeof SAMPLE_KINDS)[number]
 
@@ -56,29 +59,47 @@ function fail(where: string, what: string): never {
 }
 
 // Проверка формы данных: файл снимается руками и мог разойтись с ожиданиями модуля.
-export function parseProfile(raw: unknown, kind: SampleKind): FoldedProfile {
-  const p = raw as Partial<FoldedProfile> | null
+export function parseFrames(raw: unknown): readonly string[] {
+  if (!Array.isArray(raw) || raw.length === 0) fail('frames', 'нет таблицы кадров')
+  for (const [i, f] of raw.entries()) if (typeof f !== 'string' || f === '') fail('frames', `кадр ${i}: ${String(f)}`)
+  return raw as string[]
+}
+
+interface CompactProfile {
+  sampleType: unknown
+  unit: unknown
+  total: unknown
+  stacks: unknown
+}
+
+export function parseProfile(raw: unknown, kind: SampleKind, frames: readonly string[]): FoldedProfile {
+  const p = raw as Partial<CompactProfile> | null
   if (p === null || typeof p !== 'object') fail(kind, 'не объект')
   if (p.sampleType !== kind) fail(kind, `sampleType ${String(p.sampleType)}, ждали ${kind}`)
   if (typeof p.unit !== 'string' || !UNITS.has(p.unit)) fail(kind, `незнакомая единица ${String(p.unit)}`)
   if (!Array.isArray(p.stacks) || p.stacks.length === 0) fail(kind, 'нет стеков')
+  const stacks: FoldedStack[] = []
   let sum = 0
-  for (const [i, s] of p.stacks.entries()) {
-    const ok = Array.isArray(s?.frames) && s.frames.length > 0 && s.frames.every((f: unknown) => typeof f === 'string' && f !== '')
+  for (const [i, s] of (p.stacks as { f?: unknown; v?: unknown }[]).entries()) {
+    const ids = s?.f
+    const ok = Array.isArray(ids) && ids.length > 0 && ids.every((id: unknown) => Number.isInteger(id) && (id as number) >= 0 && (id as number) < frames.length)
     if (!ok) fail(kind, `стек ${i}: кадры`)
-    if (!Number.isSafeInteger(s.value) || s.value <= 0) fail(kind, `стек ${i}: значение ${String(s.value)}`)
-    sum += s.value
+    const v = s.v
+    if (typeof v !== 'number' || !Number.isSafeInteger(v) || v <= 0) fail(kind, `стек ${i}: значение ${String(v)}`)
+    stacks.push({ frames: (ids as number[]).map((id) => frames[id]!), value: v })
+    sum += v
   }
   if (p.total !== sum) fail(kind, `total ${String(p.total)} не равен сумме стеков ${sum}`)
-  return p as FoldedProfile
+  return { sampleType: kind, unit: p.unit, total: sum, stacks }
 }
 
 export function parseFlameData(raw: unknown): FlameData {
   const obj = raw as Record<string, unknown>
+  const frames = parseFrames(obj.frames)
   return {
-    cpu: parseProfile(obj.cpu, 'cpu'),
-    alloc_space: parseProfile(obj.alloc_space, 'alloc_space'),
-    inuse_space: parseProfile(obj.inuse_space, 'inuse_space'),
+    cpu: parseProfile(obj.cpu, 'cpu', frames),
+    alloc_space: parseProfile(obj.alloc_space, 'alloc_space', frames),
+    inuse_space: parseProfile(obj.inuse_space, 'inuse_space', frames),
   }
 }
 

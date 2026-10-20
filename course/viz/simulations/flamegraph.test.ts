@@ -169,9 +169,9 @@ describe('flamegraph: типы выборки и данные мессендже
     expect(data.inuse_space.unit).toBe('bytes')
   })
 
-  it('файл данных не больше 150 КБ', () => {
+  it('файл данных не больше 200 КБ', () => {
     const bytes = readFileSync(fileURLToPath(new URL('../data/flame-messenger.json', import.meta.url))).length
-    expect(bytes).toBeLessThanOrEqual(150 * 1024)
+    expect(bytes).toBeLessThanOrEqual(200 * 1024)
   })
 
   it('в каждом профиле есть код мессенджера', () => {
@@ -191,10 +191,24 @@ describe('flamegraph: типы выборки и данные мессендже
   })
 
   it('битые данные отвергаются', () => {
-    expect(() => parseProfile({ ...SMALL, total: 99 }, 'cpu')).toThrow(/total/)
-    expect(() => parseProfile({ ...SMALL, sampleType: 'heap' }, 'cpu')).toThrow(/sampleType/)
-    expect(() => parseProfile({ ...SMALL, stacks: [{ frames: [], value: 1 }] }, 'cpu')).toThrow(/кадры/)
-    expect(() => parseProfile({ ...SMALL, stacks: [{ frames: ['a'], value: -1 }], total: -1 }, 'cpu')).toThrow(/значение/)
+    const frames = ['main.main', 'main.a']
+    const good = { sampleType: 'cpu', unit: 'nanoseconds', total: 3, stacks: [{ f: [0, 1], v: 3 }] }
+    expect(parseProfile(good, 'cpu', frames).stacks).toEqual([{ frames: ['main.main', 'main.a'], value: 3 }])
+    expect(() => parseProfile({ ...good, total: 2 }, 'cpu', frames)).toThrow(/total/)
+    expect(() => parseProfile({ ...good, sampleType: 'heap' }, 'cpu', frames)).toThrow(/sampleType/)
+    expect(() => parseProfile({ ...good, stacks: [{ f: [], v: 3 }] }, 'cpu', frames)).toThrow(/кадры/)
+    expect(() => parseProfile({ ...good, stacks: [{ f: [0, 2], v: 3 }] }, 'cpu', frames)).toThrow(/кадры/)
+    expect(() => parseProfile({ ...good, stacks: [{ f: [0], v: -1 }], total: -1 }, 'cpu', frames)).toThrow(/значение/)
+    expect(() => parseFlameData({ ...rawData, frames: [] })).toThrow(/таблицы кадров/)
+  })
+
+  it('мелкие стеки слиты в «прочее» под родителем: в корне «прочее» меньше 2 %', () => {
+    for (const kind of SAMPLE_KINDS) {
+      const tree = treeOf(kind)
+      const rootOther = tree.root.children.find((c) => c.kind === 'other')
+      expect(rootOther === undefined ? 0 : shareOfTotal(tree, rootOther), kind).toBeLessThan(0.02)
+    }
+    expect(allNodes(treeOf('cpu')).some((n) => n.kind === 'other' && n.depth > 1)).toBe(true)
   })
 
   it('подписи: осмысленный текст, термины есть в глоссарии', () => {

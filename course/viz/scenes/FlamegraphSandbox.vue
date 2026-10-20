@@ -24,7 +24,7 @@ const onSearch = (event: Event): void => dispatch({ type: 'search', query: (even
 <template>
   <VizFrame label="Песочница: флейм-граф мессенджера">
     <p class="intro">
-      Настоящие профили мессенджера: 20 секунд под чтением истории чата (<code>scripts/read-load.sh</code>) и наплывом регистраций (<code>scripts/overload.sh</code>), свёрнутые программой из лабы. Наведите или перейдите по блокам клавишей Tab — внизу имя и доля; щелчок или Enter увеличивает блок, Esc возвращает к корню. Стеки тоньше 0,2&nbsp;% (CPU) и 0,1&nbsp;% (память) слиты в блок «прочее».
+      Настоящие профили мессенджера: 20 секунд под чтением истории чата (<code>scripts/read-load.sh</code>) и наплывом регистраций (<code>scripts/overload.sh</code>), свёрнутые программой из лабы. Наведите или перейдите по блокам клавишей Tab — внизу имя и доля; щелчок или Enter увеличивает блок, Esc возвращает к корню. Стеки тоньше 0,1&nbsp;% слиты в блок «прочее» над ближайшей вызвавшей их функцией, которая сама толще порога.
     </p>
     <SegmentedToggle label="Тип выборки" :options="kindOptions" :model-value="state.kind" @update:model-value="(kind) => dispatch({ type: 'select-kind', kind })" />
     <div class="panel">

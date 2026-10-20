@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -123,14 +126,19 @@ func TestParseErrors(t *testing.T) {
 }
 
 func TestMergeBelow(t *testing.T) {
+	// Сумма 1000. main.main → main.handle (989) — толстая ветка; мелкие стеки под ней
+	// сливаются в «прочее» под main.handle, а не в корень.
 	p := Profile{
 		SampleType: "cpu",
 		Unit:       "nanoseconds",
 		Total:      1000,
 		Stacks: []Stack{
-			{Frames: []string{"main.main", "main.big"}, Value: 990},
-			{Frames: []string{"main.main", "main.small"}, Value: 6},
-			{Frames: []string{"main.main", "main.tiny"}, Value: 4},
+			{Frames: []string{"main.main", "main.cold", "main.a"}, Value: 8},
+			{Frames: []string{"main.main", "main.handle"}, Value: 5},
+			{Frames: []string{"main.main", "main.handle", "main.big"}, Value: 974},
+			{Frames: []string{"main.main", "main.handle", "main.small"}, Value: 6},
+			{Frames: []string{"main.main", "main.handle", "main.tiny"}, Value: 4},
+			{Frames: []string{"runtime.gcBgMarkWorker", "runtime.scanobject"}, Value: 3},
 		},
 	}
 	tests := []struct {
@@ -140,20 +148,28 @@ func TestMergeBelow(t *testing.T) {
 	}{
 		{name: "порог 0 — без изменений", share: 0, want: p.Stacks},
 		{
-			name:  "порог 0,5 % сливает 0,4 %",
+			name:  "порог 0,5 %: мелкий стек — в «прочее» под самым длинным толстым префиксом",
 			share: 0.005,
 			want: []Stack{
-				{Frames: []string{"main.main", "main.big"}, Value: 990},
-				{Frames: []string{"main.main", "main.small"}, Value: 6},
-				{Frames: []string{OtherFrame}, Value: 4},
+				{Frames: []string{"main.main", "main.cold", "main.a"}, Value: 8},
+				{Frames: []string{"main.main", "main.handle"}, Value: 5},
+				{Frames: []string{"main.main", "main.handle", "main.big"}, Value: 974},
+				{Frames: []string{"main.main", "main.handle", "main.small"}, Value: 6},
+				{Frames: []string{"main.main", "main.handle", OtherFrame}, Value: 4},
+				// У стека нет ни одного префикса толще порога — только тогда «прочее» в корне.
+				{Frames: []string{OtherFrame}, Value: 3},
 			},
 		},
 		{
-			name:  "порог 1 % сливает оба мелких в один",
+			name:  "порог 1 %: соседи сливаются в одно «прочее», собственное время толстого узла остаётся",
 			share: 0.01,
 			want: []Stack{
-				{Frames: []string{"main.main", "main.big"}, Value: 990},
-				{Frames: []string{OtherFrame}, Value: 10},
+				// 5 < 10, но сам узел main.handle толще порога: стек не меняется.
+				{Frames: []string{"main.main", "main.handle"}, Value: 5},
+				{Frames: []string{"main.main", "main.handle", "main.big"}, Value: 974},
+				{Frames: []string{"main.main", "main.handle", OtherFrame}, Value: 10},
+				{Frames: []string{"main.main", OtherFrame}, Value: 8},
+				{Frames: []string{OtherFrame}, Value: 3},
 			},
 		},
 	}
@@ -164,7 +180,7 @@ func TestMergeBelow(t *testing.T) {
 				t.Fatalf("MergeBelow(): %v", err)
 			}
 			if !reflect.DeepEqual(got.Stacks, tt.want) {
-				t.Fatalf("Stacks = %+v, ждали %+v", got.Stacks, tt.want)
+				t.Fatalf("Stacks =\n%+v\nждали\n%+v", got.Stacks, tt.want)
 			}
 			var sum int64
 			for _, s := range got.Stacks {
@@ -174,6 +190,66 @@ func TestMergeBelow(t *testing.T) {
 				t.Fatalf("Total = %d, сумма стеков %d, было %d — должны совпадать", got.Total, sum, p.Total)
 			}
 		})
+	}
+}
+
+func TestEncode(t *testing.T) {
+	cpu := Profile{SampleType: "cpu", Unit: "nanoseconds", Total: 30, Stacks: []Stack{
+		{Frames: []string{"main.main", "main.a"}, Value: 10},
+		{Frames: []string{"main.main", "main.b"}, Value: 20},
+	}}
+	heap := Profile{SampleType: "inuse_space", Unit: "bytes", Total: 7, Stacks: []Stack{
+		{Frames: []string{"main.main", "main.b"}, Value: 7},
+	}}
+	var buf bytes.Buffer
+	if err := Encode(&buf, []Profile{cpu, heap}); err != nil {
+		t.Fatalf("Encode(): %v", err)
+	}
+	var got struct {
+		Frames []string `json:"frames"`
+		CPU    struct {
+			SampleType string `json:"sampleType"`
+			Unit       string `json:"unit"`
+			Total      int64  `json:"total"`
+			Stacks     []struct {
+				F []int `json:"f"`
+				V int64 `json:"v"`
+			} `json:"stacks"`
+		} `json:"cpu"`
+		Heap json.RawMessage `json:"inuse_space"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("разбор JSON: %v\n%s", err, buf.String())
+	}
+	// Таблица кадров общая: main.main и main.b встречаются в двух профилях, но записаны один раз.
+	if want := []string{"main.main", "main.a", "main.b"}; !reflect.DeepEqual(got.Frames, want) {
+		t.Fatalf("frames = %q, ждали %q", got.Frames, want)
+	}
+	if got.CPU.SampleType != "cpu" || got.CPU.Unit != "nanoseconds" || got.CPU.Total != 30 {
+		t.Fatalf("шапка cpu = %+v", got.CPU)
+	}
+	var stacks [][]string
+	for _, s := range got.CPU.Stacks {
+		var names []string
+		for _, i := range s.F {
+			names = append(names, got.Frames[i])
+		}
+		stacks = append(stacks, names)
+	}
+	if want := [][]string{{"main.main", "main.a"}, {"main.main", "main.b"}}; !reflect.DeepEqual(stacks, want) {
+		t.Fatalf("стеки cpu = %q, ждали %q", stacks, want)
+	}
+	if len(got.Heap) == 0 {
+		t.Fatal("нет профиля inuse_space")
+	}
+}
+
+func TestEncodeRejectsDuplicateSampleType(t *testing.T) {
+	p := Profile{SampleType: "cpu", Unit: "nanoseconds"}
+	for _, ps := range [][]Profile{{p, p}, {{SampleType: "frames"}}} {
+		if err := Encode(io.Discard, ps); err == nil {
+			t.Errorf("Encode(%+v): ждали ошибку", ps)
+		}
 	}
 }
 
