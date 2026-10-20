@@ -20,6 +20,8 @@ const last = computed<GcTick | undefined>(() => props.frame.history.at(-1))
 // Ось времени скользит: последние windowS секунд.
 const t0 = computed(() => Math.max(0, (last.value?.t ?? 0) - props.frame.windowS))
 const x = (t: number): number => LEFT + ((t - t0.value) / props.frame.windowS) * plotW
+// Подпись у правого края по центру деления вылезла бы за viewBox и обрезалась: её прижимаем к делению справа.
+const tickAnchor = (tk: number): 'middle' | 'end' => (W - RIGHT - x(tk) < 2 * FONT ? 'end' : 'middle')
 const xTicks = computed(() => {
   const first = Math.ceil(t0.value / 5) * 5
   return Array.from({ length: Math.floor(props.frame.windowS / 5) + 1 }, (_, i) => first + i * 5).filter((t) => t <= t0.value + props.frame.windowS)
@@ -123,7 +125,7 @@ const MEM_SERIES = [
         </template>
         <text :x="LEFT - 4" :y="TOP + FONT * 0.8" text-anchor="end" :font-size="FONT" class="lbl">100 %</text>
         <text :x="LEFT - 4" :y="CPU_H - BOTTOM" text-anchor="end" :font-size="FONT" class="lbl">0</text>
-        <text v-for="tk in xTicks" :key="`x${tk}`" :x="x(tk)" :y="CPU_H + AXIS_H - 6" text-anchor="middle" :font-size="FONT" class="lbl">{{ tk }} с</text>
+        <text v-for="tk in xTicks" :key="`x${tk}`" :x="x(tk)" :y="CPU_H + AXIS_H - 6" :text-anchor="tickAnchor(tk)" :font-size="FONT" class="lbl">{{ tk }} с</text>
       </svg>
       <ul class="legend">
         <li><span class="sw bg-sw" aria-hidden="true"></span>фоновая разметка (до 25 %)</li>

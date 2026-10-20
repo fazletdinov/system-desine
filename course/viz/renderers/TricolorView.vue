@@ -80,7 +80,7 @@ const summary = computed(() => nodes.value.map((n) => n.label).join('; '))
         <circle v-if="n.scanning" :cx="n.x" :cy="n.y" :r="R + 6" class="scan" />
         <circle :cx="n.x" :cy="n.y" :r="R" :class="['node', n.color, { freed: n.freed, 'freed-live': n.freedLive }]" />
         <text :x="n.x" :y="n.y + 6" text-anchor="middle" font-size="17" :class="['id', n.color]">{{ n.freed ? '✕' : n.id }}</text>
-        <text v-if="n.note" :x="n.x" :y="n.y + R + 15" text-anchor="middle" font-size="12" :class="['note', { bad: n.freedLive }]">{{ n.freed ? `${n.id} ${n.note}` : n.note }}</text>
+        <text v-if="n.note" :x="n.x" :y="n.y + R + 15" text-anchor="middle" font-size="13" :class="['note', { bad: n.freedLive }]">{{ n.freed ? `${n.id} ${n.note}` : n.note }}</text>
       </g>
     </svg>
     <ul class="legend">

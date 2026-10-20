@@ -5,6 +5,8 @@ import {
   fitLabel,
   formatShare,
   formatValue,
+  isFlameNavKey,
+  neighbour,
   project,
   shareOfFocus,
   shareOfTotal,
@@ -41,11 +43,14 @@ const svg = ref<SVGSVGElement>()
 const width = ref(640) // SSR и первый кадр; на клиенте — ширина контейнера
 const view = ref<ViewWindow>(windowOf(props.frame.focus))
 const activeId = ref<string | null>(null)
+// Блок с tabindex=0 — единственная остановка Tab в графе (roving tabindex): иначе сотни
+// блоков профиля превращают Tab в сотни нажатий. По остальным блокам ходят стрелками.
+const cursorId = ref<string>(props.frame.focus.id)
 
 const tree = computed(() => props.frame.tree)
 const searching = computed(() => props.frame.matches.query !== '')
 const rects = computed(() =>
-  project(tree.value, view.value, props.frame.focus.id, MIN_PX / width.value).map((r) => ({
+  project(tree.value, view.value, MIN_PX / width.value).map((r) => ({
     ...r,
     px: r.x * width.value,
     wpx: r.w * width.value,
@@ -55,6 +60,8 @@ const maxDepth = computed(() => rects.value.reduce((m, r) => Math.max(m, r.node.
 const height = computed(() => (maxDepth.value + 1) * ROW_H)
 // Флейм-граф растёт вверх: корень — нижняя строка, вызванные функции — над вызвавшей.
 const yOf = (n: FlameNode): number => (maxDepth.value - n.depth) * ROW_H
+// Курсор мог уйти из окна (зум, смена типа выборки) — тогда остановкой Tab служит увеличенный блок.
+const tabStopId = computed(() => (rects.value.some((r) => r.node.id === cursorId.value) ? cursorId.value : props.frame.focus.id))
 
 const active = computed(() => (activeId.value === null ? undefined : tree.value.byId.get(activeId.value)) ?? props.frame.focus)
 const describe = (n: FlameNode): string => {
@@ -78,7 +85,10 @@ const animateTo = (target: ViewWindow): void => {
   const from = { ...view.value }
   const t0 = performance.now()
   const tick = (now: number): void => {
-    const p = Math.min(1, (now - t0) / ZOOM_MS)
+    // Метка кадра rAF может быть раньше t0 из performance.now(): без нижней границы p < 0
+    // выносит окно за край увеличенного узла, на узком узле оно выворачивается (end < start),
+    // и на один кадр граф пустеет — все блоки пересоздаются, а фокус уходит в body.
+    const p = Math.min(1, Math.max(0, (now - t0) / ZOOM_MS))
     const e = 1 - (1 - p) ** 3
     view.value = { start: from.start + (target.start - from.start) * e, end: from.end + (target.end - from.end) * e }
     raf = p < 1 ? requestAnimationFrame(tick) : 0
@@ -97,6 +107,7 @@ watch(
   () => [props.frame.tree, props.frame.focus] as const,
   ([t, f], [prevTree]) => {
     activeId.value = null
+    cursorId.value = f.id
     if (t !== prevTree) {
       // Другой тип выборки — другой масштаб: переход между ними ничего не объясняет.
       stopAnim()
@@ -127,13 +138,29 @@ onBeforeUnmount(() => {
 const zoom = (n: FlameNode): void => {
   if (n !== props.frame.focus) emit('zoom', n.id)
 }
-// Esc в графе — к корню; если увеличения нет, Esc уходит дальше (VizFrame закрывает оверлей).
+const onFocus = (id: string): void => {
+  activeId.value = id
+  cursorId.value = id
+}
+const focusBlock = async (id: string): Promise<void> => {
+  cursorId.value = id
+  await nextTick()
+  svg.value?.querySelector<SVGGElement>(`[data-id="${id}"]`)?.focus()
+}
+// Стрелки — по видимым блокам, Home — к корню. Esc в графе — к корню; если увеличения нет,
+// Esc уходит дальше (VizFrame закрывает оверлей).
 const onKeydown = async (event: KeyboardEvent): Promise<void> => {
+  if (isFlameNavKey(event.key)) {
+    const to = neighbour(rects.value, cursorId.value, event.key)
+    event.preventDefault() // стрелки не прокручивают страницу, даже на краю графа
+    if (to !== undefined) await focusBlock(to.id)
+    return
+  }
   if (event.key !== 'Escape' || props.frame.focus === tree.value.root) return
   event.stopPropagation()
   emit('reset')
   await nextTick()
-  svg.value?.querySelector<SVGGElement>('[data-id="r"]')?.focus()
+  await focusBlock(tree.value.root.id)
 }
 </script>
 
@@ -146,7 +173,7 @@ const onKeydown = async (event: KeyboardEvent): Promise<void> => {
         :width="width"
         :height="height"
         role="group"
-        aria-label="Флейм-граф: Tab — по блокам, Enter — увеличить блок, Esc — к корню"
+        aria-label="Флейм-граф: стрелки — по блокам, Enter — увеличить блок, Esc — к корню"
         @keydown="onKeydown"
       >
         <g
@@ -156,7 +183,7 @@ const onKeydown = async (event: KeyboardEvent): Promise<void> => {
           :class="[`k-${r.node.kind}`, { hit: frame.matches.ids.has(r.node.id), dim: searching && !frame.matches.ids.has(r.node.id), focus: r.node === frame.focus }]"
           :data-id="r.node.id"
           :transform="`translate(${r.px.toFixed(2)},${yOf(r.node)})`"
-          tabindex="0"
+          :tabindex="r.node.id === tabStopId ? 0 : -1"
           role="button"
           :aria-label="describe(r.node)"
           @click="zoom(r.node)"
@@ -164,7 +191,7 @@ const onKeydown = async (event: KeyboardEvent): Promise<void> => {
           @keydown.space.prevent="zoom(r.node)"
           @mouseenter="activeId = r.node.id"
           @mouseleave="activeId = null"
-          @focus="activeId = r.node.id"
+          @focus="onFocus(r.node.id)"
           @blur="activeId = null"
         >
           <title>{{ describe(r.node) }}</title>
@@ -173,7 +200,9 @@ const onKeydown = async (event: KeyboardEvent): Promise<void> => {
         </g>
       </svg>
     </div>
-    <div class="tip" aria-live="polite">
+    <!-- Без aria-live: подсказка меняется на каждом наведении мыши; программе чтения экрана
+         то же имя и долю сообщает aria-label блока при фокусе. -->
+    <div class="tip">
       <p class="tip-name"><span class="swatch" :class="`k-${active.kind}`" aria-hidden="true"></span><code>{{ active.name }}</code></p>
       <p class="tip-meta">
         {{ KIND_TEXT[active.kind] }} · {{ formatShare(shareOfTotal(tree, active)) }} всего профиля ({{ formatValue(active.value, tree.unit) }})

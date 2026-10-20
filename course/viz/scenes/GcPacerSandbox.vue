@@ -107,7 +107,7 @@ const p = computed(() => state.value.params)
 .intro { margin: 0 0 10px; font-size: 14px; color: var(--viz-muted); }
 .sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 8px 16px; margin-bottom: 10px; }
 .slider { display: flex; flex-direction: column; gap: 2px; font-size: 14px; min-width: 0; }
-.slider input[type='range'] { width: 100%; min-height: 36px; }
+.slider input[type='range'] { width: 100%; min-height: 36px; margin: 0; }
 .check { display: flex; align-items: center; gap: 6px; min-height: 36px; }
 .check input { width: 20px; height: 20px; }
 .panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }

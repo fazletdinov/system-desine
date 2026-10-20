@@ -176,15 +176,13 @@ export interface ViewRect {
   node: FlameNode
   x: number // 0…1 от ширины графа
   w: number
-  ancestor: boolean // предок увеличенного узла: растянут на всю ширину, ниже него
 }
 
 // Блоки, видимые в окне [start, end) значений корня, в долях ширины. Окно увеличенного
 // узла даёт ему ширину 1, а его поддереву — те же доли, что и без увеличения; окно между
 // двумя узлами — кадр анимации увеличения. Блоки уже minW не рисуются, и их дети тоже.
-export function project(tree: FlameTree, win: ViewWindow, focusId: string, minW = 0): ViewRect[] {
+export function project(tree: FlameTree, win: ViewWindow, minW = 0): ViewRect[] {
   const span = win.end - win.start
-  const focus = tree.byId.get(focusId) ?? tree.root
   const out: ViewRect[] = []
   const walk = (node: FlameNode): void => {
     const left = Math.max(node.start, win.start)
@@ -192,11 +190,41 @@ export function project(tree: FlameTree, win: ViewWindow, focusId: string, minW 
     if (right <= left) return
     const w = (right - left) / span
     if (w < minW) return
-    out.push({ node, x: (left - win.start) / span, w, ancestor: focus.id.startsWith(`${node.id}.`) })
+    out.push({ node, x: (left - win.start) / span, w })
     node.children.forEach(walk)
   }
   walk(tree.root)
   return out
+}
+
+// Клавиши навигации по графу: в графе одна точка остановки Tab, а между блоками ходят стрелками.
+// Граф растёт вверх, поэтому «вверх» — к вызванной функции, «вниз» — к вызвавшей.
+export type FlameNavKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Home'
+
+export const isFlameNavKey = (key: string): key is FlameNavKey =>
+  key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Home'
+
+// Видимый блок, куда ведёт клавиша от блока fromId; undefined — идти некуда (край графа).
+// Вверх — самый левый видимый ребёнок, вниз — родитель, влево и вправо — соседний видимый
+// блок той же глубины, в том числе под другим родителем: так обходят всю строку графа.
+export function neighbour(rects: readonly ViewRect[], fromId: string, key: FlameNavKey): FlameNode | undefined {
+  const from = rects.find((r) => r.node.id === fromId)
+  if (from === undefined) return undefined
+  const visible = (id: string | null): FlameNode | undefined => rects.find((r) => r.node.id === id)?.node
+  switch (key) {
+    case 'Home':
+      return rects[0]?.node
+    case 'ArrowDown':
+      return visible(from.node.parentId)
+    case 'ArrowUp':
+      return from.node.children.map((c) => visible(c.id)).find((c) => c !== undefined)
+    case 'ArrowLeft':
+    case 'ArrowRight': {
+      const row = rects.filter((r) => r.node.depth === from.node.depth).sort((a, b) => a.x - b.x)
+      const i = row.indexOf(from)
+      return row[key === 'ArrowLeft' ? i - 1 : i + 1]?.node
+    }
+  }
 }
 
 // Доля узла от всего профиля и от увеличенного узла (у предков — 1: они шире окна).

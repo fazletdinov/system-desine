@@ -18,10 +18,15 @@ messages=50
 # по себе дороже ответа сервера и упёрся бы в fork, а не в мессенджер.
 batch=100
 password='достаточно длинный пароль'
-# Приставка имён — секунды запуска: повторный прогон не упрётся в 409 «имя занято».
-run=$(date +%s)
+# Приставка имён — 12 случайных шестнадцатеричных знаков: повторный прогон, даже в ту же
+# секунду, не упрётся в 409 «имя занято» (имя — до 32 знаков a–z, 0–9 и _).
+run=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
+# mktemp -d создаёт каталог с правами 0700: файл с токеном в нём не читают другие пользователи.
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
+# Заголовок с токеном curl читает из файла (-H @файл): в аргументах процесса токен
+# увидел бы любой пользователь машины через ps.
+auth="$dir/auth"
 
 # call МЕТОД ПУТЬ [ТЕЛО] — запрос к API, печатает тело ответа. Подготовка идёт параллельно
 # с overload.sh, и регистрация или вход могут получить 503 overloaded: ограничитель
@@ -29,7 +34,7 @@ trap 'rm -rf "$dir"' EXIT
 call() {
 	local method=$1 path=$2 status
 	local args=(-s -o "$dir/resp" -w '%{http_code}' -X "$method" -H 'Content-Type: application/json')
-	[ -n "$token" ] && args+=(-H "Authorization: Bearer $token")
+	[ -n "$token" ] && args+=(-H @"$auth")
 	[ $# -ge 3 ] && args+=(-d "$3")
 	for _ in $(seq 1 30); do
 		status=$(curl "${args[@]}" "$url$path") || status=000
@@ -43,7 +48,13 @@ call() {
 	return 1
 }
 # field ИМЯ — значение строкового поля из JSON на stdin (без jq: скрипту хватает curl).
-field() { grep -o "\"$1\":\"[^\"]*\"" | head -n1 | cut -d'"' -f4; }
+# Поля нет — сообщение и ошибка: иначе set -e молча оборвал бы скрипт на пустом значении.
+field() {
+	local value
+	value=$(grep -o "\"$1\":\"[^\"]*\"" | head -n1 | cut -d'"' -f4) || true
+	[ -n "$value" ] || { echo "read-load: в ответе нет поля $1" >&2; return 1; }
+	printf '%s\n' "$value"
+}
 uuid() { cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr '[:upper:]' '[:lower:]'; }
 
 token=
@@ -51,13 +62,14 @@ signup() { call POST /v1/users "{\"username\":\"read${run}_$1\",\"display_name\"
 reader=$(signup a)
 peer=$(signup b)
 token=$(call POST /v1/tokens "{\"username\":\"read${run}_a\",\"password\":\"$password\"}" | field access_token)
+printf 'Authorization: Bearer %s\n' "$token" >"$auth"
 chat=$(call POST /v1/chats "{\"kind\":\"direct\",\"member_ids\":[\"$peer\"]}" | field id)
 for i in $(seq 1 "$messages"); do
 	call POST "/v1/chats/$chat/messages" "{\"client_message_id\":\"$(uuid)\",\"text\":\"Сообщение $i для нагрузки чтением\"}" >/dev/null
 done
 echo "пользователь $reader, чат $chat, сообщений $messages; читаю: $n клиентов × $secs с"
 
-export url token chat secs dir batch
+export url auth chat secs dir batch
 # xargs -P n запускает n клиентов сразу; каждый крутит curl до конца срока и пишет
 # строки «код время» в свой файл — общий вывод перемешался бы. Один вызов curl делает
 # batch запросов по одному keep-alive соединению: новое соединение на каждый запрос за
@@ -65,19 +77,23 @@ export url token chat secs dir batch
 # и хвост прогона вместо ответов сервера дал бы ошибки соединения. Оборванное соединение
 # curl отмечает кодом 000; «|| true» — чтобы такой ответ попал в сводку, а не
 # остановил клиента через set -e.
+started=$(date +%s.%N)
 seq 1 "$n" | xargs -P "$n" -I{} bash -c '
 	urls=()
 	for _ in $(seq 1 "$batch"); do urls+=(-o /dev/null "$url/v1/chats/$chat/messages"); done
 	end=$((SECONDS + secs))
 	while [ "$SECONDS" -lt "$end" ]; do
-		curl -s -w "%{http_code} %{time_total}\n" -H "Authorization: Bearer $token" "${urls[@]}" || true
+		curl -s -w "%{http_code} %{time_total}\n" -H @"$auth" "${urls[@]}" || true
 	done >"$dir/{}.codes"'
+# Клиент заканчивает только после последней пачки, поэтому прогон длится дольше заказанного:
+# запросы в секунду считаем по фактическому времени, а не по secs.
+elapsed=$(awk -v a="$started" -v b="$(date +%s.%N)" 'BEGIN { print b - a }')
 
-# Сводка: всего запросов и в секунду, затем по кодам ответа — сколько и время ответа
+# Сводка: всего запросов и в секунду (по фактическому времени прогона), затем по кодам ответа — сколько и время ответа
 # (медиана, p99, максимум). sort раскладывает строки по коду и времени, поэтому i-я
 # строка кода — i-е по возрастанию время.
 total=$(cat "$dir"/*.codes | wc -l)
-awk -v total="$total" -v secs="$secs" 'BEGIN { printf "запросов: %d за %d с, %.0f в секунду\n", total, secs, total / secs }'
+awk -v total="$total" -v secs="$elapsed" 'BEGIN { printf "запросов: %d за %.1f с, %.0f в секунду\n", total, secs, total / secs }'
 cat "$dir"/*.codes | sort -k1,1 -k2,2n | awk '
 	{ c[$1]++; t[$1, c[$1]] = $2 * 1000 }
 	END {

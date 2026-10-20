@@ -11,6 +11,8 @@ import {
   fitLabel,
   flamegraphSimulation as sim,
   frameKind,
+  isFlameNavKey,
+  neighbour,
   packageOf,
   parseFlameData,
   parseProfile,
@@ -86,7 +88,7 @@ describe('flamegraph: зум', () => {
   it('увеличенный узел — во всю ширину, доля 100 %', () => {
     const tree = small()
     const handle = byName(tree, 'main.handle')
-    const rects = project(tree, windowOf(handle), handle.id)
+    const rects = project(tree, windowOf(handle))
     const own = rects.find((r) => r.node === handle)!
     expect(own.x).toBe(0)
     expect(own.w).toBe(1)
@@ -96,8 +98,8 @@ describe('flamegraph: зум', () => {
   it('доли поддерева относительно его корня сохраняются', () => {
     const tree = small()
     const handle = byName(tree, 'main.handle')
-    const before = project(tree, windowOf(tree.root), tree.root.id)
-    const after = project(tree, windowOf(handle), handle.id)
+    const before = project(tree, windowOf(tree.root))
+    const after = project(tree, windowOf(handle))
     const w = (rects: typeof before, name: string): number => rects.find((r) => r.node.name === name)!.w
     for (const name of ['main.hash', 'main.encode']) {
       expect(w(after, name)).toBeCloseTo(w(before, name) / w(before, 'main.handle'), 12)
@@ -109,20 +111,44 @@ describe('flamegraph: зум', () => {
   it('предки остаются на всю ширину, соседние ветки не видны', () => {
     const tree = small()
     const handle = byName(tree, 'main.handle')
-    const rects = project(tree, windowOf(handle), handle.id)
+    const rects = project(tree, windowOf(handle))
     const names = rects.map((r) => r.node.name)
     expect(names).not.toContain('runtime.gcBgMarkWorker')
     expect(names).not.toContain(OTHER_FRAME)
     for (const anc of [tree.root, byName(tree, 'main.main')]) {
       const r = rects.find((x) => x.node === anc)!
-      expect([r.x, r.w, r.ancestor]).toEqual([0, 1, true])
+      expect([r.x, r.w]).toEqual([0, 1])
     }
-    expect(rects.find((r) => r.node === handle)!.ancestor).toBe(false)
+  })
+
+  it('стрелки: вверх — к вызванной, вниз — к вызвавшей, вбок — по строке через границу родителя', () => {
+    const tree = small()
+    const rects = project(tree, windowOf(tree.root))
+    const go = (from: string, key: Parameters<typeof neighbour>[2]): string | undefined => neighbour(rects, byName(tree, from).id, key)?.name
+    expect(neighbour(rects, tree.root.id, 'ArrowUp')?.name).toBe('main.main')
+    expect(neighbour(rects, tree.root.id, 'ArrowDown')).toBeUndefined()
+    expect(go('main.handle', 'ArrowUp')).toBe('main.encode')
+    expect(go('main.encode', 'ArrowUp')).toBeUndefined()
+    expect(go('main.encode', 'ArrowDown')).toBe('main.handle')
+    expect(go('main.handle', 'ArrowRight')).toBe('runtime.scanobject')
+    expect(go('runtime.scanobject', 'ArrowLeft')).toBe('main.handle')
+    expect(go('main.handle', 'ArrowLeft')).toBeUndefined()
+    expect(go('main.hash', 'Home')).toBe(tree.root.name)
+  })
+
+  it('стрелки ходят только по видимым блокам', () => {
+    const tree = small()
+    const handle = byName(tree, 'main.handle')
+    const rects = project(tree, windowOf(handle))
+    expect(neighbour(rects, handle.id, 'ArrowRight')).toBeUndefined()
+    expect(neighbour(rects, handle.id, 'ArrowDown')?.name).toBe('main.main')
+    expect(neighbour(rects, byName(tree, 'runtime.scanobject').id, 'ArrowUp')).toBeUndefined()
+    expect(isFlameNavKey('ArrowUp') && isFlameNavKey('Home') && !isFlameNavKey('Enter')).toBe(true)
   })
 
   it('слишком узкие блоки не рисуются', () => {
     const tree = small()
-    const rects = project(tree, windowOf(tree.root), tree.root.id, 0.05)
+    const rects = project(tree, windowOf(tree.root), 0.05)
     expect(rects.map((r) => r.node.name)).not.toContain(OTHER_FRAME)
     expect(rects.map((r) => r.node.name)).toContain('runtime.gcBgMarkWorker')
   })

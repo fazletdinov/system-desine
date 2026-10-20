@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, useId } from 'vue'
 import T from '../../components/T.vue'
 import VizFrame from '../components/VizFrame.vue'
 import SegmentedToggle from '../components/SegmentedToggle.vue'
@@ -7,6 +7,7 @@ import FlamegraphView from '../renderers/FlamegraphView.vue'
 import { captionSegments } from '../core/caption'
 import { flamegraphSimulation as sim, type FlameAction, type SampleKind } from '../simulations/flamegraph'
 
+const searchId = useId()
 const state = ref(sim.initial())
 const step = computed(() => sim.steps(state.value)[0]!)
 
@@ -24,13 +25,13 @@ const onSearch = (event: Event): void => dispatch({ type: 'search', query: (even
 <template>
   <VizFrame label="Песочница: флейм-граф мессенджера">
     <p class="intro">
-      Настоящие профили мессенджера: 20 секунд под чтением истории чата (<code>scripts/read-load.sh</code>) и наплывом регистраций (<code>scripts/overload.sh</code>), свёрнутые программой из лабы. Наведите или перейдите по блокам клавишей Tab — внизу имя и доля; щелчок или Enter увеличивает блок, Esc возвращает к корню. Стеки тоньше 0,1&nbsp;% слиты в блок «прочее» над ближайшей вызвавшей их функцией, которая сама толще порога.
+      Настоящие профили мессенджера: 20 секунд под чтением истории чата (<code>scripts/read-load.sh</code>) и наплывом регистраций (<code>scripts/overload.sh</code>), свёрнутые программой из лабы. Наведите на блок или перейдите в граф клавишей Tab и ходите по блокам стрелками — внизу имя и доля; щелчок или Enter увеличивает блок, Esc возвращает к корню. Стеки тоньше 0,1&nbsp;% слиты в блок «прочее» над ближайшей вызвавшей их функцией, которая сама толще порога.
     </p>
     <SegmentedToggle label="Тип выборки" :options="kindOptions" :model-value="state.kind" @update:model-value="(kind) => dispatch({ type: 'select-kind', kind })" />
     <div class="panel">
-      <label class="search" for="flame-search">
+      <label class="search" :for="searchId">
         <span>Поиск функции</span>
-        <input id="flame-search" type="search" :value="state.query" placeholder="например, json или argon2" autocomplete="off" spellcheck="false" @input="onSearch" />
+        <input :id="searchId" type="search" :value="state.query" placeholder="например, json или argon2" autocomplete="off" spellcheck="false" @input="onSearch" />
       </label>
       <button type="button" :disabled="state.focusId === 'r'" @click="dispatch({ type: 'reset' })">К корню</button>
     </div>

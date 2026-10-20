@@ -289,11 +289,17 @@ heap=$(printf '%s\n' "$out" | grep -c '"where":"heap"' || true)
 stack=$(printf '%s\n' "$out" | grep -c '"where":"stack"' || true)
 [ "$heap" -ge 1 ] && [ "$stack" -ge 1 ] || fail "alloc/escape: heap $heap, stack $stack — ждали оба:
 $out"
-ok "alloc/escape: $records вариантов, в куче $heap, на стеке $stack"
+# Песочница escape-lab читает снимок вывода dump из курса: снимок обязан совпадать с выводом,
+# иначе после правки примеров песочница покажет старые решения компилятора.
+lab_json=../course/viz/data/escape-lab.json
+snapshot_diff=$(printf '%s\n' "$out" | diff "$lab_json" - 2>&1) || fail "alloc/escape: $lab_json расходится с выводом dump; обновите его: go run ./1-5/alloc/escape/dump > $lab_json
+$snapshot_diff"
+ok "alloc/escape: $records вариантов, в куче $heap, на стеке $stack; $lab_json совпадает с выводом dump"
 
 # --- 14. alloc/stack: рост стека копированием ---
 build stack ./1-5/alloc/stack
-out=$("$bin/stack")
+out=$("$bin/stack") || fail "alloc/stack упал:
+$out"
 has_header "$out" || fail "alloc/stack: нет шапки:
 $out"
 st_before=$(first_number "$out" 'глубина +100000: стеки до +([0-9]+) КиБ')
@@ -305,8 +311,11 @@ ok "alloc/stack: на глубине 100000 стеки выросли с $st_bef
 
 # --- 15. gc/gctrace: GOGC меняет число циклов (урок 1.5.9) ---
 build gctrace ./1-5/gc/gctrace
-out50=$(GOGC=50 GODEBUG=gctrace=1 "$bin/gctrace" -dur 1s 2>"$bin/gctrace.err")
-out400=$(GOGC=400 "$bin/gctrace" -dur 1s)
+out50=$(GOGC=50 GODEBUG=gctrace=1 "$bin/gctrace" -dur 1s 2>"$bin/gctrace.err") || fail "gc/gctrace с GOGC=50 упал:
+$out50
+$(tail -n 20 "$bin/gctrace.err")"
+out400=$(GOGC=400 "$bin/gctrace" -dur 1s) || fail "gc/gctrace с GOGC=400 упал:
+$out400"
 has_header "$out50" || fail "gc/gctrace: нет шапки:
 $out50"
 grep -Eq '^gc [0-9]+ @' "$bin/gctrace.err" || fail "gc/gctrace: GODEBUG=gctrace=1 не напечатал строк циклов:

@@ -27,7 +27,7 @@ export interface VariantDef {
   toggleText: string
   // Фрагменты исходника дословно из labs/1-5/alloc/escape/cases/*.go; последним идёт сама функция Case….
   source: readonly string[]
-  rule: Caption
+  rule: readonly CaptionSegment[] // всегда сегменты: подпись склеивается с префиксом вердикта
   caveat?: Caveat
 }
 
@@ -64,7 +64,7 @@ export const CASES: readonly CaseDef[] = [
 	p := &point{x: 1, y: 2}
 	ch <- *p
 }`],
-        rule: [ESCAPE, t(' видит, что в канал уходит копия: сам объект остаётся в кадре и на '), term('стеке', 'goroutine-stack'), t('.')],
+        rule: [t('Компилятор видит, что в канал уходит копия: сам объект остаётся в кадре и на '), term('стеке', 'goroutine-stack'), t('.')],
       },
       {
         id: 'pointer',
@@ -166,7 +166,7 @@ func repeat(k int, f func()) {
 	return describe(p)
 }`,
         ],
-        rule: [ESCAPE, t(' видит тело describe и знает, что указатель не сохраняется; к тому же вызов '), term('встраивается', 'inlining'), t('.')],
+        rule: [t('Компилятор видит тело describe и знает, что указатель не сохраняется; к тому же вызов '), term('встраивается', 'inlining'), t('.')],
       },
       {
         id: 'println',
@@ -412,7 +412,7 @@ export const escapeLabSimulation: Simulation<EscapeLabState, EscapeLabAction, Es
       decisive: decisiveLines(record),
       caveat: v.caveat ?? null,
     }
-    const caption: Caption = [ESCAPE, t(`: ${VERDICT_WORD[verdict]}. `), ...(typeof v.rule === 'string' ? [t(v.rule)] : v.rule)]
+    const caption: Caption = [ESCAPE, t(`: ${VERDICT_WORD[verdict]}. `), ...v.rule]
     return [{ state: frame, caption }]
   },
 }

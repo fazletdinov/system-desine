@@ -21,7 +21,7 @@ const onHeap = computed(() => props.frame.verdict !== 'stack')
 <template>
   <div class="escape" :data-verdict="frame.verdict">
     <div class="verdict">
-      <span class="badge" :class="`is-${frame.verdict}`" role="status">
+      <span class="badge" :class="`is-${frame.verdict}`">
         <span aria-hidden="true">{{ badge.icon }}</span> {{ badge.text }}
       </span>
       <span class="case">{{ frame.caseTitle }}</span>

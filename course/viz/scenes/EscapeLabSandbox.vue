@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, useId } from 'vue'
 import T from '../../components/T.vue'
 import VizFrame from '../components/VizFrame.vue'
 import SegmentedToggle from '../components/SegmentedToggle.vue'
@@ -7,6 +7,7 @@ import EscapeLabView from '../renderers/EscapeLabView.vue'
 import { captionSegments } from '../core/caption'
 import { CASES, escapeLabSimulation as sim, type EscapeLabAction } from '../simulations/escape-lab'
 
+const caseSelectId = useId()
 const state = ref(sim.initial())
 const step = computed(() => sim.steps(state.value)[0]!)
 const current = computed(() => CASES.find((c) => c.id === state.value.caseId)!)
@@ -22,8 +23,8 @@ const onCase = (event: Event): void => dispatch({ type: 'select-case', caseId: (
   <VizFrame label="Песочница: куда компилятор кладёт объект">
     <p class="intro">Выберите пример и переключите одну деталь в коде. Плашка, код и строки компилятора — настоящий вывод <code>go build -gcflags=-m=1</code> для этих функций, снятый программой из лабы.</p>
     <div class="panel">
-      <label class="row-label" for="escape-case">Пример</label>
-      <select id="escape-case" :value="state.caseId" @change="onCase">
+      <label class="row-label" :for="caseSelectId">Пример</label>
+      <select :id="caseSelectId" :value="state.caseId" @change="onCase">
         <option v-for="c in CASES" :key="c.id" :value="c.id">{{ c.title }}</option>
       </select>
     </div>
