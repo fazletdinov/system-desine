@@ -26,7 +26,7 @@
 - `gcBackgroundUtilization = 0.25`; ограничитель CPU GC (`mgclimit.go`) — «очень консервативный предел 50 %», дырявое ведро, включён всегда (лимит памяти в `mgclimit.go` не проверяется; рулинг R12), главный сценарий — живая куча выше `GOMEMLIMIT`.
 - `stackMin = 2048`; начальный размер стека пересчитывается каждой сборкой по среднему (`stack.go`).
 - `MemProfileRate = 512 * 1024`; CPU-профилировщик по умолчанию 100 Гц.
-- `net/http/pprof`: `Index`, `Cmdline`, `Profile`, `Symbol`, `Trace`, `Handler(name string) http.Handler`. `pprof.Profile` сам отвечает ошибкой, если `seconds` больше `WriteTimeout` сервера.
+- `net/http/pprof`: `Index`, `Cmdline`, `Profile`, `Symbol`, `Trace`, `Handler(name string) http.Handler`. `pprof.Profile`, `Trace` и дельта-профили **не** отказывают при `seconds` больше `WriteTimeout`: `configureWriteDeadline` продлевает дедлайн записи до `WriteTimeout + seconds` (`net/http/pprof/pprof.go:122-130`), поэтому единственный потолок — свой `MaxProfileDuration`.
 - Netpoller: `netpoll_epoll.go` регистрирует сокет с `EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET` (edge-triggered); `netpoll` вызывают `findRunnable` (неблокирующе и блокирующе), `startTheWorldWithSema` и `sysmon` (если сеть не опрашивали > 10 мс).
 - `goroutineleak` — обычный профиль в 1.27 (без флага).
 - Не проверено по исходникам — сверить по release notes в задаче урока: версии появления `GOMEMLIMIT` (1.19), гибридного барьера (1.8), учёта стеков и глобальных в цели кучи (1.18), `testing.B.Loop`/`runtime.AddCleanup`/`weak` (1.24), `FlightRecorder` (1.25), цена трассировщика после 1.21.

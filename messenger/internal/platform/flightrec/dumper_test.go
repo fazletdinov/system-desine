@@ -54,8 +54,8 @@ func newDumper(t *testing.T, src flightrec.Snapshotter, dir string) *flightrec.D
 	return d
 }
 
-// slowFor — обработчик, который отвечает через d виртуального времени. Ждёт таймер, а
-// не time.Sleep: в пузыре это одно и то же, но таймер нагляднее говорит «ждём срок».
+// slowFor — обработчик, который отвечает через d виртуального времени. Ждёт таймер,
+// а не засыпает: в пузыре это одно и то же, но таймер нагляднее говорит «ждём срок».
 func slowFor(d time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		<-time.After(d)
@@ -140,6 +140,14 @@ func TestDumperWritesOnSlowRequest(t *testing.T) {
 		if string(body) != "trace" {
 			t.Fatalf("содержимое %q, ждали снимок источника", body)
 		}
+		// В трассе стеки горутин: читать снимок может только владелец.
+		info, err := os.Stat(files[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode := info.Mode().Perm(); mode != 0o600 {
+			t.Fatalf("права снимка %v, ждали 0600", mode)
+		}
 		if err := stop(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -217,6 +225,83 @@ func TestDumperStopsOnCancel(t *testing.T) {
 
 		if err := stop(); err != nil {
 			t.Fatalf("Run после отмены: %v, want nil", err)
+		}
+	})
+}
+
+// TestDumperDoesNotOverwrite — путь снимка уже занят: чужой файл не перезаписывается.
+func TestDumperDoesNotOverwrite(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		src := &fakeSnapshot{}
+		d := newDumper(t, src, dir)
+		stop := runDumper(t, d)
+		// Run возьмёт время сразу после ответа — через threshold + 1ms от этой точки.
+		name := "flight-" + time.Now().Add(threshold+time.Millisecond).UTC().Format("20060102T150405Z") + ".trace"
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("чужое"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		request(t, d.Middleware(slowFor(threshold+time.Millisecond)))
+		synctest.Wait()
+
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != "чужое" || src.count() != 0 {
+			t.Fatalf("содержимое %q, вызовов WriteTo %d: ждали нетронутый файл", body, src.count())
+		}
+		if err := stop(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
+// stepClock — часы, которые тест переводит сам.
+type stepClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *stepClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *stepClock) set(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = t
+}
+
+// TestDumperSurvivesClockStepBack — часы перевели назад на час: снимки не замолкают
+// на час + MinInterval.
+func TestDumperSurvivesClockStepBack(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		start := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+		clk := &stepClock{now: start}
+		d, err := flightrec.NewDumper(&fakeSnapshot{}, dir, threshold, clk, discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stop := runDumper(t, d)
+		h := d.Middleware(slowFor(threshold + time.Millisecond))
+
+		request(t, h)
+		synctest.Wait()
+		clk.set(start.Add(-time.Hour))
+		request(t, h)
+		synctest.Wait()
+
+		if files := traces(t, dir); len(files) != 2 {
+			t.Fatalf("снимков %d, ждали 2: после перевода часов назад снимок должен записаться", len(files))
+		}
+		if err := stop(); err != nil {
+			t.Fatalf("Run: %v", err)
 		}
 	})
 }

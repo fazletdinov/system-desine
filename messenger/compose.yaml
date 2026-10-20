@@ -36,8 +36,11 @@ services:
       # только для чтения, а /tmp — tmpfs. docker compose cp tmpfs не видит, поэтому на
       # стенде файл только отмечается в журнале, а сам снимок берут с GET /debug/flight;
       # в продакшене каталог — том, который забирает агент сбора.
-      MESSENGER_DEBUG_ADDR: ${MESSENGER_DEBUG_ADDR:-:6060}
-      MESSENGER_FLIGHT_DIR: ${MESSENGER_FLIGHT_DIR:-/tmp}
+      # Форма ${VAR-…} без двоеточия: умолчание — только если переменная не задана,
+      # поэтому явное пустое значение выключает (MESSENGER_DEBUG_ADDR= docker compose up
+      # — без служебного порта; тогда обнулите и MESSENGER_FLIGHT_DIR, он требует порта).
+      MESSENGER_DEBUG_ADDR: ${MESSENGER_DEBUG_ADDR-:6060}
+      MESSENGER_FLIGHT_DIR: ${MESSENGER_FLIGHT_DIR-/tmp}
       MESSENGER_FLIGHT_THRESHOLD: ${MESSENGER_FLIGHT_THRESHOLD:-1s}
     secrets:
       - jwt_key

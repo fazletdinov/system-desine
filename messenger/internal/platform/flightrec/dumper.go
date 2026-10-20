@@ -27,6 +27,9 @@ type Clock interface {
 // файловые системы и инструменты), сортируется как строка.
 const fileTimeLayout = "20060102T150405Z"
 
+// snapshotFileMode — снимок читает только владелец процесса.
+const snapshotFileMode = 0o600
+
 // Dumper пишет снимок рекордера в каталог, когда запрос оказался медленнее порога.
 // Middleware только замечает медленный запрос и подаёт сигнал; файл пишет Run —
 // lifecycle.Component с владельцем-lifecycle, так что запись нескольких мегабайт не
@@ -98,7 +101,9 @@ func (d *Dumper) Run(ctx context.Context) error {
 		case <-d.trigger:
 		}
 		now := d.clk.Now()
-		if !d.last.IsZero() && now.Sub(d.last) < MinInterval {
+		// now.Before(d.last) — системные часы перевели назад: без этой проверки снимков
+		// не было бы, пока часы не догонят прежнюю отметку.
+		if !d.last.IsZero() && !now.Before(d.last) && now.Sub(d.last) < MinInterval {
 			continue
 		}
 		// Отметка — и при неудаче: иначе каждый медленный запрос снова бился бы в
@@ -114,7 +119,9 @@ func (d *Dumper) Run(ctx context.Context) error {
 // go tool trace и только сбила бы с толку.
 func (d *Dumper) dump(now time.Time) (err error) {
 	path := filepath.Join(d.dir, "flight-"+now.UTC().Format(fileTimeLayout)+".trace")
-	f, err := os.Create(path)
+	// 0600 — в трассе стеки горутин, как в pprof; O_EXCL — не перезаписывать и не идти
+	// по чужой ссылке, если путь уже кем-то занят.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, snapshotFileMode)
 	if err != nil {
 		return fmt.Errorf("flightrec: %w", err)
 	}

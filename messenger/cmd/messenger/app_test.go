@@ -630,7 +630,12 @@ func TestLoadDebugConfig(t *testing.T) {
 		{"адрес задан — включён", map[string]string{envDebugAddr: ":6060"}, want{":6060", "", time.Second}, ""},
 		{"адрес и каталог снимков", map[string]string{envDebugAddr: ":6060", envFlightDir: dir}, want{":6060", dir, time.Second}, ""},
 		{"порог из окружения", map[string]string{envDebugAddr: ":6060", envFlightThreshold: "500ms"}, want{":6060", "", 500 * time.Millisecond}, ""},
+		{"адрес с хостом", map[string]string{envDebugAddr: "127.0.0.1:6060"}, want{"127.0.0.1:6060", "", time.Second}, ""},
 		{"адрес без двоеточия", map[string]string{envDebugAddr: "6060"}, want{}, envDebugAddr},
+		{"пустой порт", map[string]string{envDebugAddr: "localhost:"}, want{}, envDebugAddr},
+		{"порт — не число", map[string]string{envDebugAddr: ":abc"}, want{}, envDebugAddr},
+		{"порт 0 — случайный", map[string]string{envDebugAddr: ":0"}, want{}, envDebugAddr},
+		{"порт больше 65535", map[string]string{envDebugAddr: ":65536"}, want{}, envDebugAddr},
 		{"каталог без адреса", map[string]string{envFlightDir: dir}, want{}, envDebugAddr},
 		{"несуществующий каталог", map[string]string{envDebugAddr: ":6060", envFlightDir: filepath.Join(dir, "нет")}, want{}, envFlightDir},
 		{"файл вместо каталога", map[string]string{envDebugAddr: ":6060", envFlightDir: file}, want{}, envFlightDir},
@@ -668,9 +673,16 @@ func TestLoadDebugConfig(t *testing.T) {
 // его сам и не идёт параллельно с другими такими же.
 func debugApp(t *testing.T, flightDir string) *app {
 	t.Helper()
+	return debugAppWith(t, flightDir, time.Second, slog.New(slog.DiscardHandler))
+}
+
+// debugAppWith — то же с порогом и журналом теста. Адрес не занимается: сервер
+// запускает только lifecycle.
+func debugAppWith(t *testing.T, flightDir string, threshold time.Duration, log *slog.Logger) *app {
+	t.Helper()
 	cfg := testConfig(t)
-	cfg.DebugAddr, cfg.FlightDir, cfg.FlightThreshold = "127.0.0.1:0", flightDir, time.Second
-	a, err := newApp(cfg, slog.New(slog.DiscardHandler))
+	cfg.DebugAddr, cfg.FlightDir, cfg.FlightThreshold = "127.0.0.1:6060", flightDir, threshold
+	a, err := newApp(cfg, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -710,8 +722,8 @@ func TestNewAppDebugEnabled(t *testing.T) {
 	})
 	t.Run("служебный порт и снимки в каталог", func(t *testing.T) {
 		a := debugApp(t, t.TempDir())
-		if got := backNames(a); !slices.Contains(got, "debug") || !slices.Contains(got, "flight-dumper") {
-			t.Fatalf("фоновые компоненты %v: ждали debug и flight-dumper", got)
+		if got := backNames(a); !slices.Contains(got, "debug") || !slices.Contains(got, "flight-dumper") || a.recorder == nil {
+			t.Fatalf("фоновые компоненты %v, рекордер %v: ждали debug, flight-dumper и рекордер", got, a.recorder)
 		}
 	})
 }
@@ -731,5 +743,55 @@ func TestPprofNotOnMainPort(t *testing.T) {
 	c.expect(r, http.StatusNotFound, "GET /debug/pprof/ на основном порту")
 	if !strings.HasPrefix(r.header.Get("Content-Type"), "application/problem+json") {
 		t.Fatalf("Content-Type %q", r.header.Get("Content-Type"))
+	}
+}
+
+// signalWriter — журнал, который закрывает done, когда в него пишут строку с want:
+// тест ждёт события, а не срока.
+type signalWriter struct {
+	want string
+	once sync.Once
+	done chan struct{}
+}
+
+func (w *signalWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), w.want) {
+		w.once.Do(func() { close(w.done) })
+	}
+	return len(p), nil
+}
+
+// TestFlightMiddlewareInAPIChain — с каталогом снимков запрос через основной
+// обработчик доходит до Dumper: порог 1 нс, любой запрос «медленный», и настоящий
+// рекордер пишет файл. Без замера в цепочке API файла бы не было.
+func TestFlightMiddlewareInAPIChain(t *testing.T) {
+	dir := t.TempDir()
+	logs := &signalWriter{want: "снимок flight recorder записан", done: make(chan struct{})}
+	a := debugAppWith(t, dir, time.Nanosecond, slog.New(slog.NewJSONHandler(logs, nil)))
+	i := slices.IndexFunc(a.back, func(c lifecycle.Component) bool { return c.Name() == "flight-dumper" })
+	if i < 0 {
+		t.Fatalf("фоновые компоненты %v: нет flight-dumper", backNames(a))
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- a.back[i].Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("flight-dumper: %v", err)
+		}
+	})
+
+	rec := httptest.NewRecorder()
+	a.handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/users/me", nil))
+
+	select {
+	case <-logs.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("снимок не записан: замер медленных запросов не в цепочке API")
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "flight-*.trace"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("снимки %v, ошибка %v: ждали один файл", files, err)
 	}
 }

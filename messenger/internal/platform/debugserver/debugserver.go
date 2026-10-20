@@ -19,8 +19,10 @@ import (
 
 const (
 	// MaxProfileDuration — потолок ?seconds у CPU-профиля, трассы и дельта-профилей.
-	// Минуты CPU-профиля хватает с запасом (по умолчанию pprof снимает 30 с), а без
-	// потолка ?seconds=600 держал бы соединение и профилировщик десять минут.
+	// Минуты CPU-профиля хватает с запасом (по умолчанию pprof снимает 30 с). Это
+	// единственный потолок: pprof сам не отказывает в долгом профиле, а продлевает
+	// дедлайн записи до WriteTimeout + seconds (configureWriteDeadline в
+	// net/http/pprof), и ?seconds=600 держал бы соединение и профилировщик 10 минут.
 	MaxProfileDuration = 60 * time.Second
 	// StopTimeout — сколько остановка ждёт начатые запросы. Меньше
 	// lifecycle.BackStopTimeout (2 с), чтобы уложиться в срок фоновых компонентов:
@@ -39,9 +41,10 @@ const (
 	// readHeaderTimeout — как у основного сервера (httpserver, урок 0b.6): обрывает
 	// Slowloris. Константа httpserver не экспортирована, а повод тот же.
 	readHeaderTimeout = 5 * time.Second
-	// writeMargin — запас записи сверх самого длинного профиля: профиль на
-	// MaxProfileDuration ещё надо отдать клиенту. pprof сам отказывает, если seconds
-	// больше WriteTimeout сервера, — наш потолок срабатывает раньше и понятнее.
+	// writeMargin — запас сверх MaxProfileDuration в WriteTimeout. Долгим профилям
+	// pprof сам продлевает дедлайн на seconds; WriteTimeout ограничивает остальные
+	// ответы — goroutine?debug=2 на тысячах горутин и /debug/flight (до MaxBytes
+	// рекордера) на медленном канале оператора.
 	writeMargin = 10 * time.Second
 	// idleTimeout — простой keep-alive соединения между запросами, как у основного.
 	idleTimeout = 60 * time.Second
@@ -72,7 +75,8 @@ func NewHandler(flight Snapshotter) http.Handler {
 
 // flightSnapshot отдаёт снимок файлом для go tool trace. Снимок сначала собирается в
 // память (до MaxBytes рекордера): ошибка на середине иначе пришла бы после статуса
-// 200 и выглядела бы у клиента как обрезанный, но «успешный» файл.
+// 200 и выглядела бы у клиента как обрезанный, но «успешный» файл. Буфер — на каждый
+// запрос; это терпимо: порт служебный, на loopback, и снимает его оператор, а не трафик.
 func flightSnapshot(flight Snapshotter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		var buf bytes.Buffer

@@ -26,6 +26,14 @@ func (fakeFlight) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
+// failingFlight — снимок, который ломается на середине записи.
+type failingFlight struct{}
+
+func (failingFlight) WriteTo(w io.Writer) (int64, error) {
+	n, _ := io.WriteString(w, "flight-")
+	return int64(n), errors.New("снимок оборвался")
+}
+
 // get отправляет запрос в обработчик напрямую, без сервера.
 func get(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -96,6 +104,12 @@ func TestFlightEndpoint(t *testing.T) {
 		}
 		if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, `filename="flight.trace"`) {
 			t.Errorf("Content-Disposition %q", cd)
+		}
+	})
+	t.Run("ошибка снимка — 500, а не обрезанный файл", func(t *testing.T) {
+		rec := get(t, debugserver.NewHandler(failingFlight{}), "/debug/flight")
+		if rec.Code != http.StatusInternalServerError || rec.Header().Get("Content-Disposition") != "" {
+			t.Fatalf("статус %d, заголовки %v", rec.Code, rec.Header())
 		}
 	})
 	t.Run("без рекордера — 404", func(t *testing.T) {

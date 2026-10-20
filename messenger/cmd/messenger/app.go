@@ -186,8 +186,8 @@ const defaultFlightThreshold = time.Second
 func loadDebug(cfg *config) error {
 	cfg.DebugAddr = os.Getenv(envDebugAddr)
 	if cfg.DebugAddr != "" {
-		if _, _, err := net.SplitHostPort(cfg.DebugAddr); err != nil {
-			return fmt.Errorf("%s: ожидается host:port или :port: %w", envDebugAddr, err)
+		if err := checkListenAddr(cfg.DebugAddr); err != nil {
+			return fmt.Errorf("%s: %w", envDebugAddr, err)
 		}
 	}
 	cfg.FlightDir = os.Getenv(envFlightDir)
@@ -210,6 +210,20 @@ func loadDebug(cfg *config) error {
 	}
 	if cfg.FlightThreshold >= flightrec.Window {
 		return fmt.Errorf("%s: порог должен быть меньше %s (окно flight recorder), получено %s", envFlightThreshold, flightrec.Window, cfg.FlightThreshold)
+	}
+	return nil
+}
+
+// checkListenAddr — host:port с числовым портом 1–65535. SplitHostPort один пропустил
+// бы "localhost:" (сервер молча занял бы случайный порт, и профили искали бы не там)
+// и ":abc" (ошибка всплыла бы только при запуске слушателя).
+func checkListenAddr(addr string) error {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("ожидается host:port или :port: %w", err)
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("порт должен быть числом от 1 до 65535, получено %q", port)
 	}
 	return nil
 }
