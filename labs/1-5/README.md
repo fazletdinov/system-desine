@@ -32,7 +32,8 @@
 │   ├── gctrace/         # GOGC и GOMEMLIMIT: циклы, доля CPU, цель кучи
 │   ├── limiter/         # ограничитель CPU сборщика выше GOMEMLIMIT
 │   └── greentea/        # бенчмарк разметки: Green Tea против прежней
-└── pgo/                 # урок 1.5.10: горячий путь, бенчмарк без профиля и с default.pgo
+├── pgo/                 # урок 1.5.10: горячий путь, бенчмарк без профиля и с default.pgo
+└── fold/                # урок 1.5.10: вывод go tool pprof -traces → JSON для песочницы flamegraph
 ```
 
 ## Запуск
