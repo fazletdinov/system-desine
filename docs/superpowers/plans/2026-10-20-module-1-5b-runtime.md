@@ -350,3 +350,19 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error // для т�
 - [ ] **Step 5: Playwright** на 375 и 1280 px, тёмная и светлая тема, уроки 1.5.7–1.5.11 (`npx vitepress preview . --port 4196`): нет горизонтальной прокрутки; каждая песочница реагирует на действие; полноэкранный режим открывается и закрывается Esc; mermaid без обрезки подписей; flame graph — зум и поиск работают с клавиатуры.
 - [ ] **Step 6: README** — модуль 1.5 целиком, новые переменные мессенджера, служебный порт.
 - [ ] **Step 7: Commit** — `docs: итог части 1.5b — страница модуля, связи уроков, README, бэклог`. Затем — ревью всей ветки и PR в `main` с согласия пользователя.
+
+---
+
+### Task 13: Курс на `pgx` вместо `database/sql` (указание пользователя, 2026-10-20)
+
+**Files:** Modify: `course/modules/00-foundation/{02-what-is-system-design,04-latency}.md`, `course/modules/01-go-service/{01-architecture,03-errors,04-usecases,05-context,07-http-adapter}.md`, `course/interview/module-01.yaml`, `course/viz/simulations/deps.ts` (+ тест), `course/viz/renderers/DepsView.vue`, `course/scripts/go-harness/sql-pool.go.tmpl` (→ `pgx-pool.go.tmpl`), `course/scripts/check-go-snippets.ts` (зависимость `github.com/jackc/pgx/v5` в `go.mod` обвязки), `messenger/.golangci.yml`
+
+**Interfaces:** Produces: правило курса «Postgres — `github.com/jackc/pgx/v5`, пул — `pgxpool`; `database/sql` — только как контраст»; модуль 2a стартует с него.
+
+- [ ] **Step 1: Урок 0.2.** Вступительная история («`sql.DB` по умолчанию не ограничивает пул») переписывается под `pgxpool`: у `pgxpool.Config.MaxConns` по умолчанию `max(4, runtime.NumCPU())` (сверить в исходниках `pgxpool` нужной версии); `too many clients` возникает, когда экземпляров × `MaxConns` больше `max_connections` (автомасштабирование подняло экземпляры). Текст ошибки — как его выводит pgx (сверить), источники — документация `pgxpool` вместо `database/sql`.
+- [ ] **Step 2: Урок 0.4.** Расчёт пула по закону Литтла → `config.MaxConns = 80` у `pgxpool.ParseConfig`; фрагмент `<!-- go-check: harness=pgx-pool -->` компилируется.
+- [ ] **Step 3: Антипримеры модуля 1** (1.1, 1.4, 1.5, 1.7): `*sql.DB` → `*pgxpool.Pool`, вызовы — API pgx (`QueryRow(ctx, …)`, `pgx.ErrNoRows`); урок 1.3 и вопрос банка интервью — `pgx.ErrNoRows` вместо `sql.ErrNoRows`. Смысл антипримеров не меняется.
+- [ ] **Step 4: Песочница `deps`** — внешний пакет `github.com/jackc/pgx/v5` вместо `database/sql` (слой — внешняя зависимость, подпись), тесты обновить.
+- [ ] **Step 5: depguard мессенджера** — `github.com/jackc/pgx` в `deny` для `domain` и `usecase` (рядом с `database/sql`, которое остаётся).
+- [ ] **Step 6: Проверить** — `npm test && npm run check:go && npm run build && npm run check:refs`; в `messenger/` — `golangci-lint run`; Expected: PASS; `git grep -n "database/sql\|sql\.DB" -- course messenger` — только намеренные контрасты и правила `deny`.
+- [ ] **Step 7: Commit** — `docs(course): Postgres через pgx вместо database/sql`.
