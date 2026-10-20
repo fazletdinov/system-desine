@@ -5,9 +5,9 @@ import type { Simulation, Step } from '../core/types'
 export type Pkg =
   | 'user/domain' | 'user/usecase' | 'user/adapters/memory' | 'user/adapters/httpapi'
   | 'chat/domain' | 'chat/usecase' | 'chat/adapters/memory' | 'chat/adapters/httpapi' | 'chat/adapters/userchecker'
-  | 'platform/clock' | 'cmd/messenger' | 'net/http' | 'database/sql'
+  | 'platform/clock' | 'cmd/messenger' | 'net/http' | 'github.com/jackc/pgx/v5'
 
-export type Layer = 'domain' | 'usecase' | 'adapter' | 'platform' | 'root' | 'stdlib'
+export type Layer = 'domain' | 'usecase' | 'adapter' | 'platform' | 'root' | 'stdlib' | 'external'
 
 export const PACKAGES: readonly { id: Pkg; layer: Layer }[] = [
   { id: 'user/domain', layer: 'domain' }, { id: 'chat/domain', layer: 'domain' },
@@ -16,7 +16,8 @@ export const PACKAGES: readonly { id: Pkg; layer: Layer }[] = [
   { id: 'chat/adapters/memory', layer: 'adapter' }, { id: 'chat/adapters/httpapi', layer: 'adapter' },
   { id: 'chat/adapters/userchecker', layer: 'adapter' },
   { id: 'platform/clock', layer: 'platform' }, { id: 'cmd/messenger', layer: 'root' },
-  { id: 'net/http', layer: 'stdlib' }, { id: 'database/sql', layer: 'stdlib' },
+  // pgx — драйвер PostgreSQL курса: сторонний модуль, импортировать его вправе только адаптер хранилища.
+  { id: 'net/http', layer: 'stdlib' }, { id: 'github.com/jackc/pgx/v5', layer: 'external' },
 ]
 
 export type Edge = readonly [Pkg, Pkg]
@@ -66,9 +67,9 @@ export function checkImport(from: Pkg, to: Pkg, edges: readonly Edge[]): Violati
   if (fl === 'domain' && to !== from)
     return V('domain-pure', 'Домен зависит от внешнего мира',
       `Домен должен импортировать только стандартную библиотеку без транспорта и хранилищ. С этим импортом смена ${to} заставит переписывать бизнес-правила, а тесты домена потянут за собой инфраструктуру.`)
-  if (fl === 'usecase' && (tl === 'adapter' || tl === 'platform' || tl === 'stdlib'))
+  if (fl === 'usecase' && (tl === 'adapter' || tl === 'platform' || tl === 'stdlib' || tl === 'external'))
     return V('usecase-ports', 'Use case зависит от конкретики',
-      `Use case должен видеть только порты — интерфейсы, объявленные у него же. Зависимость от ${to} привяжет сценарий к одной реализации: заменить хранилище на Postgres или подменить часы в тесте станет нельзя без правки use case.`)
+      `Use case должен видеть только порты — интерфейсы, объявленные у него же. Зависимость от ${to} привяжет сценарий к одной реализации: сменить хранилище или подменить часы в тесте станет нельзя без правки use case.`)
   if (fl === 'adapter' && tl === 'adapter')
     return V('adapter-adapter', 'Адаптер знает о другом адаптере',
       'Адаптеры — сменные детали снаружи. Если HTTP-адаптер знает про хранилище в памяти, замена хранилища сломает транспорт. Связь между ними идёт только через use case.')
@@ -83,7 +84,7 @@ export function checkImport(from: Pkg, to: Pkg, edges: readonly Edge[]): Violati
 }
 
 export const CANDIDATES: readonly { from: Pkg; to: Pkg }[] = [
-  { from: 'chat/domain', to: 'net/http' }, { from: 'chat/domain', to: 'database/sql' },
+  { from: 'chat/domain', to: 'net/http' }, { from: 'chat/domain', to: 'github.com/jackc/pgx/v5' },
   { from: 'chat/domain', to: 'chat/adapters/memory' }, { from: 'chat/usecase', to: 'chat/adapters/memory' },
   { from: 'chat/usecase', to: 'platform/clock' }, { from: 'chat/usecase', to: 'user/usecase' },
   { from: 'user/adapters/memory', to: 'user/adapters/httpapi' }, { from: 'chat/adapters/userchecker', to: 'user/adapters/memory' },

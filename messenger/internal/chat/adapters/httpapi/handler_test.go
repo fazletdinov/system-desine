@@ -685,7 +685,7 @@ func TestErrorMapping(t *testing.T) {
 
 func TestInternalErrorHidesDetails(t *testing.T) {
 	mux, logs := server(t, fakes{list: fakeList{fn: func(context.Context, usecase.ListMessagesQuery) (usecase.MessagePage, error) {
-		return usecase.MessagePage{}, errors.New("секрет БД: pq: password authentication failed for user messenger")
+		return usecase.MessagePage{}, errors.New("секрет БД: FATAL: password authentication failed for user \"messenger\" (SQLSTATE 28P01)")
 	}}})
 
 	w := do(t, mux, request{method: http.MethodGet, target: "/v1/chats/" + chatID + "/messages", userID: bobID})
@@ -693,7 +693,7 @@ func TestInternalErrorHidesDetails(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d, want 500", w.Code)
 	}
-	if strings.Contains(w.Body.String(), "секрет") || strings.Contains(w.Body.String(), "pq") {
+	if strings.Contains(w.Body.String(), "секрет") || strings.Contains(w.Body.String(), "SQLSTATE") {
 		t.Errorf("ответ раскрывает внутреннюю ошибку: %s", w.Body)
 	}
 	if !strings.Contains(logs.String(), "секрет БД") || !strings.Contains(logs.String(), `"level":"ERROR"`) {

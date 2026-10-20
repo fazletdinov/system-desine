@@ -32,6 +32,8 @@ linters:
               desc: "домен не знает про транспорт: HTTP — дело адаптера"
             - pkg: database/sql
               desc: "домен не знает про хранилище: оно за портом в usecase"
+            - pkg: github.com/jackc/pgx
+              desc: "домен не знает про хранилище: оно за портом в usecase"
             - pkg: encoding/json
               desc: "сериализация — в DTO адаптера, не в домене"
             - pkg: log/slog
@@ -66,6 +68,8 @@ linters:
             - pkg: net/http
               desc: "use case не знает про транспорт"
             - pkg: database/sql
+              desc: "use case не знает про хранилище"
+            - pkg: github.com/jackc/pgx
               desc: "use case не знает про хранилище"
             - pkg: github.com/google/uuid
               desc: "id приходят через порт IDGenerator"

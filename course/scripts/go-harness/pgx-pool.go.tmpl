@@ -1,0 +1,13 @@
+package snippet
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Обвязка для фрагмента урока 0.4: фрагмент — тело конструктора пула.
+func newPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	// SNIPPET
+}

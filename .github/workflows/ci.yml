@@ -167,11 +167,14 @@ jobs:
           node-version-file: course/.nvmrc
           cache: npm
           cache-dependency-path: course/package-lock.json
-      # check:go компилирует Go-фрагменты уроков.
+      # check:go компилирует Go-фрагменты уроков; внешние модули фрагментов (pgx)
+      # закреплены в course/scripts/go-harness/go.sum и тоже попадают в кэш.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: messenger/go.sum
+          cache-dependency-path: |
+            messenger/go.sum
+            course/scripts/go-harness/go.sum
       - run: npm ci
       - run: npm test
       - run: npm run typecheck

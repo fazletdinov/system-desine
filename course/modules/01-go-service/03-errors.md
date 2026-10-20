@@ -393,7 +393,7 @@ func Load(id string) error {
 
 **Логирование на каждом уровне.** Хранилище логирует и возвращает, use case логирует и возвращает, адаптер логирует — одна ошибка превращается в пять строк, и по логу уже не понять, сколько было сбоев. Обработай **или** верни. Контекст добавляется обёрткой, а логирует тот, кто принимает решение, — адаптер.
 
-**Чужие ошибки как часть своего API.** Адаптер хранилища возвращает `fmt.Errorf("find chat: %w", sql.ErrNoRows)`. Use case начинает проверять `errors.Is(err, sql.ErrNoRows)` — и теперь use case привязан к `database/sql`: смените хранилище на Redis, и проверка молча перестанет срабатывать. Обернув чужую ошибку через `%w`, вы делаете её частью своего контракта — об этом предупреждает и статья «Working with Errors in Go 1.13» в разделе «Whether to Wrap». Адаптер **переводит** ошибку библиотеки в доменную: `sql.ErrNoRows` → `domain.ErrChatNotFound`.
+**Чужие ошибки как часть своего API.** Адаптер хранилища возвращает `fmt.Errorf("find chat: %w", pgx.ErrNoRows)`. Use case начинает проверять `errors.Is(err, pgx.ErrNoRows)` — и теперь use case привязан к драйверу PostgreSQL `pgx`: смените хранилище на Redis, и проверка молча перестанет срабатывать. Обернув чужую ошибку через `%w`, вы делаете её частью своего контракта — об этом предупреждает и статья «Working with Errors in Go 1.13» в разделе «Whether to Wrap». Адаптер **переводит** ошибку библиотеки в доменную: `pgx.ErrNoRows` → `domain.ErrChatNotFound`.
 
 </Callout>
 
@@ -431,9 +431,9 @@ func Load(id string) error {
 
 </SelfCheck>
 
-<SelfCheck question="Адаптер Postgres возвращает fmt.Errorf(&quot;find chat: %w&quot;, sql.ErrNoRows), а use case проверяет errors.Is(err, sql.ErrNoRows). Всё работает. Что не так?">
+<SelfCheck question="Адаптер Postgres возвращает fmt.Errorf(&quot;find chat: %w&quot;, pgx.ErrNoRows), а use case проверяет errors.Is(err, pgx.ErrNoRows). Всё работает. Что не так?">
 
-Use case теперь зависит от `database/sql` — деталь хранилища утекла через ошибку, нарушив <T id="dependency-rule">правило зависимостей</T>. Смените хранилище, и проверка молча перестанет срабатывать. Адаптер должен переводить ошибку библиотеки в доменную: на `sql.ErrNoRows` вернуть `domain.ErrChatNotFound`. Тогда use case проверяет только доменные ошибки и не знает, какая база за портом.
+Use case теперь зависит от драйвера `pgx` — деталь хранилища утекла через ошибку, нарушив <T id="dependency-rule">правило зависимостей</T>. Смените хранилище, и проверка молча перестанет срабатывать. Адаптер должен переводить ошибку библиотеки в доменную: на `pgx.ErrNoRows` вернуть `domain.ErrChatNotFound`. Тогда use case проверяет только доменные ошибки и не знает, какая база за портом.
 
 </SelfCheck>
 

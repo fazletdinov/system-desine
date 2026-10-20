@@ -462,21 +462,22 @@ package snippet
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type dbKey struct{}
 
 // Сигнатура врёт: кажется, что функции нужен только ctx.
 func CountChats(ctx context.Context) (int, error) {
-	db, ok := ctx.Value(dbKey{}).(*sql.DB)
+	db, ok := ctx.Value(dbKey{}).(*pgxpool.Pool)
 	if !ok {
 		return 0, errors.New("count chats: в контексте нет базы")
 	}
 	var n int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM chats`).Scan(&n); err != nil {
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM chats`).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count chats: %w", err)
 	}
 	return n, nil
