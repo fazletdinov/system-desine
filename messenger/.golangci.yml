@@ -149,6 +149,36 @@ linters:
           files: ["**/internal/platform/periodic/**", "!$test"]
           allow:
             - $gostd
+        # Служебный порт и flight recorder (урок 1.5.10, ADR-0013): технические пакеты
+        # без бизнес-контекстов. debugserver знает httpserver и порт рекордера (свой
+        # интерфейс), но не сам flightrec — их соединяет composition root.
+        debugserver:
+          list-mode: strict
+          files: ["**/internal/platform/debugserver/**", "!$test"]
+          allow:
+            - $gostd
+            - messenger/internal/platform/httpserver
+        flightrec:
+          list-mode: strict
+          files: ["**/internal/platform/flightrec/**", "!$test"]
+          allow:
+            - $gostd
+        # net/http/pprof — только в debugserver: это же запрещает пустой импорт
+        # _ "net/http/pprof", который молча вешает профили на http.DefaultServeMux.
+        pprof-only-debugserver:
+          list-mode: lax
+          files: ["$all", "!**/internal/platform/debugserver/**"]
+          deny:
+            - pkg: net/http/pprof
+              desc: "профили отдаёт только служебный порт (platform/debugserver, ADR-0013)"
+        # Рекордер — один на процесс; второй trace.FlightRecorder или trace.Start в
+        # обход него рантайм не даст или даст не там, где ждут.
+        trace-only-flightrec:
+          list-mode: lax
+          files: ["$all", "!**/internal/platform/flightrec/**"]
+          deny:
+            - pkg: runtime/trace
+              desc: "трасса выполнения — только через platform/flightrec (один рекордер на процесс)"
         platform:
           list-mode: lax
           files: ["**/internal/platform/**"]

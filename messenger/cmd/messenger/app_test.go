@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -606,5 +607,129 @@ func TestUncleanPathIsAPIError(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"path":"/v1//nope"`) {
 		t.Fatal("запроса нет в журнале доступа")
+	}
+}
+
+func TestLoadDebugConfig(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	type want struct {
+		addr, dir string
+		threshold time.Duration
+	}
+	cases := []struct {
+		name    string
+		env     map[string]string
+		want    want
+		wantErr string // непусто — ждём ошибку с этим текстом
+	}{
+		{"всё пусто — служебный порт выключен", nil, want{"", "", time.Second}, ""},
+		{"адрес задан — включён", map[string]string{envDebugAddr: ":6060"}, want{":6060", "", time.Second}, ""},
+		{"адрес и каталог снимков", map[string]string{envDebugAddr: ":6060", envFlightDir: dir}, want{":6060", dir, time.Second}, ""},
+		{"порог из окружения", map[string]string{envDebugAddr: ":6060", envFlightThreshold: "500ms"}, want{":6060", "", 500 * time.Millisecond}, ""},
+		{"адрес без двоеточия", map[string]string{envDebugAddr: "6060"}, want{}, envDebugAddr},
+		{"каталог без адреса", map[string]string{envFlightDir: dir}, want{}, envDebugAddr},
+		{"несуществующий каталог", map[string]string{envDebugAddr: ":6060", envFlightDir: filepath.Join(dir, "нет")}, want{}, envFlightDir},
+		{"файл вместо каталога", map[string]string{envDebugAddr: ":6060", envFlightDir: file}, want{}, envFlightDir},
+		{"порог не меньше окна рекордера", map[string]string{envFlightThreshold: "10s"}, want{}, "меньше 10s"},
+		{"порог — не срок", map[string]string{envFlightThreshold: "abc"}, want{}, envFlightThreshold},
+		{"нулевой порог", map[string]string{envFlightThreshold: "0s"}, want{}, envFlightThreshold},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, name := range []string{envDebugAddr, envFlightDir, envFlightThreshold} {
+				t.Setenv(name, c.env[name])
+			}
+			var cfg config
+
+			err := loadDebug(&cfg)
+
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("ошибка %v, ждали с %q", err, c.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := (want{cfg.DebugAddr, cfg.FlightDir, cfg.FlightThreshold}); got != c.want {
+				t.Fatalf("конфиг %+v, ждали %+v", got, c.want)
+			}
+		})
+	}
+}
+
+// debugApp — сборка со служебным портом; flightDir пусто — без снимков в файлы.
+// Сборка запускает настоящий flight recorder (один на процесс): тест останавливает
+// его сам и не идёт параллельно с другими такими же.
+func debugApp(t *testing.T, flightDir string) *app {
+	t.Helper()
+	cfg := testConfig(t)
+	cfg.DebugAddr, cfg.FlightDir, cfg.FlightThreshold = "127.0.0.1:0", flightDir, time.Second
+	a, err := newApp(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		a.recorder.Stop()
+		// Сборка включила выборку профилей конкуренции — возвращаем умолчания процесса.
+		runtime.SetMutexProfileFraction(0)
+		runtime.SetBlockProfileRate(0)
+	})
+	return a
+}
+
+func backNames(a *app) []string {
+	names := make([]string, 0, len(a.back))
+	for _, c := range a.back {
+		names = append(names, c.Name())
+	}
+	return names
+}
+
+func TestNewAppDebugDisabled(t *testing.T) {
+	a, err := newApp(testConfig(t), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := backNames(a); !reflect.DeepEqual(got, []string{"idempotency-sweeper"}) || a.recorder != nil {
+		t.Fatalf("фоновые компоненты %v, рекордер %v: ждали только очистку и без рекордера", got, a.recorder)
+	}
+}
+
+func TestNewAppDebugEnabled(t *testing.T) {
+	t.Run("служебный порт", func(t *testing.T) {
+		a := debugApp(t, "")
+		if got := backNames(a); !slices.Contains(got, "debug") || slices.Contains(got, "flight-dumper") || a.recorder == nil {
+			t.Fatalf("фоновые компоненты %v, рекордер %v: ждали debug без flight-dumper и с рекордером", got, a.recorder)
+		}
+	})
+	t.Run("служебный порт и снимки в каталог", func(t *testing.T) {
+		a := debugApp(t, t.TempDir())
+		if got := backNames(a); !slices.Contains(got, "debug") || !slices.Contains(got, "flight-dumper") {
+			t.Fatalf("фоновые компоненты %v: ждали debug и flight-dumper", got)
+		}
+	})
+}
+
+// TestPprofNotOnMainPort — даже со включённым служебным портом основной не отдаёт
+// профили: /debug/pprof/ для API — обычный неизвестный маршрут.
+func TestPprofNotOnMainPort(t *testing.T) {
+	a := debugApp(t, "")
+	srv := httptest.NewServer(a.handler)
+	t.Cleanup(srv.Close)
+	c := client{t: t, base: srv.URL, http: srv.Client()}
+	c.signUp("grace", "грейс ищет профили не там")
+	token := c.token("grace", "грейс ищет профили не там")
+
+	r := c.do(http.MethodGet, "/debug/pprof/", token, "")
+
+	c.expect(r, http.StatusNotFound, "GET /debug/pprof/ на основном порту")
+	if !strings.HasPrefix(r.header.Get("Content-Type"), "application/problem+json") {
+		t.Fatalf("Content-Type %q", r.header.Get("Content-Type"))
 	}
 }
