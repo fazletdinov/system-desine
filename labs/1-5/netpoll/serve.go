@@ -128,6 +128,7 @@ func serve(ctx context.Context, args []string) error {
 	fmt.Printf("режим: %s, ждём соединений: %d\n", *mode, *n)
 	fmt.Printf("слушаю %s\n", ln.Addr())
 
+	// #region accept
 	// Горутины-обработчики принадлежат serve: при выходе соединения закрываются, Wait дожидается всех.
 	var wg sync.WaitGroup
 	conns := make([]net.Conn, 0, *n)
@@ -151,6 +152,7 @@ func serve(ctx context.Context, args []string) error {
 		wg.Go(func() { handle(c) })
 	}
 	fmt.Printf("принято соединений: %d за %d мс\n", len(conns), time.Since(start).Milliseconds())
+	// #endregion accept
 
 	select {
 	case <-ctx.Done():

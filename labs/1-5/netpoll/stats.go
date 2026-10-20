@@ -107,6 +107,7 @@ type snapshot struct {
 	tcp        tcpStat
 }
 
+// #region snapshot
 func takeSnapshot() (snapshot, error) {
 	status, err := os.ReadFile("/proc/self/status")
 	if err != nil {
@@ -135,3 +136,5 @@ func takeSnapshot() (snapshot, error) {
 		tcp:        tcp,
 	}, nil
 }
+
+// #endregion snapshot
