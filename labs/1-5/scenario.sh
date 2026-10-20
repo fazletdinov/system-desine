@@ -66,9 +66,12 @@ for _ in 1 2; do
 done
 out_off=$(GODEBUG=asyncpreemptoff=1 "$bin/preempt")
 without=$(first_number "$out_off" 'main проснулся через ([0-9]+) мс')
+loop_off=$(first_number "$out_off" 'цикл работал ([0-9]+) мс')
 [ -n "$with" ] && [ "$with" -lt 100 ] || fail "sched/preempt: с вытеснением main проснулся через $with мс, ждали меньше 100:
 $out"
-[ -n "$without" ] && [ "$without" -ge 1000 ] || fail "sched/preempt: с asyncpreemptoff=1 main проснулся через $without мс, ждали не меньше 1000:
+# Цикл откалиброван по числу итераций, а не по часам: на раннере он короче секунды.
+# Без вытеснения main ждёт конца цикла, поэтому сравниваем с длительностью цикла (допуск 50 мс).
+[ -n "$without" ] && [ -n "$loop_off" ] && [ "$without" -ge 500 ] && [ $((without + 50)) -ge "$loop_off" ] || fail "sched/preempt: с asyncpreemptoff=1 main проснулся через $without мс при цикле $loop_off мс, ждали конца цикла (не меньше 500 мс):
 $out_off"
 ok "sched/preempt: main просыпается через $with мс; с asyncpreemptoff=1 — через $without мс"
 
