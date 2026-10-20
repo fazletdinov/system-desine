@@ -5,6 +5,8 @@ describe('lessonKicker', () => {
   it.each([
     ['modules/00-foundation/03-request-path.md', 'Модуль 0 · Урок 3'],
     ['modules/00-foundation/index.md', 'Модуль 0'],
+    ['modules/02-database/03-keys-types.md', 'Модуль 2 · Урок 3'],
+    ['modules/02-database/index.md', 'Модуль 2'],
     ['modules/00b-network/01-tcp.md', 'Модуль 0b · Урок 1'],
     ['modules/01-5-concurrency/02-gmp.md', 'Модуль 1.5 · Урок 2'],
     ['modules/13a-k8s/10-probes.md', 'Модуль 13a · Урок 10'],
