@@ -22,7 +22,8 @@ export const MEM_LIMIT_MIB = 256
 export const GOMEMLIMIT_MIB = 230
 
 // Параметры упрощённой модели: GOGC=100 и постоянный поток мусора.
-const GOGC_FACTOR = 2
+// GOGC_FACTOR, overhead и limitedGoal переиспользует песочница gc-pacer (урок 1.5.9).
+export const GOGC_FACTOR = 2
 const OVERHEAD_OF_LIVE = 0.1
 const ALLOC_MIB_PER_S = 120
 const TICK_S = 2
@@ -39,13 +40,16 @@ const TIMELINE: readonly { t: number; live: number }[] = [
   { t: 14, live: 120 },
 ]
 
-const overhead = (live: number): number => Math.round(live * OVERHEAD_OF_LIVE)
+// Память рантайма помимо кучи (стеки, служебные структуры), в долях живой кучи.
+export const overhead = (live: number): number => Math.round(live * OVERHEAD_OF_LIVE)
 
 // GOMEMLIMIT ограничивает всю память рантайма (куча, стеки, служебные данные),
 // поэтому на цель кучи остаётся лимит минус накладные расходы.
+export const limitedGoal = (natural: number, limitMiB: number, live: number): number => Math.min(natural, limitMiB - overhead(live))
+
 const goal = (live: number, withLimit: boolean): number => {
   const natural = live * GOGC_FACTOR
-  return withLimit ? Math.min(natural, GOMEMLIMIT_MIB - overhead(live)) : natural
+  return withLimit ? limitedGoal(natural, GOMEMLIMIT_MIB, live) : natural
 }
 
 function model(withLimit: boolean): MemFrame[] {
