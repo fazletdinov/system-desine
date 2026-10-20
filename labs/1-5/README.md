@@ -367,8 +367,8 @@ RSS:              до       5492 КиБ, после     568284 КиБ
 стеки горутин:    до        480 КиБ, после     400800 КиБ
 куча (объекты):   до        295 КиБ, после     478633 КиБ
 стеки для GC:     до          7 КиБ, после     139069 КиБ (/gc/scan/stack:bytes)
-sockstat до:      TCP: inuse 366 orphan 0 tw 1988 alloc 384 mem 185
-sockstat после:   TCP: inuse 200370 orphan 0 tw 1984 alloc 200388 mem 185
+sockstat до:      TCP: inuse 429 orphan 0 tw 9729 alloc 452 mem 167
+sockstat после:   TCP: inuse 200422 orphan 0 tw 2677 alloc 200445 mem 423
 ядро: TCP-сокетов +199993 (обе стороны, если клиент на этой машине), буферы +256 страниц (1024 КиБ)
 на соединение: RSS 5.6 КиБ, стеки 4.0 КиБ, куча 4.8 КиБ
 ```
@@ -434,20 +434,44 @@ heap». Две тонкости, которые видны в данных: у `
 ### alloc/bench_test.go — урок 1.5.8, регионы `append`, `pool`, `slice-of-pointers`
 
 ```bash
-go test -run='^$' -bench=. -count=10 ./1-5/alloc/ > alloc.txt && benchstat alloc.txt
+go test -run='^$' -bench=. -count=10 ./1-5/alloc/ > alloc-bench.txt && benchstat alloc-bench.txt
 ```
 
 ```
-                  │   sec/op     │    B/op      │ allocs/op │
-AppendGrow-12        4.050µ ±  6%   24.62Ki ± 0%   12.00
-AppendPrealloc-12    2.061µ ± 15%   8.000Ki ± 0%   1.000
-BufferNew-12         1.570µ ± 21%   3.944Ki ± 0%   6.000
-BufferPool-12        352.1n ±  5%     7.000 ± 0%   0.000
-SlicePointers-12     19.38µ ± 11%   31.25Ki ± 0%   1.000k
-SliceValues-12       6.224µ ±  2%     0.000 ± 0%   0.000
+                  │ alloc-bench.txt │
+                  │     sec/op      │
+AppendGrow-12          4.050µ ±  6%
+AppendPrealloc-12      2.061µ ± 15%
+BufferNew-12           1.570µ ± 21%
+BufferPool-12          352.1n ±  5%
+SlicePointers-12       19.38µ ± 11%
+SliceValues-12         6.224µ ±  2%
+geomean                2.868µ
+
+                  │ alloc-bench.txt │
+                  │      B/op       │
+AppendGrow-12        24.62Ki ± 0%
+AppendPrealloc-12    8.000Ki ± 0%
+BufferNew-12         3.944Ki ± 0%
+BufferPool-12          7.000 ± 0%
+SlicePointers-12     31.25Ki ± 0%
+SliceValues-12         0.000 ± 0%
+geomean                           ¹
+¹ summaries must be >0 to compute geomean
+
+                  │ alloc-bench.txt │
+                  │    allocs/op    │
+AppendGrow-12          12.00 ± 0%
+AppendPrealloc-12      1.000 ± 0%
+BufferNew-12           6.000 ± 0%
+BufferPool-12          0.000 ± 0%
+SlicePointers-12      1.000k ± 0%
+SliceValues-12         0.000 ± 0%
+geomean                           ¹
+¹ summaries must be >0 to compute geomean
 ```
 
-(три таблицы `benchstat` сведены в одну). У `SliceValues` аллокаций нет вовсе: массив из 1000 элементов по
+У `SliceValues` аллокаций нет вовсе: массив из 1000 элементов по
 32 байта не убегает и меньше порога стека.
 
 ### gc/gctrace — урок 1.5.9, регион `gctrace`
@@ -489,7 +513,8 @@ GOMEMLIMIT=64MiB go run ./1-5/gc/limiter
 окно  3: живая куча  118 МиБ, цель  118 МиБ, циклов GC + 40, CPU на GC  71.6 %, ограничитель последний раз — на цикле 0
 окно  4: живая куча  177 МиБ, цель  177 МиБ, циклов GC + 26, CPU на GC  74.4 %, ограничитель последний раз — на цикле 179
 окно  5: живая куча  273 МиБ, цель  273 МиБ, циклов GC + 13, CPU на GC  55.8 %, ограничитель последний раз — на цикле 191
-…
+окно  6: живая куча  379 МиБ, цель  379 МиБ, циклов GC + 10, CPU на GC  57.1 %, ограничитель последний раз — на цикле 202
+окно  7: живая куча  394 МиБ, цель  394 МиБ, циклов GC +  9, CPU на GC  55.3 %, ограничитель последний раз — на цикле 211
 окно  8: живая куча  344 МиБ, цель  344 МиБ, циклов GC +  6, CPU на GC  60.5 %, ограничитель последний раз — на цикле 217
 максимальная доля CPU на GC за окно: 74.4 %
 ограничитель включался последний раз на цикле: 217 (завершено циклов: 216)
