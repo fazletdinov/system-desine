@@ -1,0 +1,32 @@
+$ scripts/trace-summary.sh near-limit-trace.out
+окно трассы: 5.16 с
+  133 раз, всего   1117.5 мс, самое долгое  170.74 мс  GC concurrent mark phase
+  283 раз, всего     11.1 мс, самое долгое    0.80 мс  GC incremental sweep
+  110 раз, всего    345.4 мс, самое долгое   73.14 мс  GC mark assist (в хеше Argon2id)
+   69 раз, всего    382.2 мс, самое долгое   61.34 мс  GC mark assist (вне хеша)
+  133 раз, всего      5.4 мс, самое долгое    0.34 мс  stop-the-world (GC mark termination)
+  134 раз, всего    144.5 мс, самое долгое   46.96 мс  stop-the-world (GC sweep termination)
+куча (объекты): от 23.4 до 289.8 МиБ
+цель кучи: от 47.1 до 289.4 МиБ
+$ scripts/trace-summary.sh mixed-trace.out
+окно трассы: 5.01 с
+   36 раз, всего    339.2 мс, самое долгое   55.70 мс  GC concurrent mark phase
+  614 раз, всего      1.0 мс, самое долгое    0.16 мс  GC incremental sweep
+    4 раз, всего      4.9 мс, самое долгое    4.67 мс  GC mark assist (в хеше Argon2id)
+   59 раз, всего     33.3 мс, самое долгое    7.67 мс  GC mark assist (вне хеша)
+   36 раз, всего      2.2 мс, самое долгое    0.35 мс  stop-the-world (GC mark termination)
+   36 раз, всего    154.8 мс, самое долгое   51.11 мс  stop-the-world (GC sweep termination)
+куча (объекты): от 5.4 до 67.7 МиБ
+цель кучи: от 11.1 до 50.9 МиБ
+$ scripts/trace-summary.sh flight.trace
+окно трассы: 10.69 с
+   78 раз, всего    290.7 мс, самое долгое   57.28 мс  GC concurrent mark phase
+  480 раз, всего      0.9 мс, самое долгое    0.12 мс  GC incremental sweep
+    5 раз, всего      1.2 мс, самое долгое    0.88 мс  GC mark assist (в хеше Argon2id)
+  124 раз, всего     64.2 мс, самое долгое   13.56 мс  GC mark assist (вне хеша)
+   81 раз, всего      4.1 мс, самое долгое    0.18 мс  stop-the-world (GC mark termination)
+   78 раз, всего     84.9 мс, самое долгое   49.85 мс  stop-the-world (GC sweep termination)
+    1 раз, всего      0.0 мс, самое долгое    0.00 мс  stop-the-world (goroutine profile cleanup)
+    1 раз, всего      0.0 мс, самое долгое    0.04 мс  stop-the-world (goroutine profile)
+куча (объекты): от 6.2 до 70.1 МиБ
+цель кучи: от 12.6 до 52.5 МиБ

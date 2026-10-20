@@ -1,0 +1,49 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: cpu
+Time: 2026-10-20 11:55:35 MSK
+Duration: 20s, Total samples = 19.74s (98.69%)
+Showing nodes accounting for 3.31s, 16.77% of 19.74s total
+Dropped 700 nodes (cum <= 0.10s)
+Showing top 40 nodes out of 191
+      flat  flat%   sum%        cum   cum%
+     0.02s   0.1%   0.1%     16.25s 82.32%  net/http.(*conn).serve
+     0.01s 0.051%  0.15%     14.32s 72.54%  net/http.serverHandler.ServeHTTP
+         0     0%  0.15%     14.31s 72.49%  main.newApp.func2
+     0.01s 0.051%   0.2%     14.31s 72.49%  messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+     0.02s   0.1%   0.3%     14.31s 72.49%  net/http.HandlerFunc.ServeHTTP
+         0     0%   0.3%     14.29s 72.39%  messenger/internal/platform/middleware.RequestID.func1.1
+         0     0%   0.3%     14.22s 72.04%  messenger/internal/platform/middleware.AccessLog.func1.1
+         0     0%   0.3%     13.77s 69.76%  messenger/internal/platform/middleware.Recover.func1.1
+         0     0%   0.3%     13.77s 69.76%  messenger/internal/platform/middleware.Timeout.func1.1
+         0     0%   0.3%     13.56s 68.69%  messenger/internal/platform/httpauth.Middleware.func1.1
+     0.01s 0.051%  0.35%      6.94s 35.16%  messenger/internal/platform/httpauth.(*Bearer).Authenticate
+     0.01s 0.051%  0.41%      6.92s 35.06%  messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+         0     0%  0.41%      6.89s 34.90%  github.com/golang-jwt/jwt/v5.ParseWithClaims
+         0     0%  0.41%      6.86s 34.75%  github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+         0     0%  0.41%      6.58s 33.33%  messenger/internal/platform/middleware.RouteErrors.func1
+     0.02s   0.1%  0.51%      6.54s 33.13%  net/http.(*ServeMux).ServeHTTP
+         0     0%  0.51%      6.37s 32.27%  messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+         0     0%  0.51%      6.33s 32.07%  messenger/internal/platform/idempotency.Middleware.func1.1
+     0.01s 0.051%  0.56%      6.31s 31.97%  messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+     0.02s   0.1%  0.66%      6.30s 31.91%  messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+         0     0%  0.66%      5.78s 29.28%  messenger/internal/chat/adapters/httpapi.(*Handler).respond
+     0.01s 0.051%  0.71%      5.78s 29.28%  messenger/internal/platform/httpjson.Write
+         0     0%  0.71%      5.72s 28.98%  encoding/json.(*Encoder).Encode
+         0     0%  0.71%      5.60s 28.37%  github.com/golang-jwt/jwt/v5.(*SigningMethodEd25519).Verify
+         0     0%  0.71%      5.59s 28.32%  crypto/ed25519.Verify (inline)
+         0     0%  0.71%      5.59s 28.32%  crypto/ed25519.VerifyWithOptions
+         0     0%  0.71%      5.09s 25.79%  crypto/internal/fips140/ed25519.Verify (inline)
+         0     0%  0.71%      5.09s 25.79%  crypto/internal/fips140/ed25519.verify
+     0.01s 0.051%  0.76%      5.09s 25.79%  crypto/internal/fips140/ed25519.verifyWithDom
+     0.07s  0.35%  1.11%      4.45s 22.54%  crypto/internal/fips140/edwards25519.(*Point).VarTimeDoubleScalarBaseMult
+         0     0%  1.11%      3.67s 18.59%  encoding/json/v2.MarshalEncode
+     0.58s  2.94%  4.05%      3.67s 18.59%  encoding/json/v2.makeStructArshaler.func2
+         0     0%  4.05%      3.67s 18.59%  encoding/json/v2.marshalEncode
+     0.06s   0.3%  4.36%      3.65s 18.49%  encoding/json/v2.makeSliceArshaler.func2
+     0.02s   0.1%  4.46%      2.65s 13.42%  golang.org/x/crypto/argon2.processBlocks.func1
+     0.03s  0.15%  4.61%      2.60s 13.17%  golang.org/x/crypto/argon2.processBlockSSE
+         0     0%  4.61%      2.60s 13.17%  golang.org/x/crypto/argon2.processBlockXOR (inline)
+     0.01s 0.051%  4.66%      2.56s 12.97%  syscall.Syscall
+         0     0%  4.66%      2.54s 12.87%  internal/poll.ignoringEINTRIO (inline)
+     2.39s 12.11% 16.77%      2.39s 12.11%  internal/runtime/syscall/linux.Syscall6

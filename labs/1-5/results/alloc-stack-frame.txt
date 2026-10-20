@@ -1,0 +1,4 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# из labs/
+$ go build -gcflags=-S -o /dev/null ./1-5/alloc/stack 2>&1 | grep "dive.*STEXT"
+main.dive STEXT size=153 align=0x0 args=0x10 locals=0x40 funcid=0x0

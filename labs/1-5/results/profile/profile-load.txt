@@ -1,0 +1,5 @@
+старт: 2026-10-20T11:55:32+03:00
+нагрузка: scripts/read-load.sh 8 30  +  while (27 с): scripts/overload.sh 50; sleep 1 (sleep — чтобы приставка имён date +%s не повторялась)
+cpu: 2026-10-20T11:55:35+03:00 curl http://127.0.0.1:6060/debug/pprof/profile?seconds=20
+heap/mutex/block/goroutine: 2026-10-20T11:55:55+03:00
+конец: 2026-10-20T11:56:03+03:00

@@ -47,8 +47,12 @@ services:
     # Безопасность запуска: файловая система только для чтения, ни одной capability,
     # запрет повышать привилегии через setuid. Мессенджеру ничего из этого не нужно.
     read_only: true
+    # tmpfs живёт в памяти и считается в mem_limit контейнера, а GOMEMLIMIT его не
+    # видит. Потолок 32 МиБ — два снимка flight recorder по MaxBytes (16 МиБ); сверх
+    # него запись получает ENOSPC, и Dumper пишет в журнал «снимок не записан», а не
+    # отнимает память у кучи до OOM-kill.
     tmpfs:
-      - /tmp
+      - /tmp:size=32m
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

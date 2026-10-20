@@ -146,6 +146,12 @@ describe('flamegraph: зум', () => {
     expect(isFlameNavKey('ArrowUp') && isFlameNavKey('Home') && !isFlameNavKey('Enter')).toBe(true)
   })
 
+  it.each(['altKey', 'ctrlKey', 'metaKey'] as const)('стрелка с %s остаётся браузеру', (modifier) => {
+    expect(isFlameNavKey('ArrowLeft', { [modifier]: true })).toBe(false)
+    expect(isFlameNavKey('Home', { [modifier]: true })).toBe(false)
+    expect(isFlameNavKey('ArrowLeft', { altKey: false, ctrlKey: false, metaKey: false })).toBe(true)
+  })
+
   it('слишком узкие блоки не рисуются', () => {
     const tree = small()
     const rects = project(tree, windowOf(tree.root), 0.05)

@@ -1,0 +1,64 @@
+--- прогон 1
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  102– 408 мс
+503 code=overloaded Retry-After=1              45 шт.,    1–  48 мс
+--- прогон 2
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,   71– 439 мс
+503 code=overloaded Retry-After=1              45 шт.,   18–  54 мс
+--- прогон 3
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  119– 530 мс
+503 code=overloaded Retry-After=1              45 шт.,    1–  42 мс
+--- прогон 4
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  134– 682 мс
+503 code=overloaded Retry-After=1              45 шт.,    1–  48 мс
+--- прогон 5
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,   52– 380 мс
+503 code=overloaded Retry-After=1              45 шт.,   20–  51 мс
+--- прогон 6
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,   58– 453 мс
+503 code=overloaded Retry-After=1              45 шт.,    1–  37 мс
+--- прогон 7
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,   38– 535 мс
+503 code=overloaded Retry-After=1              45 шт.,    1–  11 мс
+--- прогон 8
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  129– 486 мс
+503 code=overloaded Retry-After=1              45 шт.,    6–  49 мс
+--- прогон 9
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  124– 453 мс
+503 code=overloaded Retry-After=1              45 шт.,    1–  38 мс
+--- прогон 10
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  119– 416 мс
+503 code=overloaded Retry-After=1              45 шт.,    2–  67 мс
+--- прогон 11
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,   83– 559 мс
+503 code=overloaded Retry-After=1              45 шт.,   17–  44 мс
+--- прогон 12
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,   48– 487 мс
+503 code=overloaded Retry-After=1              45 шт.,   21–  40 мс
+--- прогон 13
+запросов: 50
+201 code=- Retry-After=-                        6 шт.,   42– 379 мс
+503 code=overloaded Retry-After=1              44 шт.,    0–  12 мс
+--- прогон 14
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  123– 458 мс
+503 code=overloaded Retry-After=1              45 шт.,    1–  22 мс
+--- прогон 15
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,  206– 788 мс
+503 code=overloaded Retry-After=1              45 шт.,    2–  45 мс
+--- прогон 16
+запросов: 50
+201 code=- Retry-After=-                        5 шт.,   67– 264 мс
+503 code=overloaded Retry-After=1              45 шт.,    2–  42 мс

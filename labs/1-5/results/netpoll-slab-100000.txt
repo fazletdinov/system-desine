@@ -1,0 +1,42 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# память ядра под сокеты: Slab из /proc/meminfo до и после 10^5 соединений (serve -mode lazy и dial -src 8 на одной машине, т.е. 2×10^5 сокетов); значения общесистемные
+# прогон 1
+$ grep -E "^(Slab|SReclaimable|SUnreclaim):" /proc/meminfo   # до
+Slab:            1860348 kB
+SReclaimable:    1341064 kB
+SUnreclaim:       519284 kB
+$ grep -E "^(Slab|SReclaimable|SUnreclaim):" /proc/meminfo   # после
+Slab:            2850376 kB
+SReclaimable:    1682220 kB
+SUnreclaim:      1168156 kB
+$ grep -E "^(Slab|SReclaimable|SUnreclaim):" /proc/meminfo   # после закрытия
+Slab:            1956596 kB
+SReclaimable:    1348568 kB
+SUnreclaim:       608028 kB
+--- serve
+режим: lazy, ждём соединений: 100000
+слушаю 127.0.0.1:9102
+принято соединений: 100000 за 3021 мс
+горутин:          до         23, после     100023
+RSS:              до       5544 КиБ, после     361672 КиБ
+стеки горутин:    до        480 КиБ, после     200800 КиБ
+куча (объекты):   до        295 КиБ, после      85707 КиБ
+стеки для GC:     до          7 КиБ, после      57819 КиБ (/gc/scan/stack:bytes)
+sockstat до:      TCP: inuse 634 orphan 0 tw 89 alloc 771 mem 242
+sockstat после:   TCP: inuse 200636 orphan 0 tw 87 alloc 200773 mem 242
+ядро: TCP-сокетов +200002 (обе стороны, если клиент на этой машине), буферы +0 страниц (0 КиБ)
+на соединение: RSS 3.6 КиБ, стеки 2.0 КиБ, куча 0.9 КиБ
+# прогон 2
+$ grep -E "^(Slab|SReclaimable|SUnreclaim):" /proc/meminfo   # до
+Slab:            1957552 kB
+SReclaimable:    1348308 kB
+SUnreclaim:       609244 kB
+$ grep -E "^(Slab|SReclaimable|SUnreclaim):" /proc/meminfo   # после
+Slab:            2878544 kB
+SReclaimable:    1688388 kB
+SUnreclaim:      1190156 kB
+$ grep -E "^(Slab|SReclaimable|SUnreclaim):" /proc/meminfo   # после закрытия
+Slab:            2024464 kB
+SReclaimable:    1366092 kB
+SUnreclaim:       658372 kB
+# Slab +990028 КиБ (прогон 1) и +920992 КиБ (прогон 2) на 200 000 сокетов: 4,95 и 4,6 КиБ на сокет

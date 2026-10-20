@@ -1,0 +1,5 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2; Docker 29.9.1, compose: cpus 1, mem_limit 256m
+старт: 2026-10-20T12:16:35+03:00
+нагрузка: только регистрации — while (25 с): scripts/overload.sh 50; sleep 1 (compose по умолчанию: N=1, Q=4)
+cpu: 2026-10-20T12:16:37+03:00 curl 127.0.0.1:6060/debug/pprof/profile?seconds=20
+конец: 2026-10-20T12:17:00+03:00

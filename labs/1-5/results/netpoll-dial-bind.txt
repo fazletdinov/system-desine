@@ -1,0 +1,11 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+$ strace -f -e trace=socket,setsockopt,bind,connect ./netpoll dial -addr 127.0.0.1:9101 -n 1 -src 1   # сервер: ./netpoll serve -addr 127.0.0.1:9101 -n 1
+[pid 2007997] socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 5
+[pid 2007997] bind(5, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("127.0.0.2")}, 16) = 0
+[pid 2007997] connect(5, {sa_family=AF_INET, sin_port=htons(9101), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+[pid 2007997] setsockopt(5, SOL_TCP, TCP_NODELAY, [1], 4) = 0
+[pid 2007997] setsockopt(5, SOL_SOCKET, SO_KEEPALIVE, [1], 4) = 0
+[pid 2007997] setsockopt(5, SOL_TCP, TCP_KEEPIDLE, [15], 4) = 0
+[pid 2007997] setsockopt(5, SOL_TCP, TCP_KEEPINTVL, [15], 4) = 0
+[pid 2007997] setsockopt(5, SOL_TCP, TCP_KEEPCNT, [9], 4) = 0
+открыто соединений: 1 с 1 адресов за 0 мс

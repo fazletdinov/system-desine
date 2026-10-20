@@ -1,0 +1,18 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: inuse_space
+Time: 2026-10-20 12:17:57 MSK
+Showing nodes accounting for 249.31MB, 99.19% of 251.34MB total
+Dropped 9 nodes (cum <= 1.26MB)
+Showing top 10 nodes out of 33
+      flat  flat%   sum%        cum   cum%
+     247MB 98.27% 98.27%      247MB 98.27%  golang.org/x/crypto/argon2.initBlocks
+    2.31MB  0.92% 99.19%     2.31MB  0.92%  runtime/trace.(*traceMultiplexer).startLocked
+         0     0% 99.19%      247MB 98.27%  golang.org/x/crypto/argon2.IDKey (inline)
+         0     0% 99.19%      247MB 98.27%  golang.org/x/crypto/argon2.deriveKey
+         0     0% 99.19%     2.31MB  0.92%  main.main
+         0     0% 99.19%     2.31MB  0.92%  main.newApp
+         0     0% 99.19%      247MB 98.27%  main.newApp.func2
+         0     0% 99.19%     2.31MB  0.92%  main.newDebug
+         0     0% 99.19%     2.31MB  0.92%  main.run
+         0     0% 99.19%      247MB 98.27%  messenger/internal/auth/adapters/argon2id.(*Hasher).Hash

@@ -1,0 +1,72 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# из labs/: go build -o netpoll ./1-5/netpoll; сценарий (bash): serve -n 3 под strace, dial -n 2 -src 1, третье соединение из bash через /dev/tcp шлёт «привет
+» и читает эхо
+$ strace -f -o st.txt -e trace=epoll_ctl,epoll_pwait,epoll_wait,accept4 ./netpoll serve -addr 127.0.0.1:9100 -mode bufio -n 3
+2003029 epoll_ctl(5, EPOLL_CTL_ADD, 6, {events=EPOLLIN, data={u32=0, u64=0}}) = 0
+2003029 epoll_ctl(5, EPOLL_CTL_ADD, 4, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2801795073, u64=4547205312142114817}}) = 0
+2003029 epoll_ctl(5, EPOLL_CTL_DEL, 4, 0x1204477b541c) = 0
+2003029 epoll_ctl(5, EPOLL_CTL_ADD, 3, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2801795074, u64=4547205312142114818}}) = 0
+2003029 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003032 --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=2003026, si_uid=1000} ---
+2003030 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003030 epoll_ctl(5, EPOLL_CTL_ADD, 4, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2785017857, u64=4547205312125337601}}) = -1 EPERM (Operation not permitted)
+2003030 epoll_ctl(5, EPOLL_CTL_ADD, 4, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2785017858, u64=4547205312125337602}}) = 0
+2003030 epoll_ctl(5, EPOLL_CTL_DEL, 4, 0x1204477b569c) = 0
+2003030 accept4(3, 0x1204477b566c, [112], SOCK_CLOEXEC|SOCK_NONBLOCK) = -1 EAGAIN (Resource temporarily unavailable)
+2003030 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003030 epoll_pwait(5, [{events=EPOLLIN, data={u32=2801795074, u64=4547205312142114818}}], 128, -1, NULL, 0) = 1
+2003030 accept4(3, {sa_family=AF_INET, sin_port=htons(43477), sin_addr=inet_addr("127.0.0.2")}, [112 => 16], SOCK_CLOEXEC|SOCK_NONBLOCK) = 4
+2003030 epoll_ctl(5, EPOLL_CTL_ADD, 4, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2785017859, u64=4547205312125337603}}) = 0
+2003030 accept4(3, {sa_family=AF_INET, sin_port=htons(60519), sin_addr=inet_addr("127.0.0.2")}, [112 => 16], SOCK_CLOEXEC|SOCK_NONBLOCK) = 7
+2003030 epoll_ctl(5, EPOLL_CTL_ADD, 7, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2768240641, u64=4547205312108560385}}) = 0
+2003029 epoll_pwait(5, [{events=EPOLLOUT, data={u32=2785017859, u64=4547205312125337603}}, {events=EPOLLOUT, data={u32=2768240641, u64=4547205312108560385}}], 128, 0, NULL, 0) = 2
+2003029 epoll_pwait(5,  <unfinished ...>
+2003030 accept4(3, 0x1204477b566c, [112], SOCK_CLOEXEC|SOCK_NONBLOCK) = -1 EAGAIN (Resource temporarily unavailable)
+2003029 <... epoll_pwait resumed>[{events=EPOLLIN, data={u32=2801795074, u64=4547205312142114818}}], 128, -1, NULL, 0) = 1
+2003029 accept4(3, {sa_family=AF_INET, sin_port=htons(34290), sin_addr=inet_addr("127.0.0.1")}, [112 => 16], SOCK_CLOEXEC|SOCK_NONBLOCK) = 8
+2003029 epoll_ctl(5, EPOLL_CTL_ADD, 8, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2751463425, u64=4547205312091783169}}) = 0
+2003034 epoll_pwait(5, [{events=EPOLLOUT, data={u32=2751463425, u64=4547205312091783169}}], 128, 0, NULL, 0) = 1
+2003030 epoll_pwait(5,  <unfinished ...>
+2003029 epoll_pwait(5,  <unfinished ...>
+2003030 <... epoll_pwait resumed>[], 128, 0, NULL, 0) = 0
+2003029 <... epoll_pwait resumed>[], 128, 1999, NULL, 0) = 0
+2003029 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003034 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003029 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003033 epoll_pwait(5,  <unfinished ...>
+2003029 --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=2003026, si_uid=1000} ---
+2003033 <... epoll_pwait resumed>[], 128, 0, NULL, 0) = 0
+2003029 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003029 --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=2003026, si_uid=1000} ---
+2003029 epoll_pwait(5,  <unfinished ...>
+2003030 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003030 epoll_ctl(5, EPOLL_CTL_ADD, 9, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2734686209, u64=4547205312075005953}}) = -1 EPERM (Operation not permitted)
+2003030 epoll_ctl(5, EPOLL_CTL_ADD, 9, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET, data={u32=2734686210, u64=4547205312075005954}}) = 0
+2003029 <... epoll_pwait resumed>[{events=EPOLLIN|EPOLLOUT, data={u32=2734686210, u64=4547205312075005954}}], 128, -1, NULL, 0) = 1
+2003029 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003029 epoll_pwait(5,  <unfinished ...>
+2003030 epoll_ctl(5, EPOLL_CTL_DEL, 9, 0x1204477b569c) = 0
+2003029 <... epoll_pwait resumed>[{events=EPOLLIN|EPOLLOUT, data={u32=2751463425, u64=4547205312091783169}}], 128, -1, NULL, 0) = 1
+2003029 epoll_pwait(5, [{events=EPOLLIN|EPOLLOUT|EPOLLRDHUP, data={u32=2751463425, u64=4547205312091783169}}], 128, 0, NULL, 0) = 1
+2003029 epoll_ctl(5, EPOLL_CTL_DEL, 8, 0x12044792ed24) = 0
+2003029 epoll_pwait(5, [{events=EPOLLIN|EPOLLOUT|EPOLLRDHUP, data={u32=2785017859, u64=4547205312125337603}}, {events=EPOLLIN|EPOLLOUT|EPOLLRDHUP, data={u32=2768240641, u64=4547205312108560385}}], 128, 0, NULL, 0) = 2
+2003030 epoll_ctl(5, EPOLL_CTL_DEL, 4, 0x120447765d24) = 0
+2003029 epoll_ctl(5, EPOLL_CTL_DEL, 7, 0x120447767d24) = 0
+2003027 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003027 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003029 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003034 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003026 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=2005035, si_uid=1000} ---
+2003027 epoll_pwait(5, [], 128, 0, NULL, 0) = 0
+2003034 epoll_ctl(5, EPOLL_CTL_DEL, 3, 0x1204477cc69c) = 0
+2003033 epoll_pwait(5,  <unfinished ...>) = ?
+2003094 +++ exited with 0 +++
+2003034 +++ exited with 0 +++
+2003033 +++ exited with 0 +++
+2003032 +++ exited with 0 +++
+2003031 +++ exited with 0 +++
+2003030 +++ exited with 0 +++
+2003029 +++ exited with 0 +++
+2003028 +++ exited with 0 +++
+2003027 +++ exited with 0 +++
+2003026 +++ exited with 0 +++

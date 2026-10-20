@@ -1,0 +1,2919 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: inuse_space
+Time: 2026-10-20 11:55:55 MSK
+-----------+-------------------------------------------------------
+     bytes:  40kB
+         0   runtime/pprof.(*protobuf).string (inline)
+             runtime/pprof.(*protobuf).strings
+             runtime/pprof.(*profileBuilder).build
+             runtime/pprof.profileWriter
+-----------+-------------------------------------------------------
+     bytes:  240B
+         0   runtime/pprof.allFrames
+             runtime/pprof.(*profileBuilder).appendLocsForStack
+             runtime/pprof.(*profileBuilder).build
+             runtime/pprof.profileWriter
+-----------+-------------------------------------------------------
+     bytes:  136kB
+         0   compress/flate.newFastEnc (inline)
+             compress/flate.(*compressor).init
+             compress/flate.NewWriter (inline)
+             compress/gzip.(*Writer).Write
+             runtime/pprof.(*profileBuilder).flush
+             runtime/pprof.(*profileBuilder).emitLocation
+             runtime/pprof.(*profileBuilder).appendLocsForStack
+             runtime/pprof.(*profileBuilder).build
+             runtime/pprof.profileWriter
+-----------+-------------------------------------------------------
+     bytes:  18.62kB
+         0   runtime/pprof.(*profileBuilder).emitLocation
+             runtime/pprof.(*profileBuilder).appendLocsForStack
+             runtime/pprof.(*profileBuilder).build
+             runtime/pprof.profileWriter
+-----------+-------------------------------------------------------
+     bytes:  8kB
+         0   runtime/pprof.(*profMap).lookup
+             runtime/pprof.(*profileBuilder).addCPUData
+             runtime/pprof.profileWriter
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/textproto.canonicalMIMEHeaderKey
+             net/textproto.CanonicalMIMEHeaderKey
+             net/textproto.MIMEHeader.Set (inline)
+             net/http.Header.Set
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  1.25kB
+         0   runtime.mallocgc
+             runtime.makeslice
+             runtime.makeTraceFrames
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.(*traceStackTable).dump
+             runtime.traceAdvance
+             runtime.(*traceAdvancerState).start.func1
+-----------+-------------------------------------------------------
+     bytes:  1.25kB
+         0   runtime.mallocgc
+             runtime.makeslice
+             runtime.makeTraceFrames
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.(*traceStackTable).dump
+             runtime.traceAdvance
+             runtime.(*traceAdvancerState).start.func1
+-----------+-------------------------------------------------------
+     bytes:  112B
+         0   context.(*cancelCtx).Done
+             context.(*cancelCtx).propagateCancel
+             context.withCancel (inline)
+             context.WithCancel
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  26.62kB
+   538038B   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/google/uuid.UUID.String
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   messenger/internal/platform/principal.WithUserID
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.newAddressableValue
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  20kB
+   534594B   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  128B
+         0   net.newFD (inline)
+             net.(*netFD).accept
+             net.(*TCPListener).accept
+             net.(*TCPListener).Accept
+             net/http.(*Server).Serve
+             messenger/internal/platform/httpserver.Serve.func1
+-----------+-------------------------------------------------------
+     bytes:  8B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.newAddressableValue
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/http.(*routingNode).matchPath
+             net/http.(*routingNode).matchPath
+             net/http.(*routingNode).matchPath
+             net/http.(*routingNode).matchMethodAndPath
+             net/http.(*routingNode).match
+             net/http.(*ServeMux).matchOrRedirect
+             net/http.(*ServeMux).findHandler
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  32B
+         0   messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.New
+             github.com/oapi-codegen/runtime.BindQueryParameterWithOptions
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  56kB
+   553482B   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  16kB
+         0   slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+             encoding/json/internal/jsonwire.AppendQuote
+             encoding/json/v2.makeStringArshaler.func1
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.growslice
+             reflect.Value.grow
+             reflect.Value.Grow
+             encoding/json/v2.makeSliceArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/textproto.readMIMEHeader
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/http.(*connReader).startBackgroundRead
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  1kB
+         0   runtime.mallocgc
+             runtime.makeslice
+             runtime.makeTraceFrames
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.(*traceStackTable).dump
+             runtime.traceAdvance
+             runtime.(*traceAdvancerState).start.func1
+-----------+-------------------------------------------------------
+     bytes:  8B
+         0   github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  208B
+         0   context.(*cancelCtx).propagateCancel
+             context.withCancel (inline)
+             context.WithCancel
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  32B
+         0   messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48kB
+  1098495B   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  4kB
+         0   bufio.NewReaderSize (inline)
+             bufio.NewReader (inline)
+             net/http.newBufioReader
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  128B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/problem.Write
+             messenger/internal/platform/problem.write
+             messenger/internal/platform/problem.Respond
+             messenger/internal/auth/adapters/httpapi.writeError (inline)
+             messenger/internal/auth/adapters/httpapi.(*Handler).SignUp
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  32B
+         0   messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  12kB
+         0   slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+             encoding/json/internal/jsonwire.AppendQuote
+             encoding/json/v2.makeStringArshaler.func1
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.newAddressableValue
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.makeMapArshaler.func3
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  6.75kB
+         0   slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+             encoding/json/internal/jsonwire.AppendQuote
+             encoding/json/v2.makeStringArshaler.func1
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.newAddressableValue
+             encoding/json/v2.makeMapArshaler.func3
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   github.com/google/uuid.NewRandomFromReader
+             github.com/google/uuid.NewRandom
+             github.com/google/uuid.NewV7
+             messenger/internal/platform/idgen.UUIDv7.NewID
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  13.25kB
+         0   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  320B
+         0   encoding/json/jsontext.init.func4
+             sync.(*Pool).Get
+             encoding/json/jsontext.getBufferedDecoder
+             encoding/json/jsontext.export.GetBufferedDecoder (inline)
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  64kB
+  2788692B   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.New
+             github.com/oapi-codegen/runtime.BindQueryParameterWithOptions
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  64B
+         0   net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  320B
+         0   encoding/json/jsontext.NewDecoder (inline)
+             encoding/json.NewDecoder
+             messenger/internal/platform/httpjson.Decode
+             messenger/internal/auth/adapters/httpapi.(*Handler).SignUp
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  1.12kB
+         0   runtime.mallocgc
+             runtime.makeslice
+             runtime.makeTraceFrames
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.(*traceStackTable).dump
+             runtime.traceAdvance
+             runtime.(*traceAdvancerState).start.func1
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   reflect.makemap
+             reflect.MakeMapWithSize
+             reflect.MakeMap (inline)
+             encoding/json/v2.makeMapArshaler.func3
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   context.WithDeadlineCause
+             context.WithDeadline (inline)
+             context.WithTimeout
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.packEfaceData
+             reflect.packEface (inline)
+             reflect.valueInterface
+             reflect.Value.assignTo
+             reflect.Value.Set
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.makeMapArshaler.func3
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  96B
+         0   github.com/golang-jwt/jwt/v5.(*Validator).Validate
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/golang-jwt/jwt/v5.NewParser (inline)
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   context.WithValue
+             messenger/internal/platform/principal.WithUserID
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   net/http.Header.Clone (inline)
+             net/http.(*response).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  64B
+         0   net/textproto.readMIMEHeader
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  2kB
+         0   slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+             encoding/json/internal/jsonwire.AppendQuote
+             encoding/json/v2.makeStringArshaler.func1
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  5.25kB
+         0   encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  3kB
+         0   slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+             encoding/json/internal/jsonwire.AppendQuote
+             encoding/json/v2.makeStringArshaler.func1
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  240B
+         0   runtime.mallocgc
+             runtime.newobject
+             runtime.CallersFrames (inline)
+             runtime.makeTraceFrames
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.(*traceStackTable).dump
+             runtime.traceAdvance
+             runtime.(*traceAdvancerState).start.func1
+-----------+-------------------------------------------------------
+     bytes:  24B
+         0   messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/textproto.MIMEHeader.Set (inline)
+             net/http.Header.Set (inline)
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   encoding/json.(*Number).UnmarshalJSONFrom
+             encoding/json/v2.makeMethodArshaler.func7
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*NumericDate).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  4kB
+         0   bufio.NewWriterSize (inline)
+             net/http.newBufioWriterSize
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   net/textproto.readMIMEHeader
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  24B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.newAddressableValue
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   github.com/golang-jwt/jwt/v5.(*NumericDate).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  40kB
+         0   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/google/uuid.UUID.String
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/google/uuid.UUID.String
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  96B
+         0   github.com/golang-jwt/jwt/v5.NewParser (inline)
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  64B
+         0   messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/http.(*routingNode).matchPath
+             net/http.(*routingNode).matchPath
+             net/http.(*routingNode).matchPath
+             net/http.(*routingNode).matchMethodAndPath
+             net/http.(*routingNode).match
+             net/http.(*ServeMux).matchOrRedirect
+             net/http.(*ServeMux).findHandler
+             net/http.(*ServeMux).Handler
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  1MB
+  1212696B   runtime/pprof.StartCPUProfile
+             net/http/pprof.Profile
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/debugserver.limitSeconds.func1
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  64B
+         0   encoding/base64.(*Encoding).DecodeString
+             github.com/golang-jwt/jwt/v5.(*Parser).DecodeSegment
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   context.(*cancelCtx).propagateCancel
+             context.WithDeadlineCause
+             context.WithDeadline (inline)
+             context.WithTimeout
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.newAddressableValue
+             encoding/json/v2.makeMapArshaler.func3
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  9.25kB
+         0   slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+             encoding/json/internal/jsonwire.AppendQuote
+             encoding/json/v2.makeStringArshaler.func1
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  32B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/textproto.readMIMEHeader
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   net/textproto.canonicalMIMEHeaderKey
+             net/textproto.CanonicalMIMEHeaderKey
+             net/textproto.MIMEHeader.Get
+             net/http.Header.Get
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  64B
+         0   sync.NewCond (inline)
+             net/http.(*connReader).lock
+             net/http.(*connReader).Read
+             bufio.(*Reader).fill
+             bufio.(*Reader).ReadSlice
+             bufio.(*Reader).ReadLine
+             net/textproto.(*Reader).readLineSlice
+             net/textproto.(*Reader).ReadLine (inline)
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  4kB
+         0   encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func2
+             encoding/json/v2.makeStructArshaler.func2
+             encoding/json/v2.marshalEncode
+             encoding/json/v2.MarshalEncode
+             encoding/json.(*Encoder).Encode
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  96B
+         0   messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   net/http.Header.Clone (inline)
+             net/http.(*response).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/google/uuid.UUID.String (inline)
+             messenger/internal/platform/idgen.UUIDv7.NewID
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/google/uuid.UUID.String
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  24B
+         0   messenger/internal/auth/adapters/jwt.(*Verifier).key
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  12kB
+         0   runtime/trace.readBatch
+             runtime/trace.(*recorder).Write
+             runtime/trace.(*traceMultiplexer).startLocked.func1
+-----------+-------------------------------------------------------
+     bytes:  32B
+         0   context.WithDeadlineCause
+             context.WithDeadline (inline)
+             context.WithTimeout
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  112B
+         0   context.(*cancelCtx).Done
+             context.(*cancelCtx).propagateCancel
+             context.WithDeadlineCause
+             context.WithDeadline (inline)
+             context.WithTimeout
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  32B
+         0   net/http.Header.Clone (inline)
+             net/http.(*response).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  80B
+         0   encoding/base64.(*Encoding).DecodeString
+             github.com/golang-jwt/jwt/v5.(*Parser).DecodeSegment
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  112B
+         0   time.newTimer
+             time.AfterFunc
+             context.WithDeadlineCause
+             context.WithDeadline (inline)
+             context.WithTimeout
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  32B
+         0   slices.Clone[go.shape.[]messenger/internal/chat/domain.UserID,go.shape.struct { messenger/internal/chat/domain.value string }] (inline)
+             messenger/internal/chat/domain.RestoreChat (inline)
+             messenger/internal/chat/adapters/memory.(*Store).FindChat
+             messenger/internal/chat/usecase.(*ListMessages).Execute
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  112B
+         0   context.WithDeadlineCause
+             context.WithDeadline (inline)
+             context.WithTimeout
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  80B
+         0   net.(*conn).Read
+             net/http.(*connReader).backgroundRead
+-----------+-------------------------------------------------------
+     bytes:  288B
+         0   reflect.mapassign_faststr0
+             reflect.mapassign_faststr
+             reflect.Value.SetMapIndex
+             encoding/json/v2.makeMapArshaler.func3
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.packEfaceData
+             reflect.packEface (inline)
+             reflect.valueInterface
+             reflect.Value.assignTo
+             reflect.Value.Set
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.makeSliceArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  320B
+         0   net/http.(*Request).WithContext
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  144B
+         0   messenger/internal/chat/domain.RestoreChat (inline)
+             messenger/internal/chat/adapters/memory.(*Store).FindChat
+             messenger/internal/chat/usecase.(*ListMessages).Execute
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  96B
+         0   github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/golang-jwt/jwt/v5.splitToken
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/oapi-codegen/runtime.BindStyledParameterWithOptions
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  24B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  320B
+         0   net/http.(*Request).WithContext
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  80B
+         0   net/textproto.(*Reader).ReadLine (inline)
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   net/url.ParseQuery (inline)
+             net/url.(*URL).Query
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  384B
+         0   github.com/golang-jwt/jwt/v5.(*SigningMethodEd25519).Verify
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   context.WithValue
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  896B
+         0   runtime.mallocgc
+             runtime.makeslice
+             runtime.makeTraceFrames
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.dumpStacksRec
+             runtime.(*traceStackTable).dump
+             runtime.traceAdvance
+             runtime.(*traceAdvancerState).start.func1
+-----------+-------------------------------------------------------
+     bytes:  80B
+         0   context.withCancel (inline)
+             context.WithCancel
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   slices.Grow[go.shape.[]log/slog.Attr,go.shape.struct { Key string; Value log/slog.Value }] (inline)
+             log/slog.(*Record).AddAttrs
+             log/slog.(*Logger).logAttrs
+             log/slog.(*Logger).LogAttrs
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  448B
+         0   net/textproto.readMIMEHeader
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  352B
+         0   net/textproto.readMIMEHeader
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   net/url.ParseQuery (inline)
+             net/url.(*URL).Query
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  144B
+         0   net/url.parse
+             net/url.ParseRequestURI
+             net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   github.com/golang-jwt/jwt/v5.splitToken
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  80B
+         0   messenger/internal/platform/idempotency.Middleware.func1
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  16B
+         0   reflect.unsafe_New
+             reflect.New
+             encoding/json/v2.newAddressableValue
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.makeMapArshaler.func3
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  24B
+         0   reflect.unsafe_New
+             reflect.packEfaceData
+             reflect.packEface (inline)
+             reflect.valueInterface
+             reflect.Value.assignTo
+             reflect.Value.Set
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  320B
+         0   net/http.(*Request).WithContext
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  192B
+         0   encoding/base64.(*Encoding).DecodeString
+             github.com/golang-jwt/jwt/v5.(*Parser).DecodeSegment
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  384B
+         0   internal/bytealg.MakeNoZero
+             strings.(*Builder).grow
+             strings.(*Builder).Grow
+             strings.Join
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  208B
+         0   context.(*cancelCtx).propagateCancel
+             context.WithDeadlineCause
+             context.WithDeadline (inline)
+             context.WithTimeout
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  320B
+         0   net/http.readRequestLimit
+             net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  352B
+         0   net/textproto.MIMEHeader.Set (inline)
+             net/http.Header.Set
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  352B
+         0   net/http.Header.Clone (inline)
+             net/http.(*response).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/middleware.(*statusRecorder).WriteHeader
+             messenger/internal/platform/httpjson.Write
+             messenger/internal/chat/adapters/httpapi.(*Handler).respond
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  6kB
+         0   messenger/internal/chat/adapters/memory.(*Store).ListMessagesBefore
+             messenger/internal/chat/usecase.(*ListMessages).Execute
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  24B
+         0   github.com/golang-jwt/jwt/v5.NewNumericDate (inline)
+             github.com/golang-jwt/jwt/v5.newNumericDateFromSeconds
+             github.com/golang-jwt/jwt/v5.(*NumericDate).UnmarshalJSON
+             encoding/json/v2.makeMethodArshaler.func6
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeStructArshaler.func3
+             encoding/json/v2.makePointerArshaler.func3
+             encoding/json/v2.makeInterfaceArshaler.func2
+             encoding/json/v2.unmarshalDecode
+             encoding/json/v2.Unmarshal
+             encoding/json.Unmarshal (inline)
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+             github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+             github.com/golang-jwt/jwt/v5.ParseWithClaims
+             messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+             messenger/internal/platform/httpauth.(*Bearer).Authenticate
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  240B
+         0   net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  48B
+         0   net/http.(*conn).readRequest
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  6kB
+         0   messenger/internal/chat/adapters/httpapi.toMessagePage
+             messenger/internal/chat/adapters/httpapi.(*Handler).ListMessages
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/idempotency.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  19MB
+         0   golang.org/x/crypto/argon2.initBlocks
+             golang.org/x/crypto/argon2.deriveKey
+             golang.org/x/crypto/argon2.IDKey (inline)
+             messenger/internal/auth/adapters/argon2id.(*Hasher).Verify
+             messenger/internal/auth/adapters/hashlimit.(*Limiter).Verify.func1
+             messenger/internal/auth/adapters/hashlimit.limited[go.shape.bool]
+             messenger/internal/auth/adapters/hashlimit.(*Limiter).Verify
+             messenger/internal/auth/usecase.(*Login).Execute
+             messenger/internal/auth/adapters/httpapi.(*Handler).CreateToken
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).CreateToken.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).CreateToken
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  19MB
+         0   golang.org/x/crypto/argon2.initBlocks
+             golang.org/x/crypto/argon2.deriveKey
+             golang.org/x/crypto/argon2.IDKey (inline)
+             messenger/internal/auth/adapters/argon2id.(*Hasher).Hash
+             messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash.func1
+             messenger/internal/auth/adapters/hashlimit.limited[go.shape.struct { messenger/internal/auth/domain.value string }]
+             messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash
+             messenger/internal/auth/usecase.(*SignUp).Execute
+             messenger/internal/auth/adapters/httpapi.(*Handler).SignUp
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp
+             net/http.HandlerFunc.ServeHTTP
+             net/http.(*ServeMux).ServeHTTP
+             messenger/internal/platform/middleware.RouteErrors.func1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/httpauth.Middleware.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Timeout.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.Recover.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.AccessLog.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/middleware.RequestID.func1.1
+             net/http.HandlerFunc.ServeHTTP
+             messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+             net/http.HandlerFunc.ServeHTTP
+             main.newApp.func2
+             net/http.HandlerFunc.ServeHTTP
+             net/http.serverHandler.ServeHTTP
+             net/http.(*conn).serve
+-----------+-------------------------------------------------------
+     bytes:  1MB
+  1212696B   runtime/trace.(*traceMultiplexer).startLocked
+             runtime/trace.(*traceMultiplexer).addedSubscriber
+             runtime/trace.(*traceMultiplexer).subscribeFlightRecorder
+             runtime/trace.(*FlightRecorder).Start
+             messenger/internal/platform/flightrec.Start
+             main.newDebug
+             main.newApp
+             main.run
+             main.main
+             runtime.main
+-----------+-------------------------------------------------------
+     bytes:  1MB
+  1212696B   runtime/trace.(*traceMultiplexer).startLocked
+             runtime/trace.(*traceMultiplexer).addedSubscriber
+             runtime/trace.(*traceMultiplexer).subscribeFlightRecorder
+             runtime/trace.(*FlightRecorder).Start
+             messenger/internal/platform/flightrec.Start
+             main.newDebug
+             main.newApp
+             main.run
+             main.main
+             runtime.main
+-----------+-------------------------------------------------------
+     bytes:  19MB
+         0   golang.org/x/crypto/argon2.initBlocks
+             golang.org/x/crypto/argon2.deriveKey
+             golang.org/x/crypto/argon2.IDKey (inline)
+             messenger/internal/auth/adapters/argon2id.(*Hasher).Hash
+             messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash.func1
+             messenger/internal/auth/adapters/hashlimit.limited[go.shape.struct { messenger/internal/auth/domain.value string }]
+             messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash
+             messenger/internal/auth/usecase.NewLogin
+             main.newAuth
+             main.newApp
+             main.run
+             main.main
+             runtime.main
+-----------+-------------------------------------------------------
+     bytes:  96B
+   524336B   runtime.mallocgc
+             runtime.newobject
+             runtime.(*scavengerState).init
+             runtime.bgscavenge
+-----------+-------------------------------------------------------

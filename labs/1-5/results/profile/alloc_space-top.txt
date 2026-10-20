@@ -1,0 +1,48 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: alloc_space
+Time: 2026-10-20 11:55:55 MSK
+Showing nodes accounting for 2112.56MB, 93.97% of 2248.01MB total
+Dropped 126 nodes (cum <= 11.24MB)
+Showing top 40 nodes out of 81
+      flat  flat%   sum%        cum   cum%
+    1216MB 54.09% 54.09%     1216MB 54.09%  golang.org/x/crypto/argon2.initBlocks
+  300.25MB 13.36% 67.45%   300.25MB 13.36%  messenger/internal/chat/adapters/memory.(*Store).ListMessagesBefore
+  297.74MB 13.24% 80.69%   297.74MB 13.24%  messenger/internal/chat/adapters/httpapi.toMessagePage
+   55.02MB  2.45% 83.14%    55.02MB  2.45%  net/textproto.readMIMEHeader
+   48.51MB  2.16% 85.30%    48.51MB  2.16%  net/http.(*Request).WithContext
+   29.51MB  1.31% 86.61%    29.51MB  1.31%  net/http.Header.Clone (inline)
+   21.01MB  0.93% 87.55%    21.01MB  0.93%  github.com/golang-jwt/jwt/v5.(*SigningMethodEd25519).Verify
+      18MB   0.8% 88.35%   105.53MB  4.69%  net/http.(*conn).readRequest
+      18MB   0.8% 89.15%       18MB   0.8%  reflect.unsafe_New
+   16.50MB  0.73% 89.88%       17MB  0.76%  net/textproto.MIMEHeader.Set (inline)
+   15.50MB  0.69% 90.57%    15.50MB  0.69%  encoding/base64.(*Encoding).DecodeString
+      14MB  0.62% 91.19%    83.52MB  3.72%  net/http.readRequestLimit
+      13MB  0.58% 91.77%       13MB  0.58%  internal/bytealg.MakeNoZero
+      13MB  0.58% 92.35%       19MB  0.85%  context.(*cancelCtx).propagateCancel
+      11MB  0.49% 92.84%    34.50MB  1.53%  context.WithDeadlineCause
+    9.50MB  0.42% 93.26%    62.01MB  2.76%  github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+       7MB  0.31% 93.57%   113.02MB  5.03%  messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+    3.50MB  0.16% 93.73%  2004.08MB 89.15%  messenger/internal/platform/httpauth.Middleware.func1.1
+       2MB 0.089% 93.82%  2061.59MB 91.71%  messenger/internal/platform/middleware.AccessLog.func1.1
+       2MB 0.089% 93.91%   669.55MB 29.78%  messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+    0.50MB 0.022% 93.93%  2210.79MB 98.34%  net/http.(*conn).serve
+    0.50MB 0.022% 93.95%  2057.09MB 91.51%  messenger/internal/platform/middleware.Timeout.func1.1
+    0.50MB 0.022% 93.97%  2100.60MB 93.44%  messenger/internal/platform/middleware.RequestID.func1.1
+         0     0% 93.97%    34.50MB  1.53%  context.WithDeadline (inline)
+         0     0% 93.97%    34.50MB  1.53%  context.WithTimeout
+         0     0% 93.97%    33.50MB  1.49%  encoding/json.Unmarshal (inline)
+         0     0% 93.97%    33.50MB  1.49%  encoding/json/v2.Unmarshal
+         0     0% 93.97%    21.50MB  0.96%  encoding/json/v2.makeInterfaceArshaler.func2
+         0     0% 93.97%       15MB  0.67%  encoding/json/v2.makeMapArshaler.func3
+         0     0% 93.97%    15.50MB  0.69%  encoding/json/v2.makeMethodArshaler.func6
+         0     0% 93.97%       18MB   0.8%  encoding/json/v2.makePointerArshaler.func3
+         0     0% 93.97%       18MB   0.8%  encoding/json/v2.makeStructArshaler.func3
+         0     0% 93.97%    33.50MB  1.49%  encoding/json/v2.unmarshalDecode
+         0     0% 93.97%    15.50MB  0.69%  github.com/golang-jwt/jwt/v5.(*Parser).DecodeSegment
+         0     0% 93.97%    98.52MB  4.38%  github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+         0     0% 93.97%   106.02MB  4.72%  github.com/golang-jwt/jwt/v5.ParseWithClaims
+         0     0% 93.97%     1216MB 54.09%  golang.org/x/crypto/argon2.IDKey (inline)
+         0     0% 93.97%     1216MB 54.09%  golang.org/x/crypto/argon2.deriveKey
+         0     0% 93.97%    21.31MB  0.95%  main.main
+         0     0% 93.97%    21.31MB  0.95%  main.newApp

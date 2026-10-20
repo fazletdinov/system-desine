@@ -1,0 +1,28 @@
+$ go tool pprof -sample_index=alloc_space -list 'memory.\(\*Store\).ListMessagesBefore' heap.pprof   # из каталога messenger
+Total: 2.20GB
+ROUTINE ======================== messenger/internal/chat/adapters/memory.(*Store).ListMessagesBefore in messenger/internal/chat/adapters/memory/store.go
+  300.25MB   300.25MB (flat, cum) 13.36% of Total
+         .          .    123:func (s *Store) ListMessagesBefore(ctx context.Context, chatID domain.ChatID, beforeSeq int64, limit int) ([]domain.Message, error) {
+         .          .    124:	if err := ctx.Err(); err != nil {
+         .          .    125:		return nil, fmt.Errorf("memory: %w", err)
+         .          .    126:	}
+         .          .    127:	// Порт обещает пустую страницу на limit < 1; при отрицательном limit make ниже
+         .          .    128:	// без этой проверки запаниковал бы.
+         .          .    129:	if limit < 1 {
+         .          .    130:		return []domain.Message{}, nil
+         .          .    131:	}
+         .          .    132:	s.mu.RLock()
+         .          .    133:	defer s.mu.RUnlock()
+         .          .    134:	all := s.messages[chatID] // по возрастанию seq
+         .          .    135:	to := len(all)
+         .          .    136:	if beforeSeq > 0 {
+         .          .    137:		// Двоичный поиск первого сообщения с seq >= beforeSeq: всё левее — старше ключа.
+         .          .    138:		to = sort.Search(len(all), func(i int) bool { return all[i].Seq() >= beforeSeq })
+         .          .    139:	}
+         .          .    140:	from := max(0, to-limit)
+  300.25MB   300.25MB    141:	page := make([]domain.Message, 0, to-from)
+         .          .    142:	for i := to - 1; i >= from; i-- {
+         .          .    143:		page = append(page, all[i])
+         .          .    144:	}
+         .          .    145:	return page, nil
+         .          .    146:}

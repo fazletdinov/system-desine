@@ -1,0 +1,19 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+$ go test -run='^$' -bench=. -count=10 ./1-5/gc/greentea/ > greentea.txt
+$ GOEXPERIMENT=nogreenteagc go test -run='^$' -bench=. -count=10 ./1-5/gc/greentea/ > classic.txt
+$ benchstat classic.txt greentea.txt
+goos: linux
+goarch: amd64
+pkg: labs/1-5/gc/greentea
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+                     │   classic   │              greentea               │
+                     │   sec/op    │   sec/op     vs base                │
+Mark/objects=32B-12    39.84m ± 5%   21.10m ± 3%  -47.04% (p=0.000 n=10)
+Mark/objects=256B-12   9.239m ± 7%   4.847m ± 2%  -47.53% (p=0.000 n=10)
+geomean                19.19m        10.11m       -47.29%
+
+                     │   classic    │               greentea               │
+                     │ gc-cpu-ms/op │ gc-cpu-ms/op  vs base                │
+Mark/objects=32B-12      398.8 ± 4%     212.8 ± 2%  -46.63% (p=0.000 n=10)
+Mark/objects=256B-12     52.56 ± 6%     33.30 ± 0%  -36.64% (p=0.000 n=10)
+geomean                  144.8          84.20       -41.85%

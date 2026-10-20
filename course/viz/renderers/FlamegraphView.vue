@@ -150,7 +150,7 @@ const focusBlock = async (id: string): Promise<void> => {
 // Стрелки — по видимым блокам, Home — к корню. Esc в графе — к корню; если увеличения нет,
 // Esc уходит дальше (VizFrame закрывает оверлей).
 const onKeydown = async (event: KeyboardEvent): Promise<void> => {
-  if (isFlameNavKey(event.key)) {
+  if (isFlameNavKey(event.key, event)) {
     const to = neighbour(rects.value, cursorId.value, event.key)
     event.preventDefault() // стрелки не прокручивают страницу, даже на краю графа
     if (to !== undefined) await focusBlock(to.id)

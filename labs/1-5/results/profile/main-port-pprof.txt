@@ -1,0 +1,28 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2; Docker 29.9.1, compose: cpus 1, mem_limit 256m
+$ curl -si 127.0.0.1:8080/debug/pprof/
+HTTP/1.1 401 Unauthorized
+Content-Type: application/problem+json
+Www-Authenticate: Bearer realm="messenger"
+X-Request-Id: 01a15898-cbaa-734a-8a82-56fc3faa005d
+Date: Tue, 20 Oct 2026 09:16:11 GMT
+Content-Length: 355
+
+{"type":"https://messenger.example/problems/unauthenticated","title":"Не удалось определить пользователя","status":401,"detail":"нужен действующий токен в заголовке Authorization: Bearer","instance":"/debug/pprof/","code":"unauthenticated","request_id":"01a15898-cbaa-734a-8a82-56fc3faa005d"}
+
+$ curl -si -H "Authorization: Bearer $TOKEN" 127.0.0.1:8080/debug/pprof/
+HTTP/1.1 404 Not Found
+Content-Type: application/problem+json
+X-Request-Id: 01a15898-cbec-7382-949c-8b0a8eff6ca4
+Date: Tue, 20 Oct 2026 09:16:11 GMT
+Content-Length: 241
+
+{"type":"https://messenger.example/problems/not_found","title":"Не найдено","status":404,"detail":"маршрут не найден","instance":"/debug/pprof/","code":"not_found","request_id":"01a15898-cbec-7382-949c-8b0a8eff6ca4"}
+
+$ curl -si "127.0.0.1:6060/debug/pprof/profile?seconds=600"
+HTTP/1.1 400 Bad Request
+Content-Type: text/plain; charset=utf-8
+X-Content-Type-Options: nosniff
+Date: Tue, 20 Oct 2026 09:16:11 GMT
+Content-Length: 78
+
+seconds: ожидается число от 0 до 60, получено "600"

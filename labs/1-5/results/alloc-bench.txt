@@ -1,0 +1,66 @@
+goos: linux
+goarch: amd64
+pkg: labs/1-5/alloc
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkAppendGrow-12        	  317602	      3955 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  342748	      3871 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  359868	      4146 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  303398	      3786 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  286146	      4144 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  305022	      3836 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  311775	      3920 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  295352	      4245 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  252432	      4290 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendGrow-12        	  394790	      4806 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkAppendPrealloc-12    	  696363	      2040 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  854678	      2150 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  893938	      2654 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  631716	      2267 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  511458	      2283 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  651044	      1937 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  804414	      2082 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  791618	      1758 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  737311	      1660 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkAppendPrealloc-12    	  833370	      1917 ns/op	    8192 B/op	       1 allocs/op
+BenchmarkBufferNew-12         	  912702	      1312 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1486 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1370 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	  974078	      1548 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1677 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1646 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1343 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1592 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1907 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferNew-12         	 1000000	      1922 ns/op	    4039 B/op	       6 allocs/op
+BenchmarkBufferPool-12        	 3230457	       369.2 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3584656	       337.3 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3310582	       355.7 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3510163	       332.1 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3382071	       359.9 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3434690	       351.5 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3391542	       354.5 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3404295	       351.7 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3686172	       333.9 ns/op	       7 B/op	       0 allocs/op
+BenchmarkBufferPool-12        	 3420956	       352.5 ns/op	       7 B/op	       0 allocs/op
+BenchmarkSlicePointers-12     	   79837	     17628 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	   57366	     19424 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	   59025	     18126 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	   49663	     21506 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	   54514	     21565 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	   61046	     19991 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	   65475	     19327 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	   74792	     14464 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	  114818	     18364 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSlicePointers-12     	  105930	     19883 ns/op	   32000 B/op	    1000 allocs/op
+BenchmarkSliceValues-12       	  181773	      6333 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  188876	      6317 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  194712	      6159 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  195218	      6193 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  181322	      6216 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  184136	      6258 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  194715	      6165 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  194259	      6225 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  183673	      6222 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSliceValues-12       	  173857	      6347 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	labs/1-5/alloc	81.401s

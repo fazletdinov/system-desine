@@ -1,0 +1,32 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# из labs/1-5/alloc/escape/cases
+$ go build -gcflags=-m=2 . 2>&1 | grep -E "^./(elems|chan|slice).go" | grep -v "can inline"
+./slice.go:10:12: inlining call to sum
+./slice.go:20:12: inlining call to sum
+./chan.go:8:20: ch does not escape
+./chan.go:9:7: &point{...} does not escape
+./chan.go:18:7: &point{...} escapes to heap in CaseChanPointer:
+./chan.go:18:7:   flow: p ← &{storage for &point{...}}:
+./chan.go:18:7:     from &point{...} (spill) at ./chan.go:18:7
+./chan.go:18:7:     from p := &point{...} (assign) at ./chan.go:18:4
+./chan.go:18:7:   flow: {heap} ← p:
+./chan.go:18:7:     from ch <- p (send) at ./chan.go:19:5
+./chan.go:17:22: ch does not escape
+./chan.go:18:7: &point{...} escapes to heap
+./elems.go:9:11: make([]point, 0, 8) does not escape
+./elems.go:11:13: append does not escape
+./elems.go:23:17: &point{...} escapes to heap in CaseElemsPointers:
+./elems.go:23:17:   flow: {heap} ← &{storage for &point{...}}:
+./elems.go:23:17:     from &point{...} (spill) at ./elems.go:23:17
+./elems.go:23:17:     from append(s, &point{...}) (call parameter) at ./elems.go:23:13
+./elems.go:21:11: make([]*point, 0, 8) does not escape
+./elems.go:23:17: &point{...} escapes to heap
+./elems.go:23:13: append does not escape
+./slice.go:9:11: make([]int, 16) does not escape
+./slice.go:19:11: make([]int, n) does not escape
+./slice.go:27:13: make([]int, n) escapes to heap in CaseSliceReturned:
+./slice.go:27:13:   flow: ~r0 ← &{storage for make([]int, n)}:
+./slice.go:27:13:     from make([]int, n) (spill) at ./slice.go:27:13
+./slice.go:27:13:     from return make([]int, n) (return) at ./slice.go:27:2
+./slice.go:27:13: make([]int, n) escapes to heap
+./slice.go:30:10: s does not escape

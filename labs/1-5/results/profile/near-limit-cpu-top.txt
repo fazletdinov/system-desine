@@ -1,0 +1,34 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: cpu
+Time: 2026-10-20 12:17:23 MSK
+Duration: 20s, Total samples = 8.24s (41.20%)
+Showing nodes accounting for 7.89s, 95.75% of 8.24s total
+Dropped 215 nodes (cum <= 0.04s)
+Showing top 25 nodes out of 88
+      flat  flat%   sum%        cum   cum%
+     3.65s 44.30% 44.30%      3.65s 44.30%  golang.org/x/crypto/argon2.blamkaSSE4
+     1.69s 20.51% 64.81%      1.69s 20.51%  golang.org/x/crypto/argon2.xorBlocksSSE2
+     1.28s 15.53% 80.34%      1.28s 15.53%  golang.org/x/crypto/argon2.mixBlocksSSE2
+     0.32s  3.88% 84.22%      0.32s  3.88%  runtime.memclrNoHeapPointers
+     0.18s  2.18% 86.41%      0.18s  2.18%  runtime.madvise
+     0.11s  1.33% 87.74%      0.11s  1.33%  golang.org/x/crypto/argon2.phi (inline)
+     0.09s  1.09% 88.83%      0.09s  1.09%  runtime.procyieldAsm
+     0.08s  0.97% 89.81%      0.10s  1.21%  runtime.step
+     0.07s  0.85% 90.66%      6.69s 81.19%  golang.org/x/crypto/argon2.processBlockSSE
+     0.06s  0.73% 91.38%      0.06s  0.73%  runtime.typePointers.next
+     0.05s  0.61% 91.99%      0.05s  0.61%  internal/runtime/syscall/linux.Syscall6
+     0.05s  0.61% 92.60%      0.07s  0.85%  runtime.scanObjectsSmall
+     0.04s  0.49% 93.08%      0.07s  0.85%  runtime.(*unwinder).resolveInternal
+     0.04s  0.49% 93.57%      0.11s  1.33%  runtime.scanObject
+     0.04s  0.49% 94.05%      0.05s  0.61%  runtime.tryDeferToSpanScan
+     0.03s  0.36% 94.42%      0.05s  0.61%  runtime.scanblock
+     0.02s  0.24% 94.66%      0.13s  1.58%  golang.org/x/crypto/argon2.indexAlpha
+     0.02s  0.24% 94.90%      0.09s  1.09%  runtime.(*Frames).Next
+     0.01s  0.12% 95.02%      6.84s 83.01%  golang.org/x/crypto/argon2.processBlocks.func1
+     0.01s  0.12% 95.15%      0.67s  8.13%  net/http.(*conn).serve
+     0.01s  0.12% 95.27%      0.11s  1.33%  runtime.(*mcache).refill
+     0.01s  0.12% 95.39%      0.44s  5.34%  runtime.gcBgMarkWorker.func2
+     0.01s  0.12% 95.51%      0.43s  5.22%  runtime.gcDrain
+     0.01s  0.12% 95.63%      0.27s  3.28%  runtime.markroot
+     0.01s  0.12% 95.75%      0.23s  2.79%  runtime.markroot.func1

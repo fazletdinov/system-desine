@@ -1,0 +1,14 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# из labs/1-5/alloc/escape/cases
+$ go build -gcflags=-m=1 . 2>&1 | grep -E "return.go|inline.go"
+./inline.go:7:6: can inline newPoint
+./inline.go:20:6: can inline CaseInlineInlined
+./inline.go:29:6: can inline CaseInlineNoinline
+./return.go:8:6: can inline CaseReturnValue
+./return.go:18:6: can inline CaseReturnPointer
+./inline.go:21:15: inlining call to newPoint
+./inline.go:7:41: &point{...} escapes to heap
+./inline.go:15:49: &point{...} escapes to heap
+./inline.go:21:15: &point{...} does not escape
+./return.go:9:10: new(point) does not escape
+./return.go:19:10: new(point) escapes to heap

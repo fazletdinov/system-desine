@@ -652,7 +652,7 @@ $ GOMAXPROCS=1 GORACE='atexit_sleep_ms=0 history_size=1' ./history -n 30000 2>&1
 
 ### Читаем отчёт: race/iface под -race
 
-Вот первый прогон `race/iface` с детектором (полный вывод — в `lab-numbers/race-iface-race.txt`; отчётов пять, показаны первый и третий):
+Вот первый прогон `race/iface` с детектором (команда — `go run -race -tags labdemo ./1-5/race/iface` из `labs/`; отчётов пять, показаны первый и третий):
 
 ```text
 $ go run -race -tags labdemo ./1-5/race/iface

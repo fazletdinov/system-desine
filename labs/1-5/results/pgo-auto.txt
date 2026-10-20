@@ -1,0 +1,16 @@
+goos: linux
+goarch: amd64
+pkg: labs/1-5/pgo
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkRoute-12    	    5590	    215016 ns/op
+BenchmarkRoute-12    	    5626	    216484 ns/op
+BenchmarkRoute-12    	    5605	    214201 ns/op
+BenchmarkRoute-12    	    5574	    215149 ns/op
+BenchmarkRoute-12    	    5566	    216100 ns/op
+BenchmarkRoute-12    	    5222	    215808 ns/op
+BenchmarkRoute-12    	    5502	    214626 ns/op
+BenchmarkRoute-12    	    5553	    215287 ns/op
+BenchmarkRoute-12    	    5403	    217680 ns/op
+BenchmarkRoute-12    	    5596	    214422 ns/op
+PASS
+ok  	labs/1-5/pgo	11.913s

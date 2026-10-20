@@ -1,0 +1,26 @@
+goos: linux
+goarch: amd64
+pkg: labs/1-5/alloc
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkKeySprintf-12    	10861162	       107.6 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	12045240	       100.9 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	11600005	       104.6 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	10870738	       109.0 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	11966548	       106.3 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	11208265	       104.1 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	10795230	       105.1 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	12209040	       104.5 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	12483470	       106.1 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeySprintf-12    	12434568	       106.6 ns/op	      39 B/op	       2 allocs/op
+BenchmarkKeyAppend-12     	38933708	        41.73 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	26083069	        41.67 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	31829673	        41.36 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	31233672	        42.14 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	33499906	        42.88 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	39968444	        43.60 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	28597200	        42.11 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	27229262	        42.31 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	25326806	        48.69 ns/op	      23 B/op	       1 allocs/op
+BenchmarkKeyAppend-12     	25969668	        40.45 ns/op	      23 B/op	       1 allocs/op
+PASS
+ok  	labs/1-5/alloc	25.454s

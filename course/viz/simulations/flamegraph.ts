@@ -1,6 +1,7 @@
 import type { Caption, CaptionSegment } from '../core/caption'
 import { term } from '../core/caption'
 import { formatNs, formatNumber } from '../core/format'
+import type { KeyModifiers } from '../core/radio-keys'
 import type { Simulation, Step } from '../core/types'
 import rawData from '../data/flame-messenger.json'
 
@@ -201,8 +202,10 @@ export function project(tree: FlameTree, win: ViewWindow, minW = 0): ViewRect[] 
 // Граф растёт вверх, поэтому «вверх» — к вызванной функции, «вниз» — к вызвавшей.
 export type FlameNavKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Home'
 
-export const isFlameNavKey = (key: string): key is FlameNavKey =>
-  key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Home'
+// С Alt/Ctrl/Meta стрелки принадлежат браузеру (Alt+← — «назад»): граф их не перехватывает.
+export const isFlameNavKey = (key: string, modifiers: KeyModifiers = {}): key is FlameNavKey =>
+  !(modifiers.altKey || modifiers.ctrlKey || modifiers.metaKey) &&
+  (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Home')
 
 // Видимый блок, куда ведёт клавиша от блока fromId; undefined — идти некуда (край графа).
 // Вверх — самый левый видимый ребёнок, вниз — родитель, влево и вправо — соседний видимый

@@ -1,0 +1,104 @@
+package main
+
+// ВРЕМЕННО (замер R19, не коммитить): цена служебного порта по компонентам.
+// XDBG_MODE=off|port|contention|recorder|full, вместе с временным XDBG_VARIANT в newDebug.
+
+import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+func benchDo(b *testing.B, c *http.Client, method, url, token, body string) map[string]any {
+	b.Helper()
+	var rd io.Reader
+	if body != "" {
+		rd = strings.NewReader(body)
+	}
+	req, _ := http.NewRequest(method, url, rd)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var m map[string]any
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		b.Fatalf("%s %s: %d %s", method, url, resp.StatusCode, data)
+	}
+	_ = json.Unmarshal(data, &m)
+	return m
+}
+
+func BenchmarkCostListMessages(b *testing.B) {
+	mode := os.Getenv("XDBG_MODE")
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	cfg := config{SigningKey: key, HasherParams: fastHasher, RequestTimeout: defaultRequestTimeout,
+		IdempotencySweepEvery: defaultIdempotencySweepEvery, HashConcurrency: 2, HashQueue: 8, FlightThreshold: defaultFlightThreshold}
+	switch mode {
+	case "off":
+	case "full":
+		os.Setenv("XDBG_VARIANT", "")
+		cfg.DebugAddr = "127.0.0.1:0"
+	default:
+		os.Setenv("XDBG_VARIANT", mode)
+		cfg.DebugAddr = "127.0.0.1:0"
+	}
+	a, err := newApp(cfg, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() {
+		if a.recorder != nil {
+			a.recorder.Stop()
+		}
+		runtime.SetMutexProfileFraction(0)
+		runtime.SetBlockProfileRate(0)
+	}()
+	srv := httptest.NewServer(a.handler)
+	defer srv.Close()
+	c := srv.Client()
+	pw := "достаточно длинный пароль"
+	alice := benchDo(b, c, "POST", srv.URL+"/v1/users", "", `{"username":"alice","display_name":"a","password":"`+pw+`"}`)
+	bob := benchDo(b, c, "POST", srv.URL+"/v1/users", "", `{"username":"bobby","display_name":"b","password":"`+pw+`"}`)
+	_ = alice
+	tok := benchDo(b, c, "POST", srv.URL+"/v1/tokens", "", `{"username":"alice","password":"`+pw+`"}`)["access_token"].(string)
+	chat := benchDo(b, c, "POST", srv.URL+"/v1/chats", tok, `{"kind":"direct","member_ids":["`+bob["id"].(string)+`"]}`)["id"].(string)
+	msgs := srv.URL + "/v1/chats/" + chat + "/messages"
+	for i := range 50 {
+		benchDo(b, c, "POST", msgs, tok, `{"client_message_id":"`+uuid.NewString()+`","text":"сообщение `+strconv.Itoa(i)+`"}`)
+	}
+	b.SetParallelism(4) // 4 × GOMAXPROCS клиентов, как 8 клиентов read-load при 2 P
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		cl := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 1}}
+		for pb.Next() {
+			req, _ := http.NewRequest("GET", msgs, nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			resp, err := cl.Do(req)
+			if err != nil {
+				b.Error(err)
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+	})
+}

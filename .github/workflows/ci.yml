@@ -57,6 +57,8 @@ jobs:
             labs:
               - 'labs/**'
               - 'course/scripts/check-labs.ts'
+              # scenario.sh сверяет этот снимок с выводом alloc/escape/dump.
+              - 'course/viz/data/escape-lab.json'
               - '.github/workflows/ci.yml'
             workflows:
               - '.github/**'

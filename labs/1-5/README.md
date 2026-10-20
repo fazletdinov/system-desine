@@ -33,7 +33,8 @@
 │   ├── limiter/         # ограничитель CPU сборщика выше GOMEMLIMIT
 │   └── greentea/        # бенчмарк разметки: Green Tea против прежней
 ├── pgo/                 # урок 1.5.10: горячий путь, бенчмарк без профиля и с default.pgo
-└── fold/                # урок 1.5.10: вывод go tool pprof -traces → JSON для песочницы flamegraph
+├── fold/                # урок 1.5.10: вывод go tool pprof -traces → JSON для песочницы flamegraph
+└── results/             # сырые выводы уроков 1.5.7–1.5.10, на которые ссылаются уроки (README внутри)
 ```
 
 ## Запуск

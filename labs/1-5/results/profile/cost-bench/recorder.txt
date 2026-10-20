@@ -1,0 +1,60 @@
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   54067	     64398 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   53785	     64320 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   49143	     64652 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   54530	     64158 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   51908	     64498 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   54322	     63850 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   52237	     66799 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   53721	     64292 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   54171	     64186 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   53406	     64188 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   53413	     65109 ns/op
+goos: linux
+goarch: amd64
+pkg: messenger/cmd/messenger
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkCostListMessages-2   	   53829	     64249 ns/op

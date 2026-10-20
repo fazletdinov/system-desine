@@ -1,0 +1,39 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: cpu
+Time: 2026-10-20 12:16:37 MSK
+Duration: 20s, Total samples = 2.51s (12.55%)
+Showing nodes accounting for 1.89s, 75.30% of 2.51s total
+Dropped 128 nodes (cum <= 0.01s)
+Showing top 30 nodes out of 118
+      flat  flat%   sum%        cum   cum%
+     0.01s   0.4%   0.4%      1.89s 75.30%  golang.org/x/crypto/argon2.processBlocks.func1
+     0.06s  2.39%  2.79%      1.87s 74.50%  golang.org/x/crypto/argon2.processBlockSSE
+         0     0%  2.79%      1.87s 74.50%  golang.org/x/crypto/argon2.processBlockXOR (inline)
+     1.22s 48.61% 51.39%      1.22s 48.61%  golang.org/x/crypto/argon2.blamkaSSE4
+         0     0% 51.39%      0.45s 17.93%  net/http.(*conn).serve
+     0.38s 15.14% 66.53%      0.38s 15.14%  golang.org/x/crypto/argon2.mixBlocksSSE2
+         0     0% 66.53%      0.30s 11.95%  main.newApp.func2
+         0     0% 66.53%      0.30s 11.95%  messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+         0     0% 66.53%      0.30s 11.95%  messenger/internal/platform/middleware.AccessLog.func1.1
+         0     0% 66.53%      0.30s 11.95%  messenger/internal/platform/middleware.RequestID.func1.1
+         0     0% 66.53%      0.30s 11.95%  net/http.HandlerFunc.ServeHTTP
+         0     0% 66.53%      0.30s 11.95%  net/http.serverHandler.ServeHTTP
+         0     0% 66.53%      0.28s 11.16%  messenger/internal/platform/middleware.Recover.func1.1
+         0     0% 66.53%      0.28s 11.16%  messenger/internal/platform/middleware.Timeout.func1.1
+         0     0% 66.53%      0.25s  9.96%  messenger/internal/auth/adapters/httpapi.(*Handler).SignUp
+         0     0% 66.53%      0.25s  9.96%  messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp
+         0     0% 66.53%      0.25s  9.96%  messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp.func1
+         0     0% 66.53%      0.25s  9.96%  messenger/internal/platform/httpauth.Middleware.func1.1
+         0     0% 66.53%      0.25s  9.96%  messenger/internal/platform/middleware.RouteErrors.func1
+         0     0% 66.53%      0.25s  9.96%  net/http.(*ServeMux).ServeHTTP
+     0.21s  8.37% 74.90%      0.21s  8.37%  golang.org/x/crypto/argon2.xorBlocksSSE2
+         0     0% 74.90%      0.21s  8.37%  messenger/internal/auth/usecase.(*SignUp).Execute
+         0     0% 74.90%      0.20s  7.97%  golang.org/x/crypto/argon2.IDKey (inline)
+         0     0% 74.90%      0.20s  7.97%  golang.org/x/crypto/argon2.deriveKey
+         0     0% 74.90%      0.20s  7.97%  messenger/internal/auth/adapters/argon2id.(*Hasher).Hash
+         0     0% 74.90%      0.20s  7.97%  messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash
+         0     0% 74.90%      0.20s  7.97%  messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash.func1
+         0     0% 74.90%      0.20s  7.97%  messenger/internal/auth/adapters/hashlimit.limited[go.shape.struct { messenger/internal/auth/domain.value string }]
+     0.01s   0.4% 75.30%      0.20s  7.97%  runtime.mallocgc
+         0     0% 75.30%      0.19s  7.57%  golang.org/x/crypto/argon2.initBlocks

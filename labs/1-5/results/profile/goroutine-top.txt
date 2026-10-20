@@ -1,0 +1,32 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: goroutine
+Time: 2026-10-20 11:55:55 MSK
+Showing nodes accounting for 32, 94.12% of 34 total
+Showing top 25 nodes out of 103
+      flat  flat%   sum%        cum   cum%
+        27 79.41% 79.41%         27 79.41%  runtime.gopark
+         1  2.94% 82.35%          1  2.94%  golang.org/x/crypto/argon2.processBlockSSE
+         1  2.94% 85.29%          1  2.94%  runtime.asyncPreempt2
+         1  2.94% 88.24%          1  2.94%  runtime.goroutineProfileWithLabels
+         1  2.94% 91.18%          1  2.94%  runtime.notetsleepg
+         1  2.94% 94.12%          1  2.94%  syscall.Syscall
+         0     0% 94.12%          6 17.65%  bufio.(*Reader).Peek
+         0     0% 94.12%          6 17.65%  bufio.(*Reader).fill
+         0     0% 94.12%          1  2.94%  bufio.(*Writer).Write
+         0     0% 94.12%          1  2.94%  bufio.(*Writer).WriteString
+         0     0% 94.12%          1  2.94%  encoding/json.(*Encoder).Encode
+         0     0% 94.12%          1  2.94%  golang.org/x/crypto/argon2.IDKey
+         0     0% 94.12%          1  2.94%  golang.org/x/crypto/argon2.deriveKey
+         0     0% 94.12%          1  2.94%  golang.org/x/crypto/argon2.processBlockXOR (inline)
+         0     0% 94.12%          1  2.94%  golang.org/x/crypto/argon2.processBlocks
+         0     0% 94.12%          1  2.94%  golang.org/x/crypto/argon2.processBlocks.func1
+         0     0% 94.12%          4 11.76%  golang.org/x/sync/errgroup.(*Group).Go.func1
+         0     0% 94.12%          2  5.88%  internal/poll.(*FD).Accept
+         0     0% 94.12%         12 35.29%  internal/poll.(*FD).Read
+         0     0% 94.12%          1  2.94%  internal/poll.(*FD).Write
+         0     0% 94.12%         14 41.18%  internal/poll.(*pollDesc).wait
+         0     0% 94.12%         14 41.18%  internal/poll.(*pollDesc).waitRead (inline)
+         0     0% 94.12%          1  2.94%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 94.12%         14 41.18%  internal/poll.runtime_pollWait
+         0     0% 94.12%          1  2.94%  main.exitOnSecondSignal
