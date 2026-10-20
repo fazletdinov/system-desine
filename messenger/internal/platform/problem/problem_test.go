@@ -132,7 +132,7 @@ func TestEveryCodeHasStatusAndTitle(t *testing.T) {
 
 func TestRespondPolicy(t *testing.T) {
 	never := func(error) (problem.Problem, bool) { return problem.Problem{}, false }
-	secret := errors.New("pq: password authentication failed for host db-1")
+	secret := errors.New("failed to connect to `user=messenger database=messenger`: 10.0.3.7:5432 (db-1): failed SASL auth: FATAL: password authentication failed for user \"messenger\" (SQLSTATE 28P01)")
 	tests := []struct {
 		name   string
 		err    error

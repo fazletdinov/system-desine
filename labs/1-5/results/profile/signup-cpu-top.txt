@@ -1,0 +1,34 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: cpu
+Time: 2026-10-20 12:16:37 MSK
+Duration: 20s, Total samples = 2.51s (12.55%)
+Showing nodes accounting for 2.22s, 88.45% of 2.51s total
+Dropped 128 nodes (cum <= 0.01s)
+Showing top 25 nodes out of 118
+      flat  flat%   sum%        cum   cum%
+     1.22s 48.61% 48.61%      1.22s 48.61%  golang.org/x/crypto/argon2.blamkaSSE4
+     0.38s 15.14% 63.75%      0.38s 15.14%  golang.org/x/crypto/argon2.mixBlocksSSE2
+     0.21s  8.37% 72.11%      0.21s  8.37%  golang.org/x/crypto/argon2.xorBlocksSSE2
+     0.19s  7.57% 79.68%      0.19s  7.57%  runtime.memclrNoHeapPointers
+     0.08s  3.19% 82.87%      0.08s  3.19%  internal/runtime/syscall/linux.Syscall6
+     0.06s  2.39% 85.26%      1.87s 74.50%  golang.org/x/crypto/argon2.processBlockSSE
+     0.01s   0.4% 85.66%      0.02s   0.8%  encoding/json.(*Decoder).Decode
+     0.01s   0.4% 86.06%      1.89s 75.30%  golang.org/x/crypto/argon2.processBlocks.func1
+     0.01s   0.4% 86.45%      0.04s  1.59%  runtime.findRunnable
+     0.01s   0.4% 86.85%      0.20s  7.97%  runtime.mallocgc
+     0.01s   0.4% 87.25%      0.02s   0.8%  runtime.netpoll
+     0.01s   0.4% 87.65%      0.03s  1.20%  runtime.pcvalue
+     0.01s   0.4% 88.05%      0.02s   0.8%  runtime.scanObject
+     0.01s   0.4% 88.45%      0.03s  1.20%  runtime.scanblock
+         0     0% 88.45%      0.02s   0.8%  bufio.(*Reader).ReadLine
+         0     0% 88.45%      0.02s   0.8%  bufio.(*Reader).ReadSlice
+         0     0% 88.45%      0.03s  1.20%  bufio.(*Reader).fill
+         0     0% 88.45%      0.03s  1.20%  bufio.(*Writer).Flush
+         0     0% 88.45%      0.02s   0.8%  context.(*cancelCtx).Done
+         0     0% 88.45%      0.04s  1.59%  context.(*cancelCtx).propagateCancel
+         0     0% 88.45%      0.03s  1.20%  context.WithDeadline (inline)
+         0     0% 88.45%      0.03s  1.20%  context.WithDeadlineCause
+         0     0% 88.45%      0.03s  1.20%  context.WithTimeout
+         0     0% 88.45%      0.02s   0.8%  encoding/json.(*Encoder).Encode
+         0     0% 88.45%      0.02s   0.8%  encoding/json/v2.MarshalEncode

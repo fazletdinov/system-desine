@@ -1,0 +1,48 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: alloc_objects
+Time: 2026-10-20 11:55:55 MSK
+Showing nodes accounting for 5570051, 93.97% of 5927748 total
+Dropped 87 nodes (cum <= 29638)
+Showing top 40 nodes out of 120
+      flat  flat%   sum%        cum   cum%
+    965303 16.28% 16.28%     965303 16.28%  reflect.unsafe_New
+    491395  8.29% 24.57%     491395  8.29%  net/textproto.readMIMEHeader
+    300381  5.07% 29.64%    1959578 33.06%  github.com/golang-jwt/jwt/v5.(*Parser).ParseUnverified
+    267634  4.51% 34.16%     267634  4.51%  net/http.Header.Clone (inline)
+    217683  3.67% 37.83%     425716  7.18%  context.WithDeadlineCause
+    196611  3.32% 41.15%     415068  7.00%  github.com/golang-jwt/jwt/v5.(*NumericDate).UnmarshalJSON
+    174769  2.95% 44.09%     174769  2.95%  github.com/google/uuid.UUID.String
+    174282  2.94% 47.03%     207050  3.49%  net/textproto.MIMEHeader.Set (inline)
+    158972  2.68% 49.72%     158972  2.68%  net/http.(*Request).WithContext
+    150201  2.53% 52.25%     150201  2.53%  encoding/base64.(*Encoding).DecodeString
+    142001  2.40% 54.65%    2358303 39.78%  messenger/internal/auth/adapters/jwt.(*Verifier).Verify
+    131078  2.21% 56.86%     131078  2.21%  context.WithValue
+    131074  2.21% 59.07%     131074  2.21%  encoding/json.(*Number).UnmarshalJSONFrom
+    131073  2.21% 61.28%     460395  7.77%  github.com/golang-jwt/jwt/v5.(*ClaimStrings).UnmarshalJSON
+    131073  2.21% 63.49%     131073  2.21%  net/textproto.canonicalMIMEHeaderKey
+    122351  2.06% 65.55%     848351 14.31%  net/http.(*conn).readRequest
+    120154  2.03% 67.58%     120154  2.03%  net/url.ParseQuery (inline)
+    114689  1.93% 69.52%    1219436 20.57%  messenger/internal/chat/adapters/httpapi/gen.(*ServerInterfaceWrapper).ListMessages
+    107558  1.81% 71.33%     163737  2.76%  context.(*cancelCtx).propagateCancel
+    103772  1.75% 73.08%     103772  1.75%  github.com/golang-jwt/jwt/v5.NewParser (inline)
+     98305  1.66% 74.74%      98305  1.66%  net/http.(*routingNode).matchPath
+     87383  1.47% 76.21%      87383  1.47%  github.com/golang-jwt/jwt/v5.NewNumericDate (inline)
+     76462  1.29% 77.50%      76462  1.29%  github.com/golang-jwt/jwt/v5.splitToken
+     72095  1.22% 78.72%      80287  1.35%  net/textproto.(*Reader).ReadLine (inline)
+     65541  1.11% 79.83%      65541  1.11%  messenger/internal/platform/idempotency.Middleware.func1
+     65538  1.11% 80.93%    4507915 76.05%  messenger/internal/platform/middleware.AccessLog.func1.1
+     65537  1.11% 82.04%      65537  1.11%  github.com/google/uuid.NewRandomFromReader
+     65537  1.11% 83.14%      65537  1.11%  net/http.(*connReader).startBackgroundRead
+     61903  1.04% 84.19%     111056  1.87%  messenger/internal/chat/domain.RestoreChat (inline)
+     61903  1.04% 85.23%      61903  1.04%  net/url.parse
+     57365  0.97% 86.20%      57365  0.97%  github.com/golang-jwt/jwt/v5.(*SigningMethodEd25519).Verify
+     57347  0.97% 87.17%    3886662 65.57%  messenger/internal/platform/httpauth.Middleware.func1.1
+     56179  0.95% 88.11%      56179  0.95%  context.(*cancelCtx).Done
+     54615  0.92% 89.03%      54615  0.92%  slices.Grow[go.shape.[]log/slog.Attr,go.shape.struct { Key string; Value log/slog.Value }] (inline)
+     51498  0.87% 89.90%      51498  0.87%  time.newTimer
+     51243  0.86% 90.77%      51243  0.86%  messenger/internal/chat/adapters/memory.(*Store).ListMessagesBefore
+     50813  0.86% 91.63%      50813  0.86%  messenger/internal/chat/adapters/httpapi.toMessagePage
+     49153  0.83% 92.45%      49153  0.83%  slices.Clone[go.shape.[]messenger/internal/chat/domain.UserID,go.shape.struct { messenger/internal/chat/domain.value string }] (inline)
+     45889  0.77% 93.23%     679474 11.46%  net/http.readRequestLimit
+     43691  0.74% 93.97%      43691  0.74%  messenger/internal/auth/adapters/jwt.(*Verifier).key

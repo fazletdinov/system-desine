@@ -1,0 +1,25 @@
+$ go tool pprof -peek 'field.\(\*Element\).Multiply$' cpu.pprof
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: cpu
+Time: 2026-10-20 11:55:35 MSK
+Duration: 20s, Total samples = 19.74s (98.69%)
+Showing nodes accounting for 19.74s, 100% of 19.74s total
+----------------------------------------------------------+-------------
+      flat  flat%   sum%        cum   cum%   calls calls% + context 	 	 
+----------------------------------------------------------+-------------
+                                             1.05s 51.47% |   crypto/internal/fips140/edwards25519.(*projP2).FromP1xP1 (inline)
+                                             0.41s 20.10% |   crypto/internal/fips140/edwards25519.(*Point).fromP1xP1 (inline)
+                                             0.19s  9.31% |   crypto/internal/fips140/edwards25519.(*projP1xP1).Sub (inline)
+                                             0.12s  5.88% |   crypto/internal/fips140/edwards25519.(*projP1xP1).AddAffine (inline)
+                                             0.11s  5.39% |   crypto/internal/fips140/edwards25519.(*projP1xP1).Add (inline)
+                                             0.07s  3.43% |   crypto/internal/fips140/edwards25519.(*projP1xP1).SubAffine (inline)
+                                             0.02s  0.98% |   crypto/internal/fips140/edwards25519/field.(*Element).Invert (inline)
+                                             0.02s  0.98% |   crypto/internal/fips140/edwards25519/field.(*Element).Pow22523 (inline)
+                                             0.02s  0.98% |   crypto/internal/fips140/edwards25519/field.(*Element).SqrtRatio (inline)
+                                             0.01s  0.49% |   crypto/internal/fips140/edwards25519.(*Point).SetBytes (inline)
+                                             0.01s  0.49% |   crypto/internal/fips140/edwards25519.(*Point).fromP2 (inline)
+                                             0.01s  0.49% |   crypto/internal/fips140/edwards25519.(*projCached).FromP3 (inline)
+     0.01s 0.051% 0.051%      2.04s 10.33%                | crypto/internal/fips140/edwards25519/field.(*Element).Multiply
+                                             2.03s 99.51% |   crypto/internal/fips140/edwards25519/field.feMul
+----------------------------------------------------------+-------------

@@ -1,0 +1,49 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: cpu
+Time: 2026-10-20 11:55:35 MSK
+Duration: 20s, Total samples = 19.74s (98.69%)
+Showing nodes accounting for 13.83s, 70.06% of 19.74s total
+Dropped 700 nodes (cum <= 0.10s)
+Showing top 40 nodes out of 191
+      flat  flat%   sum%        cum   cum%
+     2.39s 12.11% 12.11%      2.39s 12.11%  internal/runtime/syscall/linux.Syscall6
+     2.03s 10.28% 22.39%      2.03s 10.28%  crypto/internal/fips140/edwards25519/field.feMul
+     1.43s  7.24% 29.64%      1.43s  7.24%  golang.org/x/crypto/argon2.blamkaSSE4
+     0.91s  4.61% 34.25%      1.45s  7.35%  encoding/json/internal/jsonwire.AppendQuote
+     0.60s  3.04% 37.28%      0.60s  3.04%  golang.org/x/crypto/argon2.xorBlocksSSE2
+     0.58s  2.94% 40.22%      3.67s 18.59%  encoding/json/v2.makeStructArshaler.func2
+     0.54s  2.74% 42.96%      0.54s  2.74%  golang.org/x/crypto/argon2.mixBlocksSSE2
+     0.50s  2.53% 45.49%      1.30s  6.59%  crypto/internal/fips140/edwards25519/field.feSquare
+     0.40s  2.03% 47.52%      0.41s  2.08%  unicode/utf8.decodeRuneSlow
+     0.39s  1.98% 49.49%      0.41s  2.08%  crypto/internal/fips140/edwards25519/field.addMul (inline)
+     0.36s  1.82% 51.32%      0.48s  2.43%  crypto/internal/fips140/edwards25519/field.addMul38 (inline)
+     0.33s  1.67% 52.99%      0.37s  1.87%  crypto/internal/fips140/edwards25519/field.(*Element).carryPropagate (inline)
+     0.26s  1.32% 54.31%      0.26s  1.32%  crypto/internal/fips140/edwards25519/field.mul19 (inline)
+     0.25s  1.27% 55.57%      0.26s  1.32%  time.appendInt
+     0.24s  1.22% 56.79%      0.80s  4.05%  crypto/internal/fips140/edwards25519/field.feSquareN
+     0.24s  1.22% 58.00%      0.24s  1.22%  runtime.asyncPreempt
+     0.21s  1.06% 59.07%      0.21s  1.06%  runtime.memmove
+     0.20s  1.01% 60.08%      0.21s  1.06%  crypto/internal/fips140/edwards25519/field.mul (inline)
+     0.18s  0.91% 60.99%      0.37s  1.87%  crypto/internal/fips140/edwards25519/field.(*Element).Subtract
+     0.14s  0.71% 61.70%      0.14s  0.71%  crypto/internal/fips140/sha512.blockAVX2
+     0.14s  0.71% 62.41%      1.78s  9.02%  encoding/json/v2.makeStringArshaler.func1
+     0.13s  0.66% 63.07%      0.32s  1.62%  crypto/internal/fips140/edwards25519/field.(*Element).Add
+     0.12s  0.61% 63.68%      1.90s  9.63%  crypto/internal/fips140/edwards25519.(*projP1xP1).Double
+     0.12s  0.61% 64.29%      0.24s  1.22%  messenger/internal/chat/adapters/httpapi.toMessagePage
+     0.11s  0.56% 64.84%      0.11s  0.56%  internal/runtime/maps.memHashAES
+     0.11s  0.56% 65.40%      0.11s  0.56%  runtime.memclrNoHeapPointers
+     0.10s  0.51% 65.91%      0.10s  0.51%  time.runtimeNow
+     0.08s  0.41% 66.31%      0.10s  0.51%  encoding/json/jsontext.stateMachine.MayAppendDelim
+     0.08s  0.41% 66.72%      0.11s  0.56%  encoding/json/v2.makeString
+     0.08s  0.41% 67.12%      0.18s  0.91%  reflect.Value.Field
+     0.07s  0.35% 67.48%      4.45s 22.54%  crypto/internal/fips140/edwards25519.(*Point).VarTimeDoubleScalarBaseMult
+     0.07s  0.35% 67.83%      0.11s  0.56%  crypto/internal/fips140/edwards25519/field.addMul19 (inline)
+     0.07s  0.35% 68.19%      0.11s  0.56%  sync.(*Pool).Get
+     0.06s   0.3% 68.49%      1.11s  5.62%  crypto/internal/fips140/edwards25519.(*projP2).FromP1xP1
+     0.06s   0.3% 68.79%      0.20s  1.01%  encoding/json/jsontext.(*encoderState).WriteToken
+     0.06s   0.3% 69.10%      3.65s 18.49%  encoding/json/v2.makeSliceArshaler.func2
+     0.05s  0.25% 69.35%      0.47s  2.38%  crypto/internal/fips140/edwards25519.(*Point).fromP1xP1
+     0.05s  0.25% 69.60%      0.11s  0.56%  internal/runtime/maps.(*Map).getWithoutKeySmallFastStr
+     0.05s  0.25% 69.86%      0.14s  0.71%  messenger/internal/chat/adapters/memory.(*Store).ListMessagesBefore
+     0.04s   0.2% 70.06%      0.10s  0.51%  encoding/json/jsontext.(*decoderState).consumeValue

@@ -1,0 +1,78 @@
+goroutine profile: total 13
+2 @ 0x48b58a 0x44a957 0x48a785 0x4d3447 0x4d493d 0x4d492b 0x59e129 0x5ad41b 0x5ac890 0x6e3739 0x775d88 0x4925a1
+#	0x48a784	internal/poll.runtime_pollWait+0x84			runtime/netpoll.go:351
+#	0x4d3446	internal/poll.(*pollDesc).wait+0x26			internal/poll/fd_poll_runtime.go:84
+#	0x4d493c	internal/poll.(*pollDesc).waitRead+0x27c		internal/poll/fd_poll_runtime.go:89
+#	0x4d492a	internal/poll.(*FD).Accept+0x26a			internal/poll/fd_unix.go:618
+#	0x59e128	net.(*netFD).accept+0x28				net/fd_unix.go:149
+#	0x5ad41a	net.(*TCPListener).accept+0x1a				net/tcpsock_posix.go:159
+#	0x5ac88f	net.(*TCPListener).Accept+0x2f				net/tcpsock.go:387
+#	0x6e3738	net/http.(*Server).Serve+0x378				net/http/server.go:3574
+#	0x775d87	messenger/internal/platform/httpserver.Serve.func1+0x27	messenger/internal/platform/httpserver/server.go:88
+
+1 @ 0x41df09 0x48d6f8 0x7829d3 0x4925a1
+#	0x48d6f7	os/signal.signal_recv+0x97	runtime/sigqueue.go:152
+#	0x7829d2	os/signal.loop+0x12		os/signal/signal_unix.go:23
+
+1 @ 0x4474d1 0x48a35d 0x758cf1 0x7589c5 0x755929 0x770374 0x770dbc 0x6e0309 0x7767d3 0x6e0309 0x6e1eef 0x6ffbee 0x6de97c 0x4925a1
+#	0x758cf0	runtime/pprof.writeRuntimeProfile+0xb0				runtime/pprof/pprof.go:848
+#	0x7589c4	runtime/pprof.writeGoroutine+0x44				runtime/pprof/pprof.go:781
+#	0x755928	runtime/pprof.(*Profile).WriteTo+0x148				runtime/pprof/pprof.go:405
+#	0x770373	net/http/pprof.handler.ServeHTTP+0x553				net/http/pprof/pprof.go:272
+#	0x770dbb	net/http/pprof.Index+0xdb					net/http/pprof/pprof.go:391
+#	0x6e0308	net/http.HandlerFunc.ServeHTTP+0x28				net/http/server.go:2358
+#	0x7767d2	messenger/internal/platform/debugserver.limitSeconds.func1+0xd2	messenger/internal/platform/debugserver/debugserver.go:108
+#	0x6e0308	net/http.HandlerFunc.ServeHTTP+0x28				net/http/server.go:2358
+#	0x6e1eee	net/http.(*ServeMux).ServeHTTP+0x1ce				net/http/server.go:2923
+#	0x6ffbed	net/http.serverHandler.ServeHTTP+0x8d				net/http/server.go:3436
+#	0x6de97b	net/http.(*conn).serve+0x6db					net/http/server.go:2157
+
+1 @ 0x48b58a 0x4184ae 0x417fd2 0x77cd05 0x7887c7 0x787ec6 0x4518c7 0x4925a1
+#	0x77cd04	messenger/internal/platform/lifecycle.Run+0x504	messenger/internal/platform/lifecycle/lifecycle.go:129
+#	0x7887c6	main.run+0x866					messenger/cmd/messenger/main.go:70
+#	0x787ec5	main.main+0x1e5					messenger/cmd/messenger/main.go:25
+#	0x4518c6	runtime.main+0x426				runtime/proc.go:302
+
+1 @ 0x48b58a 0x463e37 0x7755d7 0x7753e5 0x7762f8 0x77dab1 0x77c570 0x4925a1
+#	0x7755d6	messenger/internal/platform/httpserver.Serve+0x196		messenger/internal/platform/httpserver/server.go:90
+#	0x7753e4	messenger/internal/platform/httpserver.Run+0x144		messenger/internal/platform/httpserver/server.go:76
+#	0x7762f7	messenger/internal/platform/debugserver.(*Server).Run+0x37	messenger/internal/platform/debugserver/debugserver.go:152
+#	0x77dab0	messenger/internal/platform/lifecycle.Run.func1.func1+0x90	messenger/internal/platform/lifecycle/lifecycle.go:101
+#	0x77c56f	golang.org/x/sync/errgroup.(*Group).Go.func1+0x4f		golang.org/x/sync@v0.24.0/errgroup/errgroup.go:93
+
+1 @ 0x48b58a 0x463e37 0x7755d7 0x7753e5 0x788937 0x77dab1 0x77c570 0x4925a1
+#	0x7755d6	messenger/internal/platform/httpserver.Serve+0x196		messenger/internal/platform/httpserver/server.go:90
+#	0x7753e4	messenger/internal/platform/httpserver.Run+0x144		messenger/internal/platform/httpserver/server.go:76
+#	0x788936	main.httpComponent.Run+0x56					messenger/cmd/messenger/main.go:98
+#	0x77dab0	messenger/internal/platform/lifecycle.Run.func1.func1+0x90	messenger/internal/platform/lifecycle/lifecycle.go:101
+#	0x77c56f	golang.org/x/sync/errgroup.(*Group).Go.func1+0x4f		golang.org/x/sync@v0.24.0/errgroup/errgroup.go:93
+
+1 @ 0x48b58a 0x463e37 0x776cfb 0x77dab1 0x77c570 0x4925a1
+#	0x776cfa	messenger/internal/platform/flightrec.(*Dumper).Run+0x9a	messenger/internal/platform/flightrec/dumper.go:98
+#	0x77dab0	messenger/internal/platform/lifecycle.Run.func1.func1+0x90	messenger/internal/platform/lifecycle/lifecycle.go:101
+#	0x77c56f	golang.org/x/sync/errgroup.(*Group).Go.func1+0x4f		golang.org/x/sync@v0.24.0/errgroup/errgroup.go:93
+
+1 @ 0x48b58a 0x463e37 0x77e525 0x77dab1 0x77c570 0x4925a1
+#	0x77e524	messenger/internal/platform/periodic.(*Task).Run+0x104		messenger/internal/platform/periodic/periodic.go:67
+#	0x77dab0	messenger/internal/platform/lifecycle.Run.func1.func1+0x90	messenger/internal/platform/lifecycle/lifecycle.go:101
+#	0x77c56f	golang.org/x/sync/errgroup.(*Group).Go.func1+0x4f		golang.org/x/sync@v0.24.0/errgroup/errgroup.go:93
+
+1 @ 0x48b58a 0x463e37 0x782d1c 0x4925a1
+#	0x782d1b	os/signal.NotifyContext.func1+0x7b	os/signal/signal.go:304
+
+1 @ 0x48b58a 0x463e37 0x788aa5 0x4925a1
+#	0x788aa4	main.exitOnSecondSignal+0xc4	messenger/cmd/messenger/signals.go:29
+
+1 @ 0x48b58a 0x472025 0x76de34 0x4925a1
+#	0x76de33	runtime/trace.(*traceMultiplexer).startLocked.func1+0xb3	runtime/trace/subscribe.go:167
+
+1 @ 0x4a1f05 0x4a06d8 0x4d3e14 0x4d3dff 0x4d3d41 0x59d365 0x5a5fa5 0x6d8512 0x4925a1
+#	0x4a1f04	syscall.Syscall+0x24				syscall/syscall_linux.go:74
+#	0x4a06d7	syscall.read+0x37				syscall/zsyscall_linux_amd64.go:736
+#	0x4d3e13	syscall.Read+0x213				syscall/syscall_unix.go:183
+#	0x4d3dfe	internal/poll.ignoringEINTRIO+0x1fe		internal/poll/fd_unix.go:743
+#	0x4d3d40	internal/poll.(*FD).Read+0x140			internal/poll/fd_unix.go:166
+#	0x59d364	net.(*netFD).Read+0x24				net/fd_posix.go:68
+#	0x5a5fa4	net.(*conn).Read+0x44				net/net.go:196
+#	0x6d8511	net/http.(*connReader).backgroundRead+0x31	net/http/server.go:746
+

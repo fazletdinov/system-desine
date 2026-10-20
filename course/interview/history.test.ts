@@ -22,6 +22,8 @@ describe('lessonLabel', () => {
     ['01-go-service/04-usecases', '1.4'],
     ['01-go-service/19-delivery', '1.19'],
     ['00b-network/06-http1-pools', '0b.6'],
+    ['01-5-go-concurrency/07-netpoller', '1.5.7'],
+    ['01-5-go-concurrency/10-profiling', '1.5.10'],
   ])('%s → %s', (lesson, label) => {
     expect(lessonLabel(lesson)).toBe(label)
   })

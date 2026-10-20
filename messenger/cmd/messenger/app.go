@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -25,6 +26,8 @@ import (
 	"messenger/internal/chat/adapters/userchecker"
 	chatusecase "messenger/internal/chat/usecase"
 	"messenger/internal/platform/clock"
+	"messenger/internal/platform/debugserver"
+	"messenger/internal/platform/flightrec"
 	"messenger/internal/platform/health"
 	"messenger/internal/platform/httpauth"
 	"messenger/internal/platform/idempotency"
@@ -61,6 +64,9 @@ const (
 	envIdempotencySweepEvery = "MESSENGER_IDEMPOTENCY_SWEEP_EVERY"
 	envHashConcurrency       = "MESSENGER_HASH_CONCURRENCY"
 	envHashQueue             = "MESSENGER_HASH_QUEUE"
+	envDebugAddr             = "MESSENGER_DEBUG_ADDR"
+	envFlightDir             = "MESSENGER_FLIGHT_DIR"
+	envFlightThreshold       = "MESSENGER_FLIGHT_THRESHOLD"
 )
 
 // #region config
@@ -170,6 +176,58 @@ func loadConcurrency(cfg *config) error {
 	return nil
 }
 
+// defaultFlightThreshold — запрос дольше секунды при сроке в 10 с уже ненормален
+// (типичный ответ — миллисекунды), а запас до окна рекордера (10 с) оставляет в снимке
+// и сам запрос, и то, что происходило до него.
+const defaultFlightThreshold = time.Second
+
+// loadDebug читает служебный порт и снимки flight recorder. По умолчанию всё выключено:
+// pprof раскрывает стеки и командную строку, и открывать его — явное решение (ADR-0013).
+func loadDebug(cfg *config) error {
+	cfg.DebugAddr = os.Getenv(envDebugAddr)
+	if cfg.DebugAddr != "" {
+		if err := checkListenAddr(cfg.DebugAddr); err != nil {
+			return fmt.Errorf("%s: %w", envDebugAddr, err)
+		}
+	}
+	cfg.FlightDir = os.Getenv(envFlightDir)
+	if cfg.FlightDir != "" {
+		// Рекордер запускается вместе со служебным портом: без него снимать нечего.
+		if cfg.DebugAddr == "" {
+			return fmt.Errorf("%s требует %s: flight recorder работает, только когда включён служебный порт", envFlightDir, envDebugAddr)
+		}
+		info, err := os.Stat(cfg.FlightDir)
+		if err != nil {
+			return fmt.Errorf("%s: %w", envFlightDir, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s: %s — не каталог", envFlightDir, cfg.FlightDir)
+		}
+	}
+	var err error
+	if cfg.FlightThreshold, err = durationEnv(envFlightThreshold, defaultFlightThreshold, false); err != nil {
+		return err
+	}
+	if cfg.FlightThreshold >= flightrec.Window {
+		return fmt.Errorf("%s: порог должен быть меньше %s (окно flight recorder), получено %s", envFlightThreshold, flightrec.Window, cfg.FlightThreshold)
+	}
+	return nil
+}
+
+// checkListenAddr — host:port с числовым портом 1–65535. SplitHostPort один пропустил
+// бы "localhost:" (сервер молча занял бы случайный порт, и профили искали бы не там)
+// и ":abc" (ошибка всплыла бы только при запуске слушателя).
+func checkListenAddr(addr string) error {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("ожидается host:port или :port: %w", err)
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("порт должен быть числом от 1 до 65535, получено %q", port)
+	}
+	return nil
+}
+
 // publicRoutes — маршруты, открытые без аутентификации: метод и путь без параметров.
 // Всё остальное закрыто: забытый здесь маршрут получит 401, а не откроется всем.
 var publicRoutes = []string{"POST /v1/users", "POST /v1/tokens"}
@@ -192,6 +250,12 @@ type config struct {
 	HashConcurrency int
 	// HashQueue — сколько вызовов хеширования ждут места; сверх — 503 overloaded.
 	HashQueue int
+	// DebugAddr — адрес служебного порта (pprof, /debug/flight); пусто — выключен.
+	DebugAddr string
+	// FlightDir — каталог снимков flight recorder по медленным запросам; пусто — не писать.
+	FlightDir string
+	// FlightThreshold — с какой длительности запрос считается медленным.
+	FlightThreshold time.Duration
 }
 
 // app — то, что сборка отдаёт main: обработчик, пробы (main переводит их в дренаж по
@@ -200,6 +264,9 @@ type app struct {
 	handler http.Handler
 	probes  *health.Probes
 	back    []lifecycle.Component
+	// recorder — flight recorder процесса; nil, если служебный порт выключен. Его
+	// останавливает main после остановки компонентов.
+	recorder *flightrec.Recorder
 }
 
 // addrFromEnv — адрес сервера; его же читает подкоманда healthcheck, чтобы постучаться
@@ -221,6 +288,9 @@ func loadConfig() (config, error) {
 	if err := loadConcurrency(&cfg); err != nil {
 		return config{}, err
 	}
+	if err := loadDebug(&cfg); err != nil {
+		return config{}, err
+	}
 	path := os.Getenv(envJWTKeyFile)
 	if path == "" {
 		return config{}, errors.New("задайте " + envJWTKeyFile + " — ключ создаёт go run ./cmd/keygen -out jwt.pem")
@@ -238,7 +308,7 @@ func loadConfig() (config, error) {
 // #region wiring
 // newApp — composition root: единственное место, где конкретные реализации (часы,
 // генератор id, хранилища, JWT, HTTP) соединяются с use case'ами через их порты.
-func newApp(cfg config, log *slog.Logger) (*app, error) {
+func newApp(cfg config, log *slog.Logger) (_ *app, err error) {
 	if cfg.RequestTimeout <= 0 {
 		return nil, errors.New("сборка: нужен таймаут запроса")
 	}
@@ -281,18 +351,32 @@ func newApp(cfg config, log *slog.Logger) (*app, error) {
 	if err != nil {
 		return nil, fmt.Errorf("сборка: %w", err)
 	}
+	dbg, err := newDebug(cfg, log)
+	if err != nil {
+		return nil, fmt.Errorf("сборка: %w", err)
+	}
+	// Рекордер уже пишет трассу: если сборка дальше не удалась, его некому остановить.
+	defer func() {
+		if err != nil && dbg.recorder != nil {
+			dbg.recorder.Stop()
+		}
+	}()
 	// #region chain
-	// Первый — самый внешний. Request ID нужен всем, кто пишет в журнал; Recover — внутри
-	// AccessLog, чтобы паника попала в журнал как 500; аутентификация — до маршрутизатора.
-	// Timeout — внутри Recover, чтобы паника по сроку тоже стала 500; до аутентификации —
-	// срок есть у всего, включая проверку токена.
+	// Первый — самый внешний. Замер медленных запросов (dbg.outer, если включён) —
+	// снаружи всего: длительность всего запроса, с журналом и аутентификацией. Request ID
+	// нужен всем, кто пишет в журнал; Recover — внутри AccessLog, чтобы паника попала в
+	// журнал как 500; аутентификация — до маршрутизатора. Timeout — внутри Recover, чтобы
+	// паника по сроку тоже стала 500; до аутентификации — срок есть у всего, включая
+	// проверку токена.
 	api := middleware.Chain(
 		middleware.RouteErrors(mux, routeError(log)),
-		middleware.RequestID(ids),
-		middleware.AccessLog(log),
-		middleware.Recover(log, internalError(log)),
-		middleware.Timeout(cfg.RequestTimeout, timeoutError(log)),
-		httpauth.Middleware(bearer, publicRoutes, unauthenticated(log)),
+		append(dbg.outer,
+			middleware.RequestID(ids),
+			middleware.AccessLog(log),
+			middleware.Recover(log, internalError(log)),
+			middleware.Timeout(cfg.RequestTimeout, timeoutError(log)),
+			httpauth.Middleware(bearer, publicRoutes, unauthenticated(log)),
+		)...,
 	)
 	// #endregion chain
 
@@ -316,11 +400,55 @@ func newApp(cfg config, log *slog.Logger) (*app, error) {
 			api.ServeHTTP(w, r)
 		}
 	})
-	return &app{handler: root, probes: probes, back: []lifecycle.Component{sweeper}}, nil
+	return &app{handler: root, probes: probes, back: append([]lifecycle.Component{sweeper}, dbg.back...), recorder: dbg.recorder}, nil
 	// #endregion root-mux
 }
 
 // #endregion wiring
+
+// #region debug-wiring
+// debugParts — служебный порт и flight recorder, собранные для newApp.
+type debugParts struct {
+	recorder *flightrec.Recorder
+	back     []lifecycle.Component   // служебный сервер и запись снимков — в фоновой стадии
+	outer    []middleware.Middleware // замер медленных запросов — снаружи цепочки API
+}
+
+// newDebug собирает служебный порт, если задан его адрес. Служебный сервер — Back:
+// основной HTTP дренируется первым, а профиль зависшей остановки ещё можно снять.
+// Рекордер — один на процесс: его WriteTo получают и /debug/flight, и Dumper.
+func newDebug(cfg config, log *slog.Logger) (_ debugParts, err error) {
+	if cfg.DebugAddr == "" {
+		return debugParts{}, nil
+	}
+	debugserver.EnableContentionProfiles()
+	rec, err := flightrec.Start()
+	if err != nil {
+		return debugParts{}, err
+	}
+	defer func() {
+		if err != nil {
+			rec.Stop()
+		}
+	}()
+	srv, err := debugserver.New(cfg.DebugAddr, debugserver.NewHandler(rec), log)
+	if err != nil {
+		return debugParts{}, err
+	}
+	parts := debugParts{recorder: rec, back: []lifecycle.Component{srv}}
+	if cfg.FlightDir == "" {
+		return parts, nil
+	}
+	dumper, err := flightrec.NewDumper(rec, cfg.FlightDir, cfg.FlightThreshold, clock.System{}, log)
+	if err != nil {
+		return debugParts{}, err
+	}
+	parts.back = append(parts.back, dumper)
+	parts.outer = []middleware.Middleware{dumper.Middleware}
+	return parts, nil
+}
+
+// #endregion debug-wiring
 
 // newIdempotencySweeper — фоновая очистка просроченных ключей идемпотентности. Без неё
 // ключ, к которому клиент не вернулся, жил бы в памяти вечно.

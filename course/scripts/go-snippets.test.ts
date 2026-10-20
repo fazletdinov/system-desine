@@ -11,9 +11,9 @@ const md = [
   'func main() {}',
   '```',
   '',
-  '<!-- go-check: harness=sql-pool -->',
+  '<!-- go-check: harness=pgx-pool -->',
   '```go',
-  'db.SetMaxOpenConns(80)',
+  'config.MaxConns = 80',
   '```',
   '',
   '```go',
@@ -25,7 +25,7 @@ describe('extractGoSnippets', () => {
   it('находит помеченные блоки, обвязку и строку начала', () => {
     expect(extractGoSnippets(md, 'a.md')).toEqual([
       { file: 'a.md', line: 4, harness: null, code: 'package main\n\nfunc main() {}' },
-      { file: 'a.md', line: 11, harness: 'sql-pool', code: 'db.SetMaxOpenConns(80)' },
+      { file: 'a.md', line: 11, harness: 'pgx-pool', code: 'config.MaxConns = 80' },
     ])
   })
 })

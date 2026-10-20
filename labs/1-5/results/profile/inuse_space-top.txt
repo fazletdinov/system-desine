@@ -1,0 +1,30 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: inuse_space
+Time: 2026-10-20 11:55:55 MSK
+Showing nodes accounting for 9448.95kB, 100% of 9448.95kB total
+      flat  flat%   sum%        cum   cum%
+ 5384.08kB 56.98% 56.98%  5384.08kB 56.98%  runtime/trace.readBatch
+ 2368.55kB 25.07% 82.05%  2368.55kB 25.07%  runtime/trace.(*traceMultiplexer).startLocked
+ 1184.27kB 12.53% 94.58%  1184.27kB 12.53%  runtime/pprof.StartCPUProfile
+  512.05kB  5.42%   100%   512.05kB  5.42%  runtime.mallocgc
+         0     0%   100%  2368.55kB 25.07%  main.main
+         0     0%   100%  2368.55kB 25.07%  main.newApp
+         0     0%   100%  2368.55kB 25.07%  main.newDebug
+         0     0%   100%  2368.55kB 25.07%  main.run
+         0     0%   100%  1184.27kB 12.53%  messenger/internal/platform/debugserver.limitSeconds.func1
+         0     0%   100%  2368.55kB 25.07%  messenger/internal/platform/flightrec.Start
+         0     0%   100%  1184.27kB 12.53%  net/http.(*ServeMux).ServeHTTP
+         0     0%   100%  1184.27kB 12.53%  net/http.(*conn).serve
+         0     0%   100%  1184.27kB 12.53%  net/http.HandlerFunc.ServeHTTP
+         0     0%   100%  1184.27kB 12.53%  net/http.serverHandler.ServeHTTP
+         0     0%   100%  1184.27kB 12.53%  net/http/pprof.Profile
+         0     0%   100%   512.05kB  5.42%  runtime.(*scavengerState).init
+         0     0%   100%   512.05kB  5.42%  runtime.bgscavenge
+         0     0%   100%  2368.55kB 25.07%  runtime.main
+         0     0%   100%   512.05kB  5.42%  runtime.newobject
+         0     0%   100%  2368.55kB 25.07%  runtime/trace.(*FlightRecorder).Start
+         0     0%   100%  5384.08kB 56.98%  runtime/trace.(*recorder).Write
+         0     0%   100%  2368.55kB 25.07%  runtime/trace.(*traceMultiplexer).addedSubscriber
+         0     0%   100%  5384.08kB 56.98%  runtime/trace.(*traceMultiplexer).startLocked.func1
+         0     0%   100%  2368.55kB 25.07%  runtime/trace.(*traceMultiplexer).subscribeFlightRecorder

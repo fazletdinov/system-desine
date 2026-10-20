@@ -1,0 +1,71 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# из labs/1-5/alloc/escape/cases
+$ go build -gcflags=-m=1 .
+# labs/1-5/alloc/escape/cases
+./chan.go:8:6: can inline CaseChanValue
+./chan.go:17:6: can inline CaseChanPointer
+./closure.go:22:12: can inline CaseClosureLocal.func1
+./closure.go:29:6: can inline CaseClosureEscaping
+./closure.go:31:9: can inline CaseClosureEscaping.func1
+./elems.go:8:6: can inline CaseElemsValues
+./elems.go:20:6: can inline CaseElemsPointers
+./iface.go:10:6: can inline describe
+./iface.go:21:6: can inline CaseIfaceConcrete
+./iface.go:38:6: can inline CaseIfaceAny
+./inline.go:7:6: can inline newPoint
+./inline.go:20:6: can inline CaseInlineInlined
+./inline.go:29:6: can inline CaseInlineNoinline
+./large.go:12:6: can inline CaseLargeFits
+./large.go:20:6: can inline CaseLargeOver
+./return.go:8:6: can inline CaseReturnValue
+./return.go:18:6: can inline CaseReturnPointer
+./slice.go:30:6: can inline sum
+./slice.go:8:6: can inline CaseSliceConst
+./slice.go:18:6: can inline CaseSliceVar
+./slice.go:26:6: can inline CaseSliceReturned
+./iface.go:23:17: inlining call to describe
+./iface.go:32:13: inlining call to fmt.Println
+./inline.go:21:15: inlining call to newPoint
+./slice.go:10:12: inlining call to sum
+./slice.go:20:12: inlining call to sum
+./chan.go:8:20: ch does not escape
+./chan.go:9:7: &point{...} does not escape
+./chan.go:17:22: ch does not escape
+./chan.go:18:7: &point{...} escapes to heap
+./closure.go:10:20: f does not escape
+./closure.go:22:12: func literal does not escape
+./closure.go:30:2: moved to heap: n
+./closure.go:31:9: func literal escapes to heap
+./elems.go:9:11: make([]point, 0, 8) does not escape
+./elems.go:11:13: append does not escape
+./elems.go:21:11: make([]*point, 0, 8) does not escape
+./elems.go:23:17: &point{...} escapes to heap
+./elems.go:23:13: append does not escape
+./iface.go:10:15: p does not escape
+./iface.go:22:7: &point{...} does not escape
+./iface.go:31:7: &point{...} escapes to heap
+./iface.go:32:13: ... argument does not escape
+./iface.go:39:7: &point{...} escapes to heap
+./inline.go:7:41: &point{...} escapes to heap
+./inline.go:15:49: &point{...} escapes to heap
+./inline.go:21:15: &point{...} does not escape
+./large.go:13:11: make([]byte, 65536) does not escape
+./large.go:21:11: make([]byte, 65544) escapes to heap
+./return.go:9:10: new(point) does not escape
+./return.go:19:10: new(point) escapes to heap
+./slice.go:9:11: make([]int, 16) does not escape
+./slice.go:19:11: make([]int, n) does not escape
+./slice.go:27:13: make([]int, n) escapes to heap
+./slice.go:30:10: s does not escape
+
+$ go build -gcflags=-m=2 . 2>&1 | grep return.go
+./return.go:8:6: can inline CaseReturnValue with cost 15 as: func(int, int) point { p := new(point); p.x, p.y = x, y; return *p }
+./return.go:18:6: can inline CaseReturnPointer with cost 14 as: func(int, int) *point { p := new(point); p.x, p.y = x, y; return p }
+./return.go:9:10: new(point) does not escape
+./return.go:19:10: new(point) escapes to heap in CaseReturnPointer:
+./return.go:19:10:   flow: p ← &{storage for new(point)}:
+./return.go:19:10:     from new(point) (spill) at ./return.go:19:10
+./return.go:19:10:     from p := new(point) (assign) at ./return.go:19:4
+./return.go:19:10:   flow: ~r0 ← p:
+./return.go:19:10:     from return p (return) at ./return.go:21:2
+./return.go:19:10: new(point) escapes to heap

@@ -19,19 +19,20 @@ package snippet
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ChatService — все сценарии чатов в одном типе: CreateChat, RenameChat, DeleteChat,
 // AddMember, RemoveMember, LeaveChat, SendMessage, EditMessage, DeleteMessage,
 // ListMessages, MarkRead, PinMessage, SearchMessages, MuteChat, ExportHistory.
 type ChatService struct {
-	db       *sql.DB
-	replica  *sql.DB
+	db       *pgxpool.Pool
+	replica  *pgxpool.Pool
 	push     *http.Client
 	search   *http.Client
 	files    *http.Client
@@ -44,12 +45,12 @@ type ChatService struct {
 // SendMessage нужны три поля из девяти, но тест всё равно собирает ChatService целиком.
 func (s *ChatService) SendMessage(ctx context.Context, chatID, authorID, text string) (int64, error) {
 	var seq int64
-	err := s.db.QueryRowContext(ctx,
+	err := s.db.QueryRow(ctx,
 		`SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE chat_id = $1`, chatID).Scan(&seq)
 	if err != nil {
 		return 0, fmt.Errorf("send message: next seq: %w", err)
 	}
-	_, err = s.db.ExecContext(ctx,
+	_, err = s.db.Exec(ctx,
 		`INSERT INTO messages (id, chat_id, author_id, text, seq, sent_at) VALUES ($1, $2, $3, $4, $5, $6)`,
 		s.newID(), chatID, authorID, text, seq, s.now())
 	if err != nil {

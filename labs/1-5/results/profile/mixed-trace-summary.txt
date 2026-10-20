@@ -1,0 +1,57 @@
+$ scripts/trace-summary.sh mixed-trace.out   # /debug/pprof/trace?seconds=5 под смешанной нагрузкой
+окно трассы: 5.01 с
+   36 раз, всего    339.2 мс, самое долгое   55.70 мс  GC concurrent mark phase
+  614 раз, всего      1.0 мс, самое долгое    0.16 мс  GC incremental sweep
+   59 раз, всего     33.3 мс, самое долгое    7.67 мс  GC mark assist (вне хеша)
+    4 раз, всего      4.9 мс, самое долгое    4.67 мс  GC mark assist (в хеше Argon2id)
+   36 раз, всего      2.2 мс, самое долгое    0.35 мс  stop-the-world (GC mark termination)
+   36 раз, всего    154.8 мс, самое долгое   51.11 мс  stop-the-world (GC sweep termination)
+куча (объекты): от 5.4 до 67.7 МиБ
+цель кучи: от 11.1 до 50.9 МиБ
+
+$ scripts/trace-summary.sh flight.trace   # GET /debug/flight после нагрузки
+окно трассы: 10.69 с
+   78 раз, всего    290.7 мс, самое долгое   57.28 мс  GC concurrent mark phase
+  480 раз, всего      0.9 мс, самое долгое    0.12 мс  GC incremental sweep
+  124 раз, всего     64.2 мс, самое долгое   13.56 мс  GC mark assist (вне хеша)
+    5 раз, всего      1.2 мс, самое долгое    0.88 мс  GC mark assist (в хеше Argon2id)
+   81 раз, всего      4.1 мс, самое долгое    0.18 мс  stop-the-world (GC mark termination)
+   78 раз, всего     84.9 мс, самое долгое   49.85 мс  stop-the-world (GC sweep termination)
+    1 раз, всего      0.0 мс, самое долгое    0.04 мс  stop-the-world (goroutine profile)
+    1 раз, всего      0.0 мс, самое долгое    0.00 мс  stop-the-world (goroutine profile cleanup)
+куча (объекты): от 6.2 до 70.1 МиБ
+цель кучи: от 12.6 до 52.5 МиБ
+
+$ go tool trace -pprof=sched mixed-trace.out > mixed-sched.pprof && go tool pprof -top -cum -nodecount=15 mixed-sched.pprof
+Main binary filename not available.
+Type: delay
+Showing nodes accounting for 21517.32ms, 95.44% of 22545.19ms total
+Dropped 256 nodes (cum <= 112.73ms)
+Showing top 15 nodes out of 55
+      flat  flat%   sum%        cum   cum%
+20552.32ms 91.16% 91.16% 20552.32ms 91.16%  <unknown>
+   20.77ms 0.092% 91.25%  1288.72ms  5.72%  net/http.(*conn).serve
+         0     0% 91.25%  1202.41ms  5.33%  main.newApp.func2
+         0     0% 91.25%  1202.41ms  5.33%  messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+         0     0% 91.25%  1202.41ms  5.33%  net/http.HandlerFunc.ServeHTTP
+         0     0% 91.25%  1202.41ms  5.33%  net/http.serverHandler.ServeHTTP
+         0     0% 91.25%  1088.92ms  4.83%  messenger/internal/platform/middleware.RequestID.func1.1
+         0     0% 91.25%  1062.41ms  4.71%  messenger/internal/platform/middleware.AccessLog.func1.1
+         0     0% 91.25%  1014.37ms  4.50%  messenger/internal/platform/middleware.Recover.func1.1
+         0     0% 91.25%  1014.37ms  4.50%  messenger/internal/platform/middleware.Timeout.func1.1
+         0     0% 91.25%   993.56ms  4.41%  messenger/internal/platform/httpauth.Middleware.func1.1
+  944.07ms  4.19% 95.44%   944.07ms  4.19%  runtime.systemstack_switch
+         0     0% 95.44%   713.48ms  3.16%  messenger/internal/platform/middleware.RouteErrors.func1
+         0     0% 95.44%   712.67ms  3.16%  net/http.(*ServeMux).ServeHTTP
+    0.16ms 0.0007% 95.44%   676.31ms  3.00%  runtime.gcStart
+
+# cgroup cpu.stat контейнера (с момента старта, весь смешанный прогон)
+usage_usec 29839808
+user_usec 25006669
+system_usec 4833138
+nice_usec 0
+core_sched.force_idle_usec 0
+nr_periods 395
+nr_throttled 294
+throttled_usec 31726192
+nr_bursts 0

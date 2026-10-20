@@ -1,0 +1,28 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: inuse_space
+Time: 2026-10-20 12:16:57 MSK
+Showing nodes accounting for 24611.55kB, 100% of 24611.55kB total
+Showing top 6 nodes out of 44
+      flat  flat%   sum%        cum   cum%
+   19456kB 79.05% 79.05%    19456kB 79.05%  golang.org/x/crypto/argon2.initBlocks
+ 2947.21kB 11.97% 91.03%  2947.21kB 11.97%  runtime/trace.(*traceMultiplexer).startLocked
+ 1184.27kB  4.81% 95.84%  1184.27kB  4.81%  runtime/pprof.StartCPUProfile
+  512.05kB  2.08% 97.92%   512.05kB  2.08%  runtime.mallocgc
+  512.02kB  2.08%   100%   512.02kB  2.08%  github.com/google/uuid.UUID.String
+         0     0%   100%    19456kB 79.05%  golang.org/x/crypto/argon2.IDKey
+
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: alloc_space
+Time: 2026-10-20 12:16:57 MSK
+Showing nodes accounting for 1881.50MB, 99.26% of 1895.57MB total
+Dropped 80 nodes (cum <= 9.48MB)
+Showing top 6 nodes out of 29
+      flat  flat%   sum%        cum   cum%
+    1881MB 99.23% 99.23%     1881MB 99.23%  golang.org/x/crypto/argon2.initBlocks
+    0.50MB 0.026% 99.26%  1871.16MB 98.71%  net/http.(*conn).serve
+         0     0% 99.26%     1881MB 99.23%  golang.org/x/crypto/argon2.IDKey (inline)
+         0     0% 99.26%     1881MB 99.23%  golang.org/x/crypto/argon2.deriveKey
+         0     0% 99.26%    21.88MB  1.15%  main.main
+         0     0% 99.26%    21.88MB  1.15%  main.newApp

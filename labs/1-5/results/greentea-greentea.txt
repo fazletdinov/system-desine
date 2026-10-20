@@ -1,0 +1,26 @@
+goos: linux
+goarch: amd64
+pkg: labs/1-5/gc/greentea
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkMark/objects=32B-12         	      48	  21060060 ns/op	       213.5 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      61	  20992765 ns/op	       212.2 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      46	  22631129 ns/op	       223.7 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      55	  21066461 ns/op	       212.5 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      60	  20515232 ns/op	       208.9 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      63	  20954489 ns/op	       211.2 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      58	  21131396 ns/op	       212.3 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      57	  21288587 ns/op	       213.2 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      49	  21641392 ns/op	       216.3 gc-cpu-ms/op
+BenchmarkMark/objects=32B-12         	      58	  21544252 ns/op	       214.6 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     252	   4765729 ns/op	        33.29 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     248	   4912904 ns/op	        33.32 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     246	   4824789 ns/op	        33.30 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     248	   4817715 ns/op	        33.23 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     244	   4849627 ns/op	        33.24 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     244	   4887833 ns/op	        33.35 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     247	   4814132 ns/op	        33.31 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     246	   4845171 ns/op	        33.46 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     246	   4929427 ns/op	        33.05 gc-cpu-ms/op
+BenchmarkMark/objects=256B-12        	     243	   4924923 ns/op	        33.45 gc-cpu-ms/op
+PASS
+ok  	labs/1-5/gc/greentea	25.508s

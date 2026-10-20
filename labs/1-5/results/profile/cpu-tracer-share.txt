@@ -1,0 +1,4 @@
+$ go tool pprof -top -nodecount=100000 -focus='runtime\.trace[A-Z]|runtime/trace\.' cpu.pprof | grep 'Showing nodes'
+Showing nodes accounting for 0.40s, 2.03% of 19.74s total
+$ go tool pprof -top -nodecount=100000 -focus='blockevent|mutexevent' cpu.pprof | grep 'Showing nodes'
+Showing nodes accounting for 0.01s, 0.051% of 19.74s total

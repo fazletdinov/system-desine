@@ -12,6 +12,9 @@ services:
     # а не напрямую.
     ports:
       - "127.0.0.1:8080:8080"
+      # Служебный порт (pprof, /debug/flight) — только loopback: pprof раскрывает стеки
+      # и командную строку, а CPU-профиль на 30 с — уже нагрузка (ADR-0013).
+      - "127.0.0.1:6060:6060"
     environment:
       MESSENGER_JWT_KEY_FILE: /run/secrets/jwt_key
       # Мягкий лимит GC ~90 % от mem_limit: рантайм Go не читает memory.max сам,
@@ -27,13 +30,29 @@ services:
       # Очередь — 4 × N: сверх неё вход и регистрация сразу получают 503 overloaded.
       MESSENGER_HASH_CONCURRENCY: ${MESSENGER_HASH_CONCURRENCY:-1}
       MESSENGER_HASH_QUEUE: ${MESSENGER_HASH_QUEUE:-4}
+      # Служебный порт и flight recorder (урок 1.5.10). Бинарь по умолчанию служебный
+      # порт не открывает; compose — учебный стенд, здесь он включён, чтобы снимать
+      # профили. Снимки по запросам дольше порога — в /tmp: файловая система контейнера
+      # только для чтения, а /tmp — tmpfs. docker compose cp tmpfs не видит, поэтому на
+      # стенде файл только отмечается в журнале, а сам снимок берут с GET /debug/flight;
+      # в продакшене каталог — том, который забирает агент сбора.
+      # Форма ${VAR-…} без двоеточия: умолчание — только если переменная не задана,
+      # поэтому явное пустое значение выключает (MESSENGER_DEBUG_ADDR= docker compose up
+      # — без служебного порта; тогда обнулите и MESSENGER_FLIGHT_DIR, он требует порта).
+      MESSENGER_DEBUG_ADDR: ${MESSENGER_DEBUG_ADDR-:6060}
+      MESSENGER_FLIGHT_DIR: ${MESSENGER_FLIGHT_DIR-/tmp}
+      MESSENGER_FLIGHT_THRESHOLD: ${MESSENGER_FLIGHT_THRESHOLD:-1s}
     secrets:
       - jwt_key
     # Безопасность запуска: файловая система только для чтения, ни одной capability,
     # запрет повышать привилегии через setuid. Мессенджеру ничего из этого не нужно.
     read_only: true
+    # tmpfs живёт в памяти и считается в mem_limit контейнера, а GOMEMLIMIT его не
+    # видит. Потолок 32 МиБ — два снимка flight recorder по MaxBytes (16 МиБ); сверх
+    # него запись получает ENOSPC, и Dumper пишет в журнал «снимок не записан», а не
+    # отнимает память у кучи до OOM-kill.
     tmpfs:
-      - /tmp
+      - /tmp:size=32m
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

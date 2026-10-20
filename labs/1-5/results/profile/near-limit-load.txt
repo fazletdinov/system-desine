@@ -1,0 +1,8 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2; Docker 29.9.1, compose: cpus 1, mem_limit 256m
+старт: 2026-10-20T12:17:21+03:00
+MESSENGER_HASH_CONCURRENCY=14 MESSENGER_HASH_QUEUE=0 docker compose up -d --force-recreate
+нагрузка: while (25 с): scripts/overload.sh 50; sleep 1
+cpu: 2026-10-20T12:17:23+03:00 profile?seconds=20; затем trace?seconds=5 одновременно с CPU (через 5 с)
+memory.peak: 268435456
+status=running exit=0 oom=false
+конец: 2026-10-20T12:17:57+03:00

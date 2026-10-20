@@ -37,6 +37,11 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if a.recorder != nil {
+		// defer — после lifecycle.Run: служебный порт и запись снимков (Back) к этому
+		// моменту остановлены, и снимать рекордер больше некому.
+		defer a.recorder.Stop()
+	}
 	srv, err := httpserver.New(cfg.Addr, a.handler, log, cfg.RequestTimeout)
 	if err != nil {
 		return err

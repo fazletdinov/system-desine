@@ -17,8 +17,9 @@ const LAYER_TITLE: Record<Layer, string> = {
   platform: 'platform',
   domain: 'домен',
   stdlib: 'стандартная библиотека',
+  external: 'внешние модули',
 }
-const LAYER_ORDER: readonly Layer[] = ['root', 'adapter', 'usecase', 'platform', 'domain', 'stdlib']
+const LAYER_ORDER: readonly Layer[] = ['root', 'adapter', 'usecase', 'platform', 'domain', 'stdlib', 'external']
 
 interface Box { x: number; y: number; w: number; h: number }
 
@@ -31,7 +32,7 @@ const COLUMNS = [
   { x: 2, w: BOX_W, title: 'корень' },
   { x: 164, w: BOX_W, title: 'адаптеры' },
   { x: 326, w: BOX_W, title: 'use case' },
-  { x: 484, w: BOX_W, title: 'домен, stdlib' },
+  { x: 484, w: BOX_W, title: 'домен, внешние' },
 ] as const
 const WIDTH = 600
 
@@ -49,7 +50,7 @@ const SLOT: Record<Pkg, { col: number; row: number }> = {
   'user/domain': { col: 3, row: 0.5 },
   'net/http': { col: 3, row: 2 },
   'chat/domain': { col: 3, row: 3 },
-  'database/sql': { col: 3, row: 4.4 },
+  'github.com/jackc/pgx/v5': { col: 3, row: 4.4 },
 }
 
 const boxes = computed(() => {
@@ -62,8 +63,10 @@ const boxes = computed(() => {
   return out
 })
 // Двухстрочная подпись: «chat/adapters» и «userchecker» — так полное имя пакета умещается в узкий блок.
+// У пути модуля длинный хвост («jackc/pgx/v5»), поэтому его режем после хоста.
+const MODULE_HOST = 'github.com/'
 function splitName(id: Pkg): [string, string] {
-  const i = id.lastIndexOf('/')
+  const i = id.startsWith(MODULE_HOST) ? MODULE_HOST.length - 1 : id.lastIndexOf('/')
   return [id.slice(0, i + 1), id.slice(i + 1)]
 }
 const height = TOP + 4.4 * ROW + BOX_H + 14
@@ -189,6 +192,7 @@ const verdict = computed(() => {
 .pkg.platform { stroke: var(--viz-cache); }
 .pkg.root { stroke: var(--viz-network); }
 .pkg.stdlib { stroke: var(--viz-muted); stroke-dasharray: 5 3; }
+.pkg.external { stroke: var(--viz-muted); stroke-dasharray: 2 4; }
 .pkg-name { fill: var(--viz-text); text-anchor: middle; }
 .edge { fill: none; stroke-width: 2; }
 .edge.root { stroke: var(--viz-muted); opacity: 0.3; stroke-width: 1.5; }
@@ -212,6 +216,7 @@ const verdict = computed(() => {
 .pkg-chip.platform { border-color: var(--viz-cache); }
 .pkg-chip.root { border-color: var(--viz-network); }
 .pkg-chip.stdlib { border-style: dashed; border-color: var(--viz-muted); }
+.pkg-chip.external { border-style: dotted; border-color: var(--viz-muted); }
 .imports { padding-left: 16px; font-size: 13px; color: var(--viz-muted); }
 .imports li { margin: 2px 0; overflow-wrap: anywhere; }
 .imports li.ok { color: var(--viz-text); font-weight: 700; border-left: 4px solid var(--viz-response); padding-left: 6px; }

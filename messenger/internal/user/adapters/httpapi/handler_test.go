@@ -189,7 +189,7 @@ func TestErrorMapping(t *testing.T) {
 		{name: "валидация, обёрнутая", err: fmt.Errorf("get user: %w", &domain.ValidationError{Field: "user_id", Reason: "должен быть UUID"}), wantStatus: 400, wantCode: "invalid_input", wantField: "user_id"},
 		{name: "не найден", err: fmt.Errorf("get user: %w", domain.ErrUserNotFound), wantStatus: 404, wantCode: "not_found"},
 		{name: "дедлайн", err: fmt.Errorf("get user: %w", context.DeadlineExceeded), wantStatus: 503, wantCode: "timeout"},
-		{name: "прочее", err: errors.New("секрет БД: pq: connection refused"), wantStatus: 500, wantCode: "internal"},
+		{name: "прочее", err: errors.New("секрет БД: dial error: dial tcp 10.0.3.7:5432: connect: connection refused"), wantStatus: 500, wantCode: "internal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -216,7 +216,7 @@ func TestErrorMapping(t *testing.T) {
 
 func TestInternalErrorHidesDetails(t *testing.T) {
 	mux, logs := server(t, fakeGet{fn: func(context.Context, usecase.GetUserQuery) (domain.User, error) {
-		return domain.User{}, errors.New("секрет БД: pq: password authentication failed")
+		return domain.User{}, errors.New("секрет БД: FATAL: password authentication failed for user \"messenger\" (SQLSTATE 28P01)")
 	}})
 
 	w := do(t, mux, http.MethodGet, "/v1/users/"+aliceID)

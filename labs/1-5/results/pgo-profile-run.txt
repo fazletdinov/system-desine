@@ -1,0 +1,7 @@
+goos: linux
+goarch: amd64
+pkg: labs/1-5/pgo
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+BenchmarkRoute-12    	   25654	    232023 ns/op
+PASS
+ok  	labs/1-5/pgo	5.957s

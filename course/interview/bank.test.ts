@@ -6,19 +6,56 @@ import { parse } from 'yaml'
 import { parseBank } from './schema'
 
 const COURSE = fileURLToPath(new URL('..', import.meta.url))
-const bank = parseBank(parse(readFileSync(join(COURSE, 'interview', 'module-01.yaml'), 'utf8')), 'module-01.yaml')
+const INTERVIEW = join(COURSE, 'interview')
 
-describe('банк вопросов модуля 1', () => {
+// Что банк обязан покрыть: каталог модуля и число уроков до мини-интервью.
+// perLesson — сколько вопросов допустимо на один урок, если план модуля это задаёт.
+interface Coverage {
+  dir: string
+  lessons: number
+  perLesson?: readonly [number, number]
+}
+
+const COVERAGE: Record<string, Coverage> = {
+  'module-01.yaml': { dir: '01-go-service', lessons: 19 },
+  'module-01-5.yaml': { dir: '01-5-go-concurrency', lessons: 10, perLesson: [2, 4] },
+}
+
+const bankFiles = readdirSync(INTERVIEW).filter((f) => f.endsWith('.yaml'))
+
+const lessonsBefore = (dir: string, count: number): string[] =>
+  readdirSync(join(COURSE, 'modules', dir))
+    .filter((f) => /^\d{2}-.+\.md$/.test(f) && Number(f.slice(0, 2)) <= count)
+    .map((f) => `${dir}/${f.replace(/\.md$/, '')}`)
+
+it('у каждого банка есть правило покрытия', () => {
+  expect(bankFiles.filter((f) => COVERAGE[f] === undefined)).toEqual([])
+})
+
+describe.each(bankFiles)('банк %s', (file) => {
+  const bank = parseBank(parse(readFileSync(join(INTERVIEW, file), 'utf8')), file)
+  const coverage = COVERAGE[file]
+
   it('каждый вопрос ссылается на существующий урок', () => {
     for (const q of bank.questions) expect(existsSync(join(COURSE, 'modules', `${q.lesson}.md`)), q.id).toBe(true)
   })
-  it('у каждого урока 1.1–1.19 есть хотя бы один вопрос', () => {
-    const lessons = readdirSync(join(COURSE, 'modules', '01-go-service'))
-      .filter((f) => /^(0[1-9]|1[0-9])-.+\.md$/.test(f))
-      .map((f) => `01-go-service/${f.replace(/\.md$/, '')}`)
-    expect(lessons).toHaveLength(19)
+  it('у каждого урока до мини-интервью есть вопросы', () => {
+    if (coverage === undefined) throw new Error(`${file}: нет правила покрытия`)
+    const lessons = lessonsBefore(coverage.dir, coverage.lessons)
+    expect(lessons).toHaveLength(coverage.lessons)
     const covered = new Set(bank.questions.map((q) => q.lesson))
     expect(lessons.filter((l) => !covered.has(l))).toEqual([])
+    expect([...covered].filter((l) => !lessons.includes(l))).toEqual([])
+  })
+  it('вопросов на урок — в пределах плана модуля', () => {
+    if (coverage?.perLesson === undefined) return
+    const [min, max] = coverage.perLesson
+    const perLesson = new Map<string, number>()
+    for (const q of bank.questions) perLesson.set(q.lesson, (perLesson.get(q.lesson) ?? 0) + 1)
+    for (const [lesson, n] of perLesson) {
+      expect(n, lesson).toBeGreaterThanOrEqual(min)
+      expect(n, lesson).toBeLessThanOrEqual(max)
+    }
   })
   it('размер и баланс уровней', () => {
     expect(bank.questions.length).toBeGreaterThanOrEqual(22)

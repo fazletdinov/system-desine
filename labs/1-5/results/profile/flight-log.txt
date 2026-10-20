@@ -1,0 +1,1 @@
+{"time":"2026-10-20T09:20:46.584188847Z","level":"INFO","msg":"снимок flight recorder записан","file":"/tmp/flight-20261020T092046Z.trace","bytes":1171642}

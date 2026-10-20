@@ -1,0 +1,25 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# из labs/: go build -o gctrace ./1-5/gc/gctrace
+$ GODEBUG=gctrace=1 GOGC=400 ./gctrace -live 64MiB -rate 1GiB -dur 3s
+go version: go1.27.2
+GOMAXPROCS: 12
+NumCPU: 12
+gc 1 @0.005s 9%: 0.057+7.8+0.029 ms clock, 0.69+0.62/15/18+0.35 ms cpu, 15->16->16 MB, 16 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 2 @0.045s 5%: 0.014+4.8+0.005 ms clock, 0.17+0/13/37+0.065 ms cpu, 74->74->72 MB, 82 MB goal, 0 MB stacks, 0 MB globals, 12 P (forced)
+живая куча: 64 МиБ (1048576 объектов по 64 Б), мусор: 1024 МиБ/с, длительность 3s
+GOGC=400, GOMEMLIMIT: не задан
+gc 3 @0.331s 2%: 0.052+18+0.047 ms clock, 0.63+2.7/49/132+0.56 ms cpu, 356->359->75 MB, 362 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 4 @0.618s 1%: 0.024+19+0.18 ms clock, 0.29+9.4/51/134+2.2 ms cpu, 366->378->84 MB, 375 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 5 @0.921s 1%: 0.029+19+0.005 ms clock, 0.35+1.8/51/135+0.068 ms cpu, 378->403->97 MB, 421 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 6 @1.246s 1%: 0.070+20+0.042 ms clock, 0.84+0.91/53/135+0.50 ms cpu, 401->421->92 MB, 487 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 7 @1.535s 1%: 0.017+10+0.004 ms clock, 0.20+0.040/26/74+0.057 ms cpu, 376->386->82 MB, 461 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 8 @1.785s 1%: 0.020+3.8+0.010 ms clock, 0.24+0.022/10/25+0.12 ms cpu, 328->331->75 MB, 414 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 9 @1.999s 1%: 0.058+22+0.040 ms clock, 0.70+0.15/61/131+0.48 ms cpu, 290->311->92 MB, 376 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 10 @2.298s 1%: 0.035+21+0.064 ms clock, 0.43+0.098/55/152+0.77 ms cpu, 379->400->93 MB, 465 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 11 @2.616s 1%: 0.025+17+0.013 ms clock, 0.30+0.043/50/127+0.16 ms cpu, 396->416->92 MB, 465 MB goal, 0 MB stacks, 0 MB globals, 12 P
+gc 12 @2.928s 1%: 0.054+19+0.14 ms clock, 0.65+0.091/53/134+1.7 ms cpu, 392->398->77 MB, 462 MB goal, 0 MB stacks, 0 MB globals, 12 P
+выделено: 3072 МиБ (1024 МиБ/с)
+циклов GC: 10
+доля CPU на GC: 4.8 % всего CPU (GOMAXPROCS × время), 62.2 % занятого
+пик цели кучи: 487 МиБ
+самая долгая пауза: до 197 мкс

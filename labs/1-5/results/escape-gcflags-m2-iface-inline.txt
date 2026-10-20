@@ -1,0 +1,49 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# из labs/1-5/alloc/escape/cases
+$ go build -gcflags=-m=2 . 2>&1 | grep -E "^./(iface|inline).go"
+./iface.go:10:6: can inline describe with cost 10 as: func(*point) string { if p.x > p.y { return "правее диагонали" }; return "левее диагонали" }
+./iface.go:21:6: can inline CaseIfaceConcrete with cost 24 as: func(int, int) string { p := &point{...}; return describe(p) }
+./iface.go:30:6: cannot inline CaseIfacePrintln: function too complex: cost 88 exceeds budget 80
+./iface.go:38:6: can inline CaseIfaceAny with cost 14 as: func(int, int) { p := &point{...}; Sink = p }
+./inline.go:7:6: can inline newPoint with cost 7 as: func(int, int) *point { return &point{...} }
+./inline.go:15:6: cannot inline newPointNoinline: marked go:noinline
+./inline.go:20:6: can inline CaseInlineInlined with cost 21 as: func(int, int) int { p := newPoint(x, y); return p.x + p.y }
+./inline.go:29:6: can inline CaseInlineNoinline with cost 71 as: func(int, int) int { p := newPointNoinline(x, y); return p.x + p.y }
+./iface.go:23:17: inlining call to describe
+./iface.go:32:13: inlining call to fmt.Println
+./inline.go:21:15: inlining call to newPoint
+./iface.go:10:15: p does not escape
+./iface.go:22:7: &point{...} does not escape
+./iface.go:31:7: &point{...} escapes to heap in CaseIfacePrintln:
+./iface.go:31:7:   flow: p ← &{storage for &point{...}}:
+./iface.go:31:7:     from &point{...} (spill) at ./iface.go:31:7
+./iface.go:31:7:     from p := &point{...} (assign) at ./iface.go:31:4
+./iface.go:31:7:   flow: {storage for ... argument} ← p:
+./iface.go:31:7:     from p (interface-converted) at ./iface.go:32:14
+./iface.go:31:7:     from ... argument (slice-literal-element) at ./iface.go:32:13
+./iface.go:31:7:   flow: fmt.a ← &{storage for ... argument}:
+./iface.go:31:7:     from ... argument (spill) at ./iface.go:32:13
+./iface.go:31:7:     from fmt.a := ... argument (assign-pair) at ./iface.go:32:13
+./iface.go:31:7:   flow: {heap} ← *fmt.a:
+./iface.go:31:7:     from fmt.Fprintln(os.Stdout, fmt.a...) (call parameter) at ./iface.go:32:13
+./iface.go:31:7: &point{...} escapes to heap
+./iface.go:32:13: ... argument does not escape
+./iface.go:39:7: &point{...} escapes to heap in CaseIfaceAny:
+./iface.go:39:7:   flow: p ← &{storage for &point{...}}:
+./iface.go:39:7:     from &point{...} (spill) at ./iface.go:39:7
+./iface.go:39:7:     from p := &point{...} (assign) at ./iface.go:39:4
+./iface.go:39:7:   flow: {heap} ← p:
+./iface.go:39:7:     from p (interface-converted) at ./iface.go:40:9
+./iface.go:39:7:     from Sink = p (assign) at ./iface.go:40:7
+./iface.go:39:7: &point{...} escapes to heap
+./inline.go:7:41: &point{...} escapes to heap in newPoint:
+./inline.go:7:41:   flow: ~r0 ← &{storage for &point{...}}:
+./inline.go:7:41:     from &point{...} (spill) at ./inline.go:7:41
+./inline.go:7:41:     from return &point{...} (return) at ./inline.go:7:34
+./inline.go:7:41: &point{...} escapes to heap
+./inline.go:15:49: &point{...} escapes to heap in newPointNoinline:
+./inline.go:15:49:   flow: ~r0 ← &{storage for &point{...}}:
+./inline.go:15:49:     from &point{...} (spill) at ./inline.go:15:49
+./inline.go:15:49:     from return &point{...} (return) at ./inline.go:15:42
+./inline.go:15:49: &point{...} escapes to heap
+./inline.go:21:15: &point{...} does not escape

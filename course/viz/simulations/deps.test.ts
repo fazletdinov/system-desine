@@ -7,6 +7,8 @@ describe('checkImport', () => {
   })
   it.each([
     ['chat/domain', 'net/http', 'domain-pure'],
+    ['chat/domain', 'github.com/jackc/pgx/v5', 'domain-pure'],
+    ['chat/usecase', 'github.com/jackc/pgx/v5', 'usecase-ports'],
     ['chat/domain', 'chat/adapters/memory', 'cycle'],
     ['chat/usecase', 'chat/adapters/memory', 'usecase-ports'],
     ['chat/usecase', 'platform/clock', 'usecase-ports'],
@@ -16,6 +18,9 @@ describe('checkImport', () => {
     ['platform/clock', 'chat/domain', 'platform-pure'],
   ] as const)('%s → %s нарушает %s', (from, to, rule) => {
     expect(checkImport(from, to, BASE_IMPORTS)?.rule).toBe(rule)
+  })
+  it('адаптер вправе импортировать драйвер базы', () => {
+    expect(checkImport('chat/adapters/memory', 'github.com/jackc/pgx/v5', BASE_IMPORTS)).toBeNull()
   })
   it('каждый кандидат либо разрешён, либо называет правило и последствие', () => {
     for (const c of CANDIDATES) {

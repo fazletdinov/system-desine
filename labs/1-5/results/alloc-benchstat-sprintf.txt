@@ -1,0 +1,23 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+$ go test -run='^$' -bench=Key -count=10 ./1-5/alloc/ > alloc-bench-sprintf.txt && benchstat alloc-bench-sprintf.txt
+goos: linux
+goarch: amd64
+pkg: labs/1-5/alloc
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+              │ alloc-bench-sprintf.txt │
+              │         sec/op          │
+KeySprintf-12               105.6n ± 2%
+KeyAppend-12                42.12n ± 4%
+geomean                     66.70n
+
+              │ alloc-bench-sprintf.txt │
+              │          B/op           │
+KeySprintf-12                39.00 ± 0%
+KeyAppend-12                 23.00 ± 0%
+geomean                      29.95
+
+              │ alloc-bench-sprintf.txt │
+              │        allocs/op        │
+KeySprintf-12                2.000 ± 0%
+KeyAppend-12                 1.000 ± 0%
+geomean                      1.414

@@ -1,0 +1,22 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# размеры структур из DWARF бинарника лабы (debug/dwarf, AttrByteSize), linux/amd64
+runtime.g 456
+runtime.sudog 104
+runtime.pollDesc 296
+internal/poll.FD 56
+net.netFD 128
+net.TCPAddr 48
+net.TCPConn 8
+bufio.Reader 88
+
+$ readelf -z --debug-dump=info netpoll | grep -A1 -E 'DW_AT_name *: (runtime\.g|runtime\.pollDesc|net\.netFD|net\.TCPAddr|bufio\.Reader)$' | grep -B1 byte_size | grep -v '^--' | sed -E 's/^ *<[0-9a-f]+> +//'
+DW_AT_name        : runtime.g
+DW_AT_byte_size   : 456
+DW_AT_name        : runtime.pollDesc
+DW_AT_byte_size   : 296
+DW_AT_name        : net.netFD
+DW_AT_byte_size   : 128
+DW_AT_name        : net.TCPAddr
+DW_AT_byte_size   : 48
+DW_AT_name        : bufio.Reader
+DW_AT_byte_size   : 88

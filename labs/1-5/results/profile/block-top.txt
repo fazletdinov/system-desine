@@ -1,0 +1,33 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: delay
+Time: 2026-10-20 11:55:55 MSK
+Showing nodes accounting for 90.56s, 100% of 90.56s total
+Dropped 59 nodes (cum <= 0.45s)
+Showing top 25 nodes out of 42
+      flat  flat%   sum%        cum   cum%
+    49.07s 54.19% 54.19%     49.07s 54.19%  runtime.chanrecv1
+    30.41s 33.58% 87.76%     30.41s 33.58%  runtime.selectgo
+     5.29s  5.84% 93.60%      5.29s  5.84%  sync.(*WaitGroup).Wait
+     3.46s  3.82% 97.43%      3.46s  3.82%  sync.(*Mutex).Lock (inline)
+     2.33s  2.57%   100%      2.33s  2.57%  sync.(*Cond).Wait
+         0     0%   100%      5.29s  5.84%  golang.org/x/crypto/argon2.IDKey (inline)
+         0     0%   100%      5.29s  5.84%  golang.org/x/crypto/argon2.deriveKey
+         0     0%   100%      5.29s  5.84%  golang.org/x/crypto/argon2.processBlocks
+         0     0%   100%      3.45s  3.81%  log/slog.(*JSONHandler).Handle
+         0     0%   100%      3.45s  3.81%  log/slog.(*Logger).LogAttrs
+         0     0%   100%      3.45s  3.81%  log/slog.(*Logger).logAttrs
+         0     0%   100%      3.45s  3.81%  log/slog.(*commonHandler).handle
+         0     0%   100%     19.15s 21.15%  main.newApp.func2
+         0     0%   100%      5.26s  5.81%  messenger/internal/auth/adapters/argon2id.(*Hasher).Hash
+         0     0%   100%     15.67s 17.30%  messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash
+         0     0%   100%      5.26s  5.81%  messenger/internal/auth/adapters/hashlimit.(*Limiter).Hash.func1
+         0     0%   100%     15.67s 17.30%  messenger/internal/auth/adapters/hashlimit.limited[go.shape.struct { messenger/internal/auth/domain.value string }]
+         0     0%   100%     15.67s 17.30%  messenger/internal/auth/adapters/httpapi.(*Handler).SignUp
+         0     0%   100%     15.67s 17.30%  messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp
+         0     0%   100%     15.67s 17.30%  messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp-fm
+         0     0%   100%     15.67s 17.30%  messenger/internal/auth/adapters/httpapi/gen.(*ServerInterfaceWrapper).SignUp.func1
+         0     0%   100%     15.67s 17.30%  messenger/internal/auth/usecase.(*SignUp).Execute
+         0     0%   100%     20.01s 22.10%  messenger/internal/platform/debugserver.limitSeconds.func1
+         0     0%   100%     19.15s 21.15%  messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+         0     0%   100%     15.69s 17.33%  messenger/internal/platform/httpauth.Middleware.func1.1

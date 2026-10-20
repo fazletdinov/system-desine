@@ -20,7 +20,14 @@ ok() {
 }
 
 bin=$(mktemp -d)
-trap 'rm -rf "$bin"' EXIT
+# Фоновые процессы (сервер и клиент netpoll) не должны пережить сценарий, даже если проверка упала.
+cleanup() {
+	local pids
+	pids=$(jobs -p)
+	[ -z "$pids" ] || kill $pids 2>/dev/null || true
+	rm -rf "$bin"
+}
+trap cleanup EXIT
 
 build() { # build <имя> <пакет> [флаги go build…]
 	local name=$1 pkg=$2
@@ -216,13 +223,135 @@ $out"
 ok "patterns/limit: пик $free_peak горутин без лимита, не больше 12 у ограничителей; после отказа выполнено $done_n из 200"
 
 # --- 11. бенчмарки: работоспособность (числа снимаются отдельно, см. README) ---
-out=$(go test -run='^$' -bench=. -benchtime=100ms ./1-5/sync/ ./1-5/sched/ ./1-5/patterns/limit/ 2>&1) || fail "бенчмарки упали:
+out=$(go test -run='^$' -bench=. -benchtime=100ms ./1-5/sync/ ./1-5/sched/ ./1-5/patterns/limit/ ./1-5/alloc/ 2>&1) || fail "бенчмарки упали:
 $out"
-for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkLongReadMutex BenchmarkLongReadRWMutex BenchmarkCounterCASLoop BenchmarkShardedCounter BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads BenchmarkLimiterOverhead; do
+for name in BenchmarkCounterMutex BenchmarkCounterMutexRead BenchmarkCounterRWMutexRead BenchmarkCounterAtomic BenchmarkFalseSharingPacked BenchmarkFalseSharingPadded BenchmarkLongReadMutex BenchmarkLongReadRWMutex BenchmarkCounterCASLoop BenchmarkShardedCounter BenchmarkSpawnGoroutine BenchmarkSwitchGoroutines BenchmarkSwitchOSThreads BenchmarkLimiterOverhead BenchmarkAppendGrow BenchmarkAppendPrealloc BenchmarkBufferNew BenchmarkBufferPool BenchmarkSlicePointers BenchmarkSliceValues BenchmarkKeySprintf BenchmarkKeyAppend; do
 	echo "$out" | grep -q "^$name" || fail "в бенчмарках нет $name:
 $out"
 done
 echo "$out" | grep -E '^Benchmark'
-ok "бенчмарки sync, sched и patterns/limit отработали"
+ok "бенчмарки sync, sched, patterns/limit и alloc отработали"
+
+# --- 12. netpoll: цена простаивающего соединения (урок 1.5.7) ---
+build netpoll ./1-5/netpoll
+# wait_for <файл> <шаблон> <секунды> — ждать строку в выводе фонового процесса.
+wait_for() {
+	local deadline=$((SECONDS + $3))
+	until grep -q "$2" "$1"; do
+		[ "$SECONDS" -lt "$deadline" ] || return 1
+		sleep 0.1
+	done
+}
+# Тысяча соединений с двух исходных адресов: дескрипторов и портов с запасом и на раннере
+# (ulimit -n 65536). Порт 0 — свободный порт выбирает ядро, адрес сервер печатает сам.
+serve_log="$bin/serve.txt"
+dial_log="$bin/dial.txt"
+"$bin/netpoll" serve -addr 127.0.0.1:0 -mode bufio -n 1000 >"$serve_log" 2>&1 &
+serve_pid=$!
+wait_for "$serve_log" '^слушаю ' 10 || fail "netpoll serve не начал слушать:
+$(cat "$serve_log")"
+addr=$(sed -nE 's/^слушаю (.*)$/\1/p' "$serve_log")
+"$bin/netpoll" dial -addr "$addr" -n 1000 -src 2 >"$dial_log" 2>&1 &
+dial_pid=$!
+wait_for "$serve_log" 'на соединение:' 30 || fail "netpoll: за 30 с нет итога:
+$(cat "$serve_log")
+$(cat "$dial_log")"
+kill -TERM "$dial_pid" "$serve_pid"
+wait "$dial_pid" || fail "netpoll dial завершился с ошибкой:
+$(cat "$dial_log")"
+wait "$serve_pid" || fail "netpoll serve завершился с ошибкой:
+$(cat "$serve_log")"
+out=$(cat "$serve_log")
+has_header "$out" || fail "netpoll serve: нет шапки:
+$out"
+rss=$(first_number "$out" 'на соединение: RSS ([0-9.]+) КиБ')
+goroutines=$(first_number "$out" 'горутин: +до +[0-9]+, после +([0-9]+)')
+# Порядок величины: горутина со стеком и буфер bufio — единицы КиБ; 200 КиБ значило бы утечку.
+[ -n "$rss" ] && ! less "$rss" 1 && ! less 200 "$rss" || fail "netpoll: RSS на соединение '$rss' КиБ, ждали 1–200:
+$out"
+[ -n "$goroutines" ] && [ "$goroutines" -ge 1000 ] || fail "netpoll: горутин '$goroutines', ждали не меньше 1000:
+$out"
+ok "netpoll: 1000 соединений, RSS на соединение $rss КиБ, горутин $goroutines"
+
+# --- 13. alloc/escape: решения escape-анализа для песочницы escape-lab (урок 1.5.8) ---
+build dump ./1-5/alloc/escape/dump
+out=$("$bin/dump") || fail "alloc/escape/dump упал"
+keys=$(grep -rhoE 'escape:[a-z0-9-]+/[a-z0-9-]+' 1-5/alloc/escape/cases | sort -u)
+records=$(printf '%s\n' "$out" | grep -c '^{"case"' || true)
+[ "$records" -eq "$(printf '%s\n' "$keys" | wc -l)" ] || fail "alloc/escape: записей $records, ключей $(printf '%s\n' "$keys" | wc -l):
+$out"
+for key in $keys; do
+	cv=${key#escape:}
+	printf '%s\n' "$out" | grep -qF "{\"case\":\"${cv%/*}\",\"variant\":\"${cv#*/}\"," || fail "alloc/escape: нет записи для $cv:
+$out"
+done
+heap=$(printf '%s\n' "$out" | grep -c '"where":"heap"' || true)
+stack=$(printf '%s\n' "$out" | grep -c '"where":"stack"' || true)
+[ "$heap" -ge 1 ] && [ "$stack" -ge 1 ] || fail "alloc/escape: heap $heap, stack $stack — ждали оба:
+$out"
+# Песочница escape-lab читает снимок вывода dump из курса: снимок обязан совпадать с выводом,
+# иначе после правки примеров песочница покажет старые решения компилятора.
+lab_json=../course/viz/data/escape-lab.json
+snapshot_diff=$(printf '%s\n' "$out" | diff "$lab_json" - 2>&1) || fail "alloc/escape: $lab_json расходится с выводом dump; обновите его: go run ./1-5/alloc/escape/dump > $lab_json
+$snapshot_diff"
+ok "alloc/escape: $records вариантов, в куче $heap, на стеке $stack; $lab_json совпадает с выводом dump"
+
+# --- 14. alloc/stack: рост стека копированием ---
+build stack ./1-5/alloc/stack
+out=$("$bin/stack") || fail "alloc/stack упал:
+$out"
+has_header "$out" || fail "alloc/stack: нет шапки:
+$out"
+st_before=$(first_number "$out" 'глубина +100000: стеки до +([0-9]+) КиБ')
+st_bottom=$(first_number "$out" 'глубина +100000: .*на дне +([0-9]+) КиБ')
+# Сто тысяч кадров по десятку слов — мегабайты стека; 1 МиБ — нижняя граница с запасом.
+[ -n "$st_before" ] && [ -n "$st_bottom" ] && [ $((st_bottom - st_before)) -ge 1024 ] || fail "alloc/stack: стеки до $st_before КиБ, на дне $st_bottom КиБ — рост меньше 1 МиБ:
+$out"
+ok "alloc/stack: на глубине 100000 стеки выросли с $st_before до $st_bottom КиБ"
+
+# --- 15. gc/gctrace: GOGC меняет число циклов (урок 1.5.9) ---
+build gctrace ./1-5/gc/gctrace
+out50=$(GOGC=50 GODEBUG=gctrace=1 "$bin/gctrace" -dur 1s 2>"$bin/gctrace.err") || fail "gc/gctrace с GOGC=50 упал:
+$out50
+$(tail -n 20 "$bin/gctrace.err")"
+out400=$(GOGC=400 "$bin/gctrace" -dur 1s) || fail "gc/gctrace с GOGC=400 упал:
+$out400"
+has_header "$out50" || fail "gc/gctrace: нет шапки:
+$out50"
+grep -Eq '^gc [0-9]+ @' "$bin/gctrace.err" || fail "gc/gctrace: GODEBUG=gctrace=1 не напечатал строк циклов:
+$(head -n 5 "$bin/gctrace.err")"
+c50=$(first_number "$out50" 'циклов GC: ([0-9]+)')
+c400=$(first_number "$out400" 'циклов GC: ([0-9]+)')
+# Относительная проверка: запас по куче при GOGC=400 в восемь раз больше, циклов должно быть меньше.
+[ -n "$c50" ] && [ -n "$c400" ] && [ "$c50" -gt "$c400" ] || fail "gc/gctrace: циклов при GOGC=50 — $c50, при GOGC=400 — $c400; ждали первое больше:
+$out50
+$out400"
+ok "gc/gctrace: циклов GC при GOGC=50 — $c50, при GOGC=400 — $c400"
+
+# --- 16. gc/limiter: ограничитель CPU сборщика при GOMEMLIMIT ниже живой кучи ---
+build limiter ./1-5/gc/limiter
+out=$(GOMEMLIMIT=64MiB "$bin/limiter") || fail "gc/limiter упал:
+$out"
+last=$(first_number "$out" 'ограничитель включался последний раз на цикле: ([0-9]+)')
+[ -n "$last" ] && [ "$last" -gt 0 ] || fail "gc/limiter: ограничитель не включился (last-enabled '$last'):
+$out"
+ok "gc/limiter: ограничитель включался, последний раз на цикле $last"
+
+# --- 17. pgo: профиль бенчмарка меняет решения компилятора (урок 1.5.10) ---
+go test -run='^$' -bench=Route -benchtime=500ms -cpuprofile "$bin/pgo.pprof" -o "$bin/pgo.test" ./1-5/pgo/ >/dev/null ||
+	fail "pgo: бенчмарк с -cpuprofile упал"
+build pgo-off ./1-5/pgo -pgo=off
+"$bin/pgo-off" -dur 100ms | grep -q '^сообщений: ' || fail "pgo: программа без профиля не напечатала итог"
+# Профиль снят с тестового бинаря, поэтому и применяется к нему. parse дороже обычного бюджета
+# встраивания (80): без профиля она остаётся вызовом, с профилем горячий вызов встраивается.
+# Девиртуализацию h.Handle не проверяем: на коротком профиле в Handle может не попасть ни одной выборки.
+off=$(go test -c -o "$bin/pgo-off.test" -pgo=off -gcflags=-m=1 ./1-5/pgo/ 2>&1) || fail "pgo: сборка с -pgo=off упала:
+$off"
+on=$(go test -c -o "$bin/pgo-on.test" -pgo="$bin/pgo.pprof" -gcflags=-m=1 ./1-5/pgo/ 2>&1) || fail "pgo: сборка с профилем упала:
+$on"
+! echo "$off" | grep -q 'inlining call to parse$' || fail "pgo: parse встроена и без профиля — пример больше не показывает PGO"
+echo "$on" | grep -q 'inlining call to parse$' || fail "pgo: с профилем parse не встроена:
+$on"
+ok "pgo: без профиля parse — вызов, с профилем бенчмарка — встроена"
 
 echo "Лаба 1.5: все проверки прошли."

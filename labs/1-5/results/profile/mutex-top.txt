@@ -1,0 +1,19 @@
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: delay
+Time: 2026-10-20 11:55:55 MSK
+Showing nodes accounting for 313.69ms, 100% of 313.69ms total
+      flat  flat%   sum%        cum   cum%
+  313.69ms   100%   100%   313.69ms   100%  sync.(*Mutex).Unlock
+         0     0%   100%   313.69ms   100%  log/slog.(*JSONHandler).Handle
+         0     0%   100%   313.69ms   100%  log/slog.(*Logger).LogAttrs
+         0     0%   100%   313.69ms   100%  log/slog.(*Logger).logAttrs
+         0     0%   100%   313.69ms   100%  log/slog.(*commonHandler).handle
+         0     0%   100%   313.69ms   100%  main.newApp.func2
+         0     0%   100%   313.69ms   100%  messenger/internal/platform/flightrec.(*Dumper).Middleware.func1
+         0     0%   100%   313.69ms   100%  messenger/internal/platform/middleware.AccessLog.func1.1
+         0     0%   100%   313.69ms   100%  messenger/internal/platform/middleware.RequestID.func1.1
+         0     0%   100%   313.69ms   100%  net/http.(*Server).Serve.gowrap3
+         0     0%   100%   313.69ms   100%  net/http.(*conn).serve
+         0     0%   100%   313.69ms   100%  net/http.HandlerFunc.ServeHTTP
+         0     0%   100%   313.69ms   100%  net/http.serverHandler.ServeHTTP

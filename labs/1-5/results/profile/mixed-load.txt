@@ -1,0 +1,8 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2; Docker 29.9.1, compose: cpus 1, mem_limit 256m
+старт: 2026-10-20T12:20:43+03:00
+MESSENGER_FLIGHT_THRESHOLD=100ms docker compose up -d --force-recreate   # остальное — умолчания compose (N=1, Q=4)
+нагрузка: scripts/read-load.sh 8 30 & ; через 3 с while (25 с): scripts/overload.sh 50; sleep 1
+trace: 2026-10-20T12:20:51+03:00 curl 127.0.0.1:6060/debug/pprof/trace?seconds=5
+goroutine: 2026-10-20T12:20:56+03:00 goroutine?debug=1
+после нагрузки: 2026-10-20T12:21:13+03:00 goroutineleak?debug=1, goroutine?debug=1, GET /debug/flight
+конец: 2026-10-20T12:21:14+03:00

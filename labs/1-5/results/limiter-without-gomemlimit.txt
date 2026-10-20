@@ -1,0 +1,58 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+# Проверка задачи 7 (урок 1.5.9): включается ли ограничитель CPU GC без GOMEMLIMIT.
+# Программа (не в лабе): живая куча 128 МиБ из узлов по 64 Б, GOMAXPROCS горутин выделяют по 1 КиБ мусора 3 с.
+# Затем /gc/limiter/last-enabled:gc-cycle, /gc/cycles/total, /gc/gomemlimit, доля /cpu/classes/gc/total от /cpu/classes/total.
+$ cat main.go
+package main
+
+import (
+	"fmt"
+	"runtime"
+	"runtime/metrics"
+	"time"
+)
+
+type node struct{ refs [8]*node }
+
+var sink []byte
+
+func main() {
+	live := make([]*node, (128<<20)/64)
+	for i := range live {
+		n := &node{}
+		if i > 0 {
+			n.refs[0] = live[i-1]
+		}
+		live[i] = n
+	}
+	stop := make(chan struct{})
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		go func() {
+			var s []byte
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				s = make([]byte, 1024)
+				s[0] = 1
+			}
+			_ = s
+		}()
+	}
+	time.Sleep(3 * time.Second)
+	close(stop)
+	s := []metrics.Sample{{Name: "/gc/limiter/last-enabled:gc-cycle"}, {Name: "/gc/cycles/total:gc-cycles"}, {Name: "/gc/gomemlimit:bytes"}, {Name: "/cpu/classes/gc/total:cpu-seconds"}, {Name: "/cpu/classes/total:cpu-seconds"}}
+	metrics.Read(s)
+	fmt.Println("last-enabled", s[0].Value.Uint64(), "cycles", s[1].Value.Uint64(), "limit", s[2].Value.Uint64(), "gc share", s[3].Value.Float64()/s[4].Value.Float64())
+	runtime.KeepAlive(live)
+}
+$ GOGC=100 ./lt
+last-enabled 0 cycles 123 limit 9223372036854775807 gc share 0.3652577496931218
+$ GOGC=10 ./lt
+last-enabled 208 cycles 207 limit 9223372036854775807 gc share 0.6073446965320735
+$ GOGC=1 ./lt
+last-enabled 311 cycles 313 limit 9223372036854775807 gc share 0.6169432553920142
+$ GOGC=1 GOMAXPROCS=4 ./lt
+last-enabled 215 cycles 216 limit 9223372036854775807 gc share 0.6647368388838508

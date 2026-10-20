@@ -1,0 +1,37 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+$ go test -run='^$' -bench=. -count=10 ./1-5/alloc/ > alloc-bench.txt && benchstat alloc-bench.txt
+goos: linux
+goarch: amd64
+pkg: labs/1-5/alloc
+cpu: 12th Gen Intel(R) Core(TM) i5-12400
+                  │ alloc-bench.txt │
+                  │     sec/op      │
+AppendGrow-12          4.050µ ±  6%
+AppendPrealloc-12      2.061µ ± 15%
+BufferNew-12           1.570µ ± 21%
+BufferPool-12          352.1n ±  5%
+SlicePointers-12       19.38µ ± 11%
+SliceValues-12         6.224µ ±  2%
+geomean                2.868µ
+
+                  │ alloc-bench.txt │
+                  │      B/op       │
+AppendGrow-12        24.62Ki ± 0%
+AppendPrealloc-12    8.000Ki ± 0%
+BufferNew-12         3.944Ki ± 0%
+BufferPool-12          7.000 ± 0%
+SlicePointers-12     31.25Ki ± 0%
+SliceValues-12         0.000 ± 0%
+geomean                           ¹
+¹ summaries must be >0 to compute geomean
+
+                  │ alloc-bench.txt │
+                  │    allocs/op    │
+AppendGrow-12          12.00 ± 0%
+AppendPrealloc-12      1.000 ± 0%
+BufferNew-12           6.000 ± 0%
+BufferPool-12          0.000 ± 0%
+SlicePointers-12      1.000k ± 0%
+SliceValues-12         0.000 ± 0%
+geomean                           ¹
+¹ summaries must be >0 to compute geomean

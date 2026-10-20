@@ -1,0 +1,24 @@
+diff --git a/messenger/cmd/messenger/app.go b/messenger/cmd/messenger/app.go
+index f79df20..98a1f2d 100644
+--- a/messenger/cmd/messenger/app.go
++++ b/messenger/cmd/messenger/app.go
+@@ -421,7 +421,18 @@ func newDebug(cfg config, log *slog.Logger) (_ debugParts, err error) {
+ 	if cfg.DebugAddr == "" {
+ 		return debugParts{}, nil
+ 	}
+-	debugserver.EnableContentionProfiles()
++	// ВРЕМЕННО (замер R19, не коммитить): XDBG_VARIANT=port|contention|recorder.
++	variant := os.Getenv("XDBG_VARIANT")
++	if variant != "port" && variant != "recorder" {
++		debugserver.EnableContentionProfiles()
++	}
++	if variant == "port" || variant == "contention" {
++		srv, err := debugserver.New(cfg.DebugAddr, debugserver.NewHandler(nil), log)
++		if err != nil {
++			return debugParts{}, err
++		}
++		return debugParts{back: []lifecycle.Component{srv}}, nil
++	}
+ 	rec, err := flightrec.Start()
+ 	if err != nil {
+ 		return debugParts{}, err

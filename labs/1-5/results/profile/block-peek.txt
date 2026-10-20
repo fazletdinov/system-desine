@@ -1,0 +1,41 @@
+$ go tool pprof -peek 'runtime.chanrecv1$|runtime.selectgo$' block.pprof
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: delay
+Time: 2026-10-20 11:55:55 MSK
+Showing nodes accounting for 90555.84ms, 100% of 90555.84ms total
+----------------------------------------------------------+-------------
+      flat  flat%   sum%        cum   cum%   calls calls% + context 	 	 
+----------------------------------------------------------+-------------
+                                        49056.31ms   100% |   runtime.(*wakeableSleep).sleep
+                                           13.20ms 0.027% |   runtime/pprof.StopCPUProfile
+49069.52ms 54.19% 54.19% 49069.52ms 54.19%                | runtime.chanrecv1
+----------------------------------------------------------+-------------
+                                        20000.13ms 65.78% |   net/http/pprof.sleep
+                                        10405.26ms 34.22% |   messenger/internal/auth/adapters/hashlimit.limited[go.shape.struct { messenger/internal/auth/domain.value string }]
+30405.39ms 33.58% 87.76% 30405.39ms 33.58%                | runtime.selectgo
+----------------------------------------------------------+-------------
+
+$ go tool pprof -top -ignore='wakeableSleep|net/http/pprof' block.pprof
+File: messenger
+Build ID: 1645fc3e8e59c61579ee6a50b6cdf5fe4ecf447e
+Type: delay
+Time: 2026-10-20 11:55:55 MSK
+Active filters:
+   ignore=wakeableSleep|net/http/pprof
+Showing nodes accounting for 21.49s, 23.73% of 90.56s total
+Dropped 58 nodes (cum <= 0.45s)
+Showing top 12 nodes out of 35
+      flat  flat%   sum%        cum   cum%
+    10.41s 11.49% 11.49%     10.41s 11.49%  runtime.selectgo
+     5.29s  5.84% 17.33%      5.29s  5.84%  sync.(*WaitGroup).Wait
+     3.46s  3.82% 21.15%      3.46s  3.82%  sync.(*Mutex).Lock (inline)
+     2.33s  2.57% 23.73%      2.33s  2.57%  sync.(*Cond).Wait
+         0     0% 23.73%      5.29s  5.84%  golang.org/x/crypto/argon2.IDKey (inline)
+         0     0% 23.73%      5.29s  5.84%  golang.org/x/crypto/argon2.deriveKey
+         0     0% 23.73%      5.29s  5.84%  golang.org/x/crypto/argon2.processBlocks
+         0     0% 23.73%      3.45s  3.81%  log/slog.(*JSONHandler).Handle
+         0     0% 23.73%      3.45s  3.81%  log/slog.(*Logger).LogAttrs
+         0     0% 23.73%      3.45s  3.81%  log/slog.(*Logger).logAttrs
+         0     0% 23.73%      3.45s  3.81%  log/slog.(*commonHandler).handle
+         0     0% 23.73%     19.15s 21.15%  main.newApp.func2

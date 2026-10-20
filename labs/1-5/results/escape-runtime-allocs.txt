@@ -1,0 +1,14 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, go1.27.2
+$ go test -v -run TestDoesNotEscapeIsNotAlwaysStack ./1-5/alloc/escape/cases/
+=== RUN   TestDoesNotEscapeIsNotAlwaysStack
+=== RUN   TestDoesNotEscapeIsNotAlwaysStack/slice/var:_4_int_=_32_байта_помещаются_в_буфер
+=== RUN   TestDoesNotEscapeIsNotAlwaysStack/slice/var:_5_int_=_40_байт_уже_в_куче
+=== RUN   TestDoesNotEscapeIsNotAlwaysStack/elems/values:_8_точек_помещаются_в_массив_на_стеке
+=== RUN   TestDoesNotEscapeIsNotAlwaysStack/elems/values:_девятая_точка_переносит_массив_в_кучу
+--- PASS: TestDoesNotEscapeIsNotAlwaysStack (0.00s)
+    --- PASS: TestDoesNotEscapeIsNotAlwaysStack/slice/var:_4_int_=_32_байта_помещаются_в_буфер (0.00s)
+    --- PASS: TestDoesNotEscapeIsNotAlwaysStack/slice/var:_5_int_=_40_байт_уже_в_куче (0.00s)
+    --- PASS: TestDoesNotEscapeIsNotAlwaysStack/elems/values:_8_точек_помещаются_в_массив_на_стеке (0.00s)
+    --- PASS: TestDoesNotEscapeIsNotAlwaysStack/elems/values:_девятая_точка_переносит_массив_в_кучу (0.00s)
+PASS
+ok  	labs/1-5/alloc/escape/cases	0.002s

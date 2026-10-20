@@ -8,6 +8,10 @@ import { buildGoFile, extractGoSnippets, findUnmarkedGoBlocks } from './go-snipp
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const MODULES = join(ROOT, 'modules')
 const HARNESS = join(ROOT, 'scripts', 'go-harness')
+// Общий go.mod с закреплёнными версиями внешних пакетов (pgx) и его go.sum: сборка
+// воспроизводима, а модули скачиваются в кэш один раз на все фрагменты.
+const HARNESS_GO_MOD = readFileSync(join(HARNESS, 'go.mod'), 'utf8')
+const HARNESS_GO_SUM = readFileSync(join(HARNESS, 'go.sum'), 'utf8')
 
 try {
   execFileSync('go', ['version'], { stdio: 'ignore' })
@@ -40,7 +44,8 @@ for (const path of files) {
     }
     const dir = mkdtempSync(join(tmpdir(), 'go-snippet-'))
     try {
-      writeFileSync(join(dir, 'go.mod'), 'module snippet\n\ngo 1.27\n')
+      writeFileSync(join(dir, 'go.mod'), HARNESS_GO_MOD)
+      writeFileSync(join(dir, 'go.sum'), HARNESS_GO_SUM)
       writeFileSync(join(dir, 'main.go'), buildGoFile(snippet, template))
       const unformatted = execFileSync('gofmt', ['-l', 'main.go'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
       if (unformatted !== '') failures.push(`${rel}:${snippet.line}: gofmt требует форматирования`)
