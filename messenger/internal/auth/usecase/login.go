@@ -59,7 +59,8 @@ func (uc *Login) Execute(ctx context.Context, cmd LoginCommand) (Token, error) {
 	}
 	creds, err := uc.creds.FindCredentials(ctx, id)
 	if errors.Is(err, domain.ErrNoCredentials) {
-		// Профиль без пароля — след неудачной регистрации (ADR-0004). Для клиента — то же «неверно».
+		// Профиль без пароля — след неудачной регистрации до 2a (ADR-0004); теперь регистрация
+		// пишет оба в одной транзакции, но ответ на такой профиль — всё равно то же «неверно».
 		return Token{}, uc.reject(ctx, cmd.Password, err)
 	}
 	if err != nil {

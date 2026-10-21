@@ -84,7 +84,7 @@
 
 ### 3.6 Правила зависимостей
 
-- depguard: `github.com/jackc/pgx` разрешён только в `*/adapters/postgres`, `platform/pgtx`, `platform/pgtest` (помощники testcontainers) и подкоманде `migrate`; `database/sql` и `pgx/v5/stdlib` — только в `migrate` и `platform/pgtest`; «красная» проверка (нарочное нарушение в тестовом прогоне линтера) — в плане.
+- depguard (правила `pgx-only-storage` и `sql-only-migrate` в `messenger/.golangci.yml`): `github.com/jackc/pgx` разрешён только в `internal/*/adapters/postgres`, `platform/idempotency/postgres`, `platform/pgtx`, `platform/pgerr` (перевод ошибок ограничений), `platform/pgtest` (помощники testcontainers) и composition root `cmd/messenger` целиком (пул, проверка схемы, подкоманда `migrate`); `database/sql` и `pgx/v5/stdlib` — только в `cmd/messenger/migrate.go` и `platform/pgtest`; домен и use case'ы, кроме того, запрещают `pgx` и `database/sql` своими strict-правилами; «красная» проверка (нарочное нарушение в тестовом прогоне линтера) — в плане. *Уточнено 2026-10-21 (R17):* список шире первоначального на `cmd/messenger` целиком, `platform/idempotency/postgres` и `platform/pgerr`.
 
 ## 4. Лаба `labs/2a`
 

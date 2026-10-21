@@ -56,7 +56,7 @@ wait_healthy() {
 	fail "контейнер не стал healthy (статус $status)"
 }
 
-# #region scenario
+# region scenario
 # scenario — запись: два пользователя, вход, личный чат, сообщение, лента глазами Боба.
 scenario() {
 	echo "сценарий:"
@@ -98,7 +98,7 @@ check_feed() {
 	echo "  лента: 1 сообщение, seq $(field '.items[0].seq'), «$(field '.items[0].text')»"
 }
 
-# #endregion scenario
+# endregion scenario
 
 # check_stop CONTAINER — код выхода 0 и порядок остановки в журнале.
 check_stop() {
