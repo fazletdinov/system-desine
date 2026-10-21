@@ -22,6 +22,8 @@ services:
     # Скрипты лабы внутри контейнера: psql -f /lab/anomalies.sql печатает в ошибках файл и строку.
     volumes:
       - ./:/lab:ro
+      # Миграция мессенджера — для messenger-explain.sql: планы снимаются на настоящей схеме, а не на копии.
+      - ../../messenger/migrations:/messenger-migrations:ro
     tmpfs:
       - /var/lib/postgresql:size=2g
     # Разделяемая память контейнера по умолчанию 64 МиБ — мало для shared_buffers по умолчанию (128 МиБ).

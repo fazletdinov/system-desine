@@ -1,6 +1,6 @@
 // Package storetest — контрактные тесты хранилища учётных данных: одна батарея проверок
-// для любой реализации портов CredentialsSaver и CredentialsFinder. Сейчас её проходит
-// memory.Store, в модуле 2a — Postgres-адаптер.
+// для любой реализации портов CredentialsSaver и CredentialsFinder. Её проходят
+// memory.Store и Postgres-адаптер (auth/adapters/postgres).
 package storetest
 
 import (
@@ -22,7 +22,9 @@ type Store interface {
 }
 
 // Run прогоняет контракт против хранилища, которое создаёт newStore. Каждая проверка
-// получает своё, пустое хранилище.
+// получает своё, пустое хранилище. Идти ли проверкам параллельно, решает newStore
+// (t.Parallel): независимые хранилища в памяти — да, а Postgres-адаптеры делят одну
+// базу тестового пакета, которую каждая проверка восстанавливает из снимка, — нет.
 func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
 	tests := []struct {
@@ -36,17 +38,24 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		{"отменённый контекст", testCanceledContext},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tt.fn(t, newStore(t))
-		})
+		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newStore(t)) })
 	}
 }
+
+// savedUser — единственный пользователь, для которого батарея сохраняет учётные данные.
+const savedUser = 1
+
+// UserIDs — пользователи, для которых батарея сохраняет учётные данные. Хранилище, где
+// учётные данные ссылаются на таблицу пользователей (в Postgres — внешний ключ на
+// users.users), заводит их в newStore до проверки.
+func UserIDs() []string { return []string{userID(savedUser)} }
+
+func userID(n int) string { return fmt.Sprintf("00000000-0000-7000-a000-%012d", n) }
 
 // creds — учётные данные пользователя n с хешем hash.
 func creds(t *testing.T, n int, hash string) domain.Credentials {
 	t.Helper()
-	id, err := domain.ParseUserID(fmt.Sprintf("00000000-0000-7000-a000-%012d", n))
+	id, err := domain.ParseUserID(userID(n))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +72,7 @@ func creds(t *testing.T, n int, hash string) domain.Credentials {
 
 func testSaveAndFind(t *testing.T, s Store) {
 	ctx := context.Background()
-	c := creds(t, 1, "hash-1")
+	c := creds(t, savedUser, "hash-1")
 	if err := s.SaveCredentials(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -75,13 +84,13 @@ func testSaveAndFind(t *testing.T, s Store) {
 
 func testSaveTwice(t *testing.T, s Store) {
 	ctx := context.Background()
-	first := creds(t, 1, "hash-1")
+	first := creds(t, savedUser, "hash-1")
 	if err := s.SaveCredentials(ctx, first); err != nil {
 		t.Fatal(err)
 	}
 	// Второе сохранение не перезаписывает хеш: смена пароля — отдельный сценарий,
 	// а не побочный эффект повторной регистрации.
-	if err := s.SaveCredentials(ctx, creds(t, 1, "hash-2")); !errors.Is(err, domain.ErrCredentialsExist) {
+	if err := s.SaveCredentials(ctx, creds(t, savedUser, "hash-2")); !errors.Is(err, domain.ErrCredentialsExist) {
 		t.Fatalf("ждали ErrCredentialsExist, получили %v", err)
 	}
 	if got, err := s.FindCredentials(ctx, first.UserID()); err != nil || got != first {
@@ -99,7 +108,7 @@ func testConcurrentSave(t *testing.T, s Store) {
 	const writers = 50
 	all := make([]domain.Credentials, writers)
 	for i := range all {
-		all[i] = creds(t, 1, fmt.Sprintf("hash-%d", i))
+		all[i] = creds(t, savedUser, fmt.Sprintf("hash-%d", i))
 	}
 	var (
 		wg   sync.WaitGroup
@@ -128,7 +137,7 @@ func testConcurrentSave(t *testing.T, s Store) {
 func testCanceledContext(t *testing.T, s Store) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	c := creds(t, 1, "hash-1")
+	c := creds(t, savedUser, "hash-1")
 	if err := s.SaveCredentials(ctx, c); !errors.Is(err, context.Canceled) {
 		t.Fatalf("SaveCredentials: ждали context.Canceled, получили %v", err)
 	}

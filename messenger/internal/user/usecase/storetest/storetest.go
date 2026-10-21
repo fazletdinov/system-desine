@@ -1,6 +1,6 @@
 // Package storetest — контрактные тесты хранилища пользователей: одна батарея
-// проверок для любой реализации портов UserCreator и UserFinder. Сейчас её проходит
-// memory.Store, в модуле 2a — Postgres-адаптер.
+// проверок для любой реализации портов UserCreator и UserFinder. Её проходят
+// memory.Store и Postgres-адаптер (user/adapters/postgres).
 package storetest
 
 import (
@@ -25,7 +25,9 @@ type Store interface {
 var t0 = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
 
 // Run прогоняет контракт против хранилища, которое создаёт newStore. Каждая проверка
-// получает своё, пустое хранилище: параллельные проверки не делят состояние.
+// получает своё, пустое хранилище. Идти ли проверкам параллельно, решает newStore
+// (t.Parallel): независимые хранилища в памяти — да, а Postgres-адаптеры делят одну
+// базу тестового пакета, которую каждая проверка восстанавливает из снимка, — нет.
 func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
 	tests := []struct {
@@ -39,10 +41,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		{"одновременная регистрация одного имени", testConcurrentSameUsername},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tt.fn(t, newStore(t))
-		})
+		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newStore(t)) })
 	}
 }
 

@@ -8,5 +8,8 @@ import (
 )
 
 func TestStoreContract(t *testing.T) {
-	storetest.Run(t, func(*testing.T) storetest.Store { return memory.NewStore() })
+	storetest.Run(t, func(t *testing.T) storetest.Store {
+		t.Parallel() // у каждой проверки своё хранилище — делить нечего
+		return memory.NewStore()
+	})
 }

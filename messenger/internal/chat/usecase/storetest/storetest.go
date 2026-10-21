@@ -1,6 +1,6 @@
 // Package storetest — контрактные тесты хранилища чатов: одна батарея проверок
-// для любой реализации портов. Сейчас её проходит memory.Store, в модуле 2a —
-// Postgres-адаптер. Если обе реализации проходят контракт, use case'ам всё равно,
+// для любой реализации портов. Её проходят memory.Store и Postgres-адаптер
+// (chat/adapters/postgres). Раз обе реализации проходят контракт, use case'ам всё равно,
 // с какой из них работать.
 package storetest
 
@@ -32,7 +32,9 @@ var t0 = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
 
 // #region run
 // Run прогоняет контракт против хранилища, которое создаёт newStore. Каждая проверка
-// получает своё, пустое хранилище: параллельные проверки не делят состояние.
+// получает своё, пустое хранилище. Идти ли проверкам параллельно, решает newStore
+// (t.Parallel): независимые хранилища в памяти — да, а Postgres-адаптер делит одну
+// базу тестового пакета, которую каждая проверка восстанавливает из снимка, — нет.
 func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
 	tests := []struct {
@@ -49,6 +51,8 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		{"чаты с одним временем — порядок по id", testListChatsTieBreak},
 		{"limit < 1 у списка чатов", testListChatsLimit},
 		{"одновременная запись", testConcurrentAppend},
+		{"две записи с одной версией", testAppendSameVersion},
+		{"одно время активности на границе страницы", testListChatsCursorTies},
 		{"повтор client_message_id", testDuplicateClientMessageID},
 		{"одновременные повторы client_message_id", testConcurrentDuplicateClientMessageID},
 		{"поиск по client_message_id", testFindMessageByClientID},
@@ -56,10 +60,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		{"найденный чат — копия", testFindReturnsCopy},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tt.fn(t, newStore(t))
-		})
+		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newStore(t)) })
 	}
 }
 
@@ -74,9 +75,35 @@ func id[T any](t *testing.T, parse func(string) (T, error), prefix string, n int
 	return v
 }
 
+// appendRounds — забеги testConcurrentAppend: у каждого свой чат и своя пара участников.
+const appendRounds = 20
+
+// batteryUsers — сколько пользователей нужно батарее: user(1)…user(batteryUsers).
+const batteryUsers = 2 * appendRounds
+
+// UserIDs — участники чатов батареи. Хранилище, где участник ссылается на таблицу
+// пользователей (в Postgres — внешний ключ chat.members → users.users), заводит их в
+// newStore до проверки.
+func UserIDs() []string {
+	ids := make([]string, batteryUsers)
+	for n := range ids {
+		ids[n] = userID(n + 1)
+	}
+	return ids
+}
+
+func userID(n int) string { return fmt.Sprintf("00000000-0000-7000-8000-%012d", n) }
+
 func user(t *testing.T, n int) domain.UserID {
 	t.Helper()
-	return id(t, domain.ParseUserID, "8000", n)
+	if n < 1 || n > batteryUsers {
+		t.Fatalf("пользователь %d вне UserIDs (1…%d): хранилище с внешним ключом его не знает", n, batteryUsers)
+	}
+	u, err := domain.ParseUserID(userID(n))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }
 
 // newDirect — личный чат номер n между пользователями a и b.
@@ -370,8 +397,7 @@ func testListChatsLimit(t *testing.T, s Store) {
 // Окно гонки «прочитал версию — записал» узкое, и один забег его может не задеть.
 // Поэтому забегов несколько, каждый — в своём чате.
 func testConcurrentAppend(t *testing.T, s Store) {
-	const rounds = 20
-	for r := range rounds {
+	for r := range appendRounds {
 		c := newDirect(t, r+1, 2*r+1, 2*r+2)
 		create(t, s, c)
 		raceAppend(t, s, c, r)
@@ -437,6 +463,87 @@ func raceAppend(t *testing.T, s Store, c *domain.Chat, round int) {
 		if seq != int64(i+1) {
 			t.Fatalf("seq с пропуском или повтором: позиция %d, seq %d", i, seq)
 		}
+	}
+}
+
+// Две записи с одной и той же прочитанной версией, одновременно: проходит ровно одна,
+// вторая получает ErrConcurrentUpdate, и в истории одно сообщение с seq 1. В отличие
+// от testConcurrentAppend здесь нет перечитывания: обе стороны гарантированно держат
+// одну версию, и исход не зависит от того, кто успел прочитать чат раньше.
+func testAppendSameVersion(t *testing.T, s Store) {
+	c := newDirect(t, 1, 1, 2)
+	create(t, s, c)
+	const writers = 2
+	chats := make([]*domain.Chat, writers)
+	msgs := make([]domain.Message, writers)
+	for w := range writers {
+		chats[w] = find(t, s, c.ID())
+		msgs[w] = post(t, chats[w], w+1) // t.Fatal — только здесь, не в горутинах
+	}
+	errs := make([]error, writers)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for w := range writers {
+		wg.Go(func() {
+			<-start
+			errs[w] = s.AppendMessage(context.Background(), chats[w], msgs[w], 0)
+		})
+	}
+	close(start)
+	wg.Wait()
+	var ok, conflicts int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, domain.ErrConcurrentUpdate):
+			conflicts++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if ok != 1 || conflicts != 1 {
+		t.Fatalf("успешных %d, конфликтов %d — ждали 1 и 1", ok, conflicts)
+	}
+	if got := seqs(t, s, c.ID()); fmt.Sprint(got) != "[1]" {
+		t.Fatalf("в истории seq %v, ждали [1]", got)
+	}
+	if got := find(t, s, c.ID()); got.Version() != 1 || got.LastSeq() != 1 {
+		t.Fatalf("после гонки версия %d, lastSeq %d — ждали 1 и 1", got.Version(), got.LastSeq())
+	}
+}
+
+// Равное время активности даёт не только создание: три чата получили сообщения в один
+// момент, а четвёртый — без сообщений, старше. Граница первой страницы проходит внутри
+// группы равных времён, и курсор (время, id) обязан продолжить ровно со следующего чата.
+func testListChatsCursorTies(t *testing.T, s Store) {
+	chats := []*domain.Chat{newDirect(t, 1, 1, 2), newDirect(t, 2, 1, 3), newDirect(t, 3, 1, 4), newDirect(t, 4, 1, 5)}
+	for _, c := range chats {
+		create(t, s, c)
+	}
+	at := t0.Add(time.Minute)
+	for i, c := range chats[:3] {
+		postAt(t, s, c.ID(), i+1, at)
+	}
+	want := []domain.ChatID{chats[2].ID(), chats[1].ID(), chats[0].ID(), chats[3].ID()}
+	var got []domain.ChatID
+	var after *usecase.ChatPosition
+	for range len(want) {
+		page, err := s.ListChatsByMember(context.Background(), user(t, 1), after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, c := range page {
+			got = append(got, c.ID())
+		}
+		last := page[len(page)-1]
+		after = &usecase.ChatPosition{LastActivityAt: last.LastActivityAt(), ID: last.ID()}
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("по страницам %v, ждали %v — без потерь и повторов на границе", got, want)
 	}
 }
 
