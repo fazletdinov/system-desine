@@ -2060,7 +2060,7 @@ junction-table:
   long: |
     Связь M:N нельзя положить ни в одну из двух таблиц: у пользователя много чатов, у чата много пользователей, а в ячейке — одно значение. Поэтому появляется третья таблица с двумя [внешними ключами](#foreign-key) и составным [первичным ключом](#primary-key) из них: `chat.members (chat_id, user_id)`. M:N распадается на две связи 1:N. У связки бывают и собственные атрибуты — роль участника, время вступления. Хернандес называет её linking table, в литературе встречаются также associative entity и join table.
   links:
-    - title: Hernandez, «Database Design for Mere Mortals», глава «Table Relationships»
+    - title: Hernandez, «Database Design for Mere Mortals», 4-е изд., 2020, гл. 3, раздел «Relationship-Related Terms»
 db-schema:
   term: Схема базы данных
   en: Schema (namespace)
