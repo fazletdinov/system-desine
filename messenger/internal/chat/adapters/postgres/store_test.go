@@ -55,6 +55,7 @@ func TestCreateChatRollsBackWithTx(t *testing.T) {
 	}
 }
 
+// #region rollback-test
 func TestAppendMessageRollsBackWithTx(t *testing.T) {
 	s, tx, _ := setup(t)
 	c := newDirect(t)
@@ -84,6 +85,8 @@ func TestAppendMessageRollsBackWithTx(t *testing.T) {
 		t.Fatalf("после отката чат изменён: %v", err)
 	}
 }
+
+// #endregion rollback-test
 
 // Повтор client_message_id внутри транзакции: ошибка — ErrDuplicateMessage, транзакция
 // оборвана (до ROLLBACK сервер не выполнит в ней ничего), откат возвращает счётчик.
