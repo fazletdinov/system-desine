@@ -66,22 +66,19 @@ EXECUTE list_chats_first(pg_temp.uid(1), 51);
                                               QUERY PLAN                                              
 ------------------------------------------------------------------------------------------------------
  Limit (actual rows=51.00 loops=1)
-   Buffers: shared hit=5128 read=25 written=25
-   ->  Gather Merge (actual rows=51.00 loops=1)
-         Workers Planned: 1
-         Workers Launched: 1
-         Buffers: shared hit=5128 read=25 written=25
-         ->  Sort (actual rows=25.50 loops=2)
+   Buffers: shared hit=5095 read=22 written=21
+   ->  Result (actual rows=51.00 loops=1)
+         Buffers: shared hit=5095 read=22 written=21
+         ->  Sort (actual rows=51.00 loops=1)
                Sort Key: c.last_activity_at DESC, c.id DESC
                Sort Method: top-N heapsort  Memory: 36kB
-               Buffers: shared hit=4996 read=3 written=3
-               Worker 0:  Sort Method: quicksort  Memory: 25kB
-               ->  Nested Loop (actual rows=500.00 loops=2)
-                     Buffers: shared hit=4980 read=3 written=3
-                     ->  Parallel Bitmap Heap Scan on members me (actual rows=500.00 loops=2)
+               Buffers: shared hit=4963
+               ->  Nested Loop (actual rows=1000.00 loops=1)
+                     Buffers: shared hit=4963
+                     ->  Bitmap Heap Scan on members me (actual rows=1000.00 loops=1)
                            Recheck Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
                            Heap Blocks: exact=960
-                           Buffers: shared hit=980 read=3 written=3
+                           Buffers: shared hit=963
                            ->  Bitmap Index Scan on members_user_id_idx (actual rows=1000.00 loops=1)
                                  Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
                                  Index Searches: 1
@@ -95,12 +92,12 @@ EXECUTE list_chats_first(pg_temp.uid(1), 51);
                  Index Cond: (chat_id = c.id)
                  Heap Fetches: 0
                  Index Searches: 51
-                 Buffers: shared hit=132 read=22 written=22
+                 Buffers: shared hit=132 read=22 written=21
  Planning:
    Buffers: shared hit=57
- Planning Time: 0.234 ms
- Execution Time: 13.760 ms
-(35 rows)
+ Planning Time: 0.228 ms
+ Execution Time: 1.838 ms
+(32 rows)
 
 --- лёгкий пользователь (20 чатов)
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
@@ -133,8 +130,8 @@ EXECUTE list_chats_first(pg_temp.uid(2), 51);
                  Buffers: shared hit=60 read=1 written=1
  Planning:
    Buffers: shared hit=32
- Planning Time: 0.251 ms
- Execution Time: 0.206 ms
+ Planning Time: 0.225 ms
+ Execution Time: 0.215 ms
 (28 rows)
 
 
@@ -144,22 +141,19 @@ EXECUTE list_chats_after(pg_temp.uid(1), 51, '2026-09-16 09:33:54.096254+00', '0
                                                                                   QUERY PLAN                                                                                  
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Limit (actual rows=51.00 loops=1)
-   Buffers: shared hit=5151 read=2 written=2
-   ->  Gather Merge (actual rows=51.00 loops=1)
-         Workers Planned: 1
-         Workers Launched: 1
-         Buffers: shared hit=5151 read=2 written=2
-         ->  Sort (actual rows=25.50 loops=2)
+   Buffers: shared hit=5115 read=2 written=2
+   ->  Result (actual rows=51.00 loops=1)
+         Buffers: shared hit=5115 read=2 written=2
+         ->  Sort (actual rows=51.00 loops=1)
                Sort Key: c.last_activity_at DESC, c.id DESC
                Sort Method: top-N heapsort  Memory: 36kB
-               Buffers: shared hit=4999
-               Worker 0:  Sort Method: quicksort  Memory: 25kB
-               ->  Nested Loop (actual rows=250.00 loops=2)
-                     Buffers: shared hit=4983
-                     ->  Parallel Bitmap Heap Scan on members me (actual rows=500.00 loops=2)
+               Buffers: shared hit=4963
+               ->  Nested Loop (actual rows=500.00 loops=1)
+                     Buffers: shared hit=4963
+                     ->  Bitmap Heap Scan on members me (actual rows=1000.00 loops=1)
                            Recheck Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
                            Heap Blocks: exact=960
-                           Buffers: shared hit=983
+                           Buffers: shared hit=963
                            ->  Bitmap Index Scan on members_user_id_idx (actual rows=1000.00 loops=1)
                                  Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
                                  Index Searches: 1
@@ -178,37 +172,65 @@ EXECUTE list_chats_after(pg_temp.uid(1), 51, '2026-09-16 09:33:54.096254+00', '0
                  Buffers: shared hit=152 read=2 written=2
  Planning:
    Buffers: shared hit=32
- Planning Time: 0.205 ms
- Execution Time: 13.557 ms
-(37 rows)
+ Planning Time: 0.186 ms
+ Execution Time: 1.965 ms
+(34 rows)
 
 
-=== 4. Тот же запрос без chats_last_activity_idx (в транзакции, с откатом) ===
-BEGIN;
-BEGIN
-DROP INDEX chat.chats_last_activity_idx;
-DROP INDEX
+=== 4. Индекс chat.chats (last_activity_at DESC, id DESC), которого в схеме нет: план его не берёт, а сообщения теряют HOT ===
+PREPARE append_message(uuid, bigint, timestamptz, uuid, uuid, uuid, text, timestamptz) AS
+WITH chat AS (
+    UPDATE chat.chats
+    SET last_seq = last_seq + 1, version = version + 1, last_activity_at = $3
+    WHERE id = $1 AND version = $2
+    RETURNING last_seq
+)
+INSERT INTO chat.messages (chat_id, seq, id, author_id, client_message_id, text, sent_at)
+SELECT $1, chat.last_seq, $4, $5, $6, $7, $8 FROM chat
+RETURNING seq;
+PREPARE
+CREATE FUNCTION pg_temp.send_batch(from_version int) RETURNS SETOF text LANGUAGE sql AS $$
+SELECT format('EXECUTE append_message(%L, %s, %L, gen_random_uuid(), %L, gen_random_uuid(), ''сообщение'', %L)',
+           pg_temp.cid(2), v, timestamptz '2026-10-01 00:00Z' + v * interval '1 second', pg_temp.uid(3),
+           timestamptz '2026-10-01 00:00Z' + v * interval '1 second')
+FROM generate_series(from_version, from_version + 199) AS v
+$$;
+CREATE FUNCTION pg_temp.chat_updates() RETURNS TABLE (n_tup_upd bigint, n_tup_hot_upd bigint)
+    LANGUAGE sql RETURN (SELECT ROW(n_tup_upd, n_tup_hot_upd)
+                         FROM pg_stat_user_tables WHERE relid = 'chat.chats'::regclass);
+--- без индекса (схема мессенджера): 200 сообщений
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd AS upd0, n_tup_hot_upd AS hot0 FROM pg_temp.chat_updates() 
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd - 1 AS updates, n_tup_hot_upd - 0 AS hot_updates FROM pg_temp.chat_updates();
+ updates | hot_updates 
+---------+-------------
+     200 |         200
+(1 row)
+
+--- с индексом: план первой страницы и ещё 200 сообщений
+CREATE INDEX chats_last_activity_idx ON chat.chats (last_activity_at DESC, id DESC);
+CREATE INDEX
+ANALYZE chat.chats;
+ANALYZE
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
 EXECUTE list_chats_first(pg_temp.uid(1), 51);
                                               QUERY PLAN                                              
 ------------------------------------------------------------------------------------------------------
  Limit (actual rows=51.00 loops=1)
-   Buffers: shared hit=5153
-   ->  Gather Merge (actual rows=51.00 loops=1)
-         Workers Planned: 1
-         Workers Launched: 1
-         Buffers: shared hit=5153
-         ->  Sort (actual rows=25.50 loops=2)
+   Buffers: shared hit=5117
+   ->  Result (actual rows=51.00 loops=1)
+         Buffers: shared hit=5117
+         ->  Sort (actual rows=51.00 loops=1)
                Sort Key: c.last_activity_at DESC, c.id DESC
                Sort Method: top-N heapsort  Memory: 36kB
-               Buffers: shared hit=4999
-               Worker 0:  Sort Method: quicksort  Memory: 25kB
-               ->  Nested Loop (actual rows=500.00 loops=2)
-                     Buffers: shared hit=4983
-                     ->  Parallel Bitmap Heap Scan on members me (actual rows=500.00 loops=2)
+               Buffers: shared hit=4963
+               ->  Nested Loop (actual rows=1000.00 loops=1)
+                     Buffers: shared hit=4963
+                     ->  Bitmap Heap Scan on members me (actual rows=1000.00 loops=1)
                            Recheck Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
                            Heap Blocks: exact=960
-                           Buffers: shared hit=983
+                           Buffers: shared hit=963
                            ->  Bitmap Index Scan on members_user_id_idx (actual rows=1000.00 loops=1)
                                  Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
                                  Index Searches: 1
@@ -224,13 +246,22 @@ EXECUTE list_chats_first(pg_temp.uid(1), 51);
                  Index Searches: 51
                  Buffers: shared hit=154
  Planning:
-   Buffers: shared hit=52
- Planning Time: 0.336 ms
- Execution Time: 12.958 ms
-(35 rows)
+   Buffers: shared hit=64 read=1
+ Planning Time: 0.333 ms
+ Execution Time: 1.868 ms
+(32 rows)
 
-ROLLBACK;
-ROLLBACK
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd AS upd0, n_tup_hot_upd AS hot0 FROM pg_temp.chat_updates() 
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd - 201 AS updates, n_tup_hot_upd - 200 AS hot_updates FROM pg_temp.chat_updates();
+ updates | hot_updates 
+---------+-------------
+     200 |           0
+(1 row)
+
+DROP INDEX chat.chats_last_activity_idx;
+DROP INDEX
 
 === 5. members по (user_id, chat_id) вместо (user_id): chat_id — из индекса, без чтения таблицы (с откатом) ===
 BEGIN;
@@ -246,15 +277,15 @@ EXECUTE list_chats_first(pg_temp.uid(1), 51);
                                                            QUERY PLAN                                                           
 --------------------------------------------------------------------------------------------------------------------------------
  Limit (actual rows=51.00 loops=1)
-   Buffers: shared hit=4155 read=9
+   Buffers: shared hit=4156 read=9
    ->  Result (actual rows=51.00 loops=1)
-         Buffers: shared hit=4155 read=9
+         Buffers: shared hit=4156 read=9
          ->  Sort (actual rows=51.00 loops=1)
                Sort Key: c.last_activity_at DESC, c.id DESC
                Sort Method: top-N heapsort  Memory: 36kB
-               Buffers: shared hit=4001 read=9
+               Buffers: shared hit=4002 read=9
                ->  Nested Loop (actual rows=1000.00 loops=1)
-                     Buffers: shared hit=4001 read=9
+                     Buffers: shared hit=4002 read=9
                      ->  Index Only Scan Backward using members_user_id_chat_id_idx on members me (actual rows=1000.00 loops=1)
                            Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
                            Heap Fetches: 0
@@ -271,9 +302,9 @@ EXECUTE list_chats_first(pg_temp.uid(1), 51);
                  Index Searches: 51
                  Buffers: shared hit=154
  Planning:
-   Buffers: shared hit=83 read=1
- Planning Time: 0.429 ms
- Execution Time: 1.231 ms
+   Buffers: shared hit=73 read=1
+ Planning Time: 0.362 ms
+ Execution Time: 1.224 ms
 (29 rows)
 
 SELECT relname AS index, pg_size_pretty(pg_relation_size(oid)) AS size
@@ -313,8 +344,8 @@ EXECUTE list_messages_before(pg_temp.cid(1), 5000, 51);
          Index Searches: 1
          Buffers: shared hit=3
  Planning:
-   Buffers: shared hit=56
- Planning Time: 0.141 ms
- Execution Time: 0.017 ms
+   Buffers: shared hit=29
+ Planning Time: 0.093 ms
+ Execution Time: 0.015 ms
 (10 rows)
 

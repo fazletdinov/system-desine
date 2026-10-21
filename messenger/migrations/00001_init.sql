@@ -123,18 +123,15 @@ CREATE TABLE chat.messages (
 );
 -- #endregion messages
 
--- #region chat-list-index
--- Список чатов пользователя по последней активности с keyset-пагинацией: курсор —
--- пара (last_activity_at, id), id разрешает равные времена. Чаты пользователя находит
--- members_user_id_idx, а этот индекс отдаёт их в порядке экрана. Индекс по изменяемому
--- столбцу — цена: UPDATE строки чата при каждом сообщении не может быть HOT (урок 2.2).
-CREATE INDEX chats_last_activity_idx ON chat.chats (last_activity_at DESC, id DESC);
--- #endregion chat-list-index
-
 -- #region members-user-index
 -- Первичный ключ (chat_id, user_id) не помогает запросу «чаты пользователя»
 -- (WHERE user_id = $1): user_id — второй столбец, и без своего индекса это полный
--- просмотр chat.members на каждом открытии приложения.
+-- просмотр chat.members на каждом открытии приложения. Он же обслуживает список чатов
+-- по активности: чаты пользователя — отсюда, их строки — по chats_pkey, порядок
+-- (last_activity_at, id) — сортировкой его чатов. Индекса по chat.chats (last_activity_at)
+-- нет намеренно: EXPLAIN (labs/2a/results/messenger-explain.txt) показал, что планировщик
+-- его для списка не берёт, а индекс по столбцу, который меняет каждое сообщение, лишает
+-- UPDATE строки чата HOT (урок 2.2).
 CREATE INDEX members_user_id_idx ON chat.members (user_id);
 -- #endregion members-user-index
 

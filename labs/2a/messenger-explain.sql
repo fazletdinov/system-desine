@@ -107,12 +107,61 @@ EXECUTE list_chats_after(pg_temp.uid(1), 51, :'cursor_at', :'cursor_id');
 -- #endregion plan-after
 
 \echo
-\echo '=== 4. Тот же запрос без chats_last_activity_idx (в транзакции, с откатом) ==='
-BEGIN;
-DROP INDEX chat.chats_last_activity_idx;
+\echo '=== 4. Индекс chat.chats (last_activity_at DESC, id DESC), которого в схеме нет: план его не берёт, а сообщения теряют HOT ==='
+-- Запись сообщения — тот же оператор, что AppendMessage в адаптере.
+-- #region append-prepare
+PREPARE append_message(uuid, bigint, timestamptz, uuid, uuid, uuid, text, timestamptz) AS
+WITH chat AS (
+    UPDATE chat.chats
+    SET last_seq = last_seq + 1, version = version + 1, last_activity_at = $3
+    WHERE id = $1 AND version = $2
+    RETURNING last_seq
+)
+INSERT INTO chat.messages (chat_id, seq, id, author_id, client_message_id, text, sent_at)
+SELECT $1, chat.last_seq, $4, $5, $6, $7, $8 FROM chat
+RETURNING seq;
+-- #endregion append-prepare
+
+-- 200 сообщений в чат 2, каждое — своей транзакцией, как в мессенджере. Перед замером счётчики
+-- статистики сбрасываются в общую память (pg_stat_force_next_flush), иначе прочитали бы старые.
+\set QUIET on
+CREATE FUNCTION pg_temp.send_batch(from_version int) RETURNS SETOF text LANGUAGE sql AS $$
+SELECT format('EXECUTE append_message(%L, %s, %L, gen_random_uuid(), %L, gen_random_uuid(), ''сообщение'', %L)',
+           pg_temp.cid(2), v, timestamptz '2026-10-01 00:00Z' + v * interval '1 second', pg_temp.uid(3),
+           timestamptz '2026-10-01 00:00Z' + v * interval '1 second')
+FROM generate_series(from_version, from_version + 199) AS v
+$$;
+CREATE FUNCTION pg_temp.chat_updates() RETURNS TABLE (n_tup_upd bigint, n_tup_hot_upd bigint)
+    LANGUAGE sql RETURN (SELECT ROW(n_tup_upd, n_tup_hot_upd)
+                         FROM pg_stat_user_tables WHERE relid = 'chat.chats'::regclass);
+\set QUIET off
+
+\echo '--- без индекса (схема мессенджера): 200 сообщений'
+SELECT pg_stat_force_next_flush() \g /dev/null
+SELECT n_tup_upd AS upd0, n_tup_hot_upd AS hot0 FROM pg_temp.chat_updates() \gset
+\set ECHO none
+\o /dev/null
+SELECT pg_temp.send_batch(0) \gexec
+\o
+\set ECHO queries
+SELECT pg_stat_force_next_flush() \g /dev/null
+SELECT n_tup_upd - :upd0 AS updates, n_tup_hot_upd - :hot0 AS hot_updates FROM pg_temp.chat_updates();
+
+\echo '--- с индексом: план первой страницы и ещё 200 сообщений'
+CREATE INDEX chats_last_activity_idx ON chat.chats (last_activity_at DESC, id DESC);
+ANALYZE chat.chats;
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
 EXECUTE list_chats_first(pg_temp.uid(1), 51);
-ROLLBACK;
+SELECT pg_stat_force_next_flush() \g /dev/null
+SELECT n_tup_upd AS upd0, n_tup_hot_upd AS hot0 FROM pg_temp.chat_updates() \gset
+\set ECHO none
+\o /dev/null
+SELECT pg_temp.send_batch(200) \gexec
+\o
+\set ECHO queries
+SELECT pg_stat_force_next_flush() \g /dev/null
+SELECT n_tup_upd - :upd0 AS updates, n_tup_hot_upd - :hot0 AS hot_updates FROM pg_temp.chat_updates();
+DROP INDEX chat.chats_last_activity_idx;
 
 \echo
 \echo '=== 5. members по (user_id, chat_id) вместо (user_id): chat_id — из индекса, без чтения таблицы (с откатом) ==='
