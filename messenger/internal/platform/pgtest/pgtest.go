@@ -53,7 +53,7 @@ type DB struct {
 // прогон, где отобраны только юнит-тесты пакета (go test -run …), Docker не трогает.
 var (
 	started  atomic.Bool // Start вызван из TestMain — значит, контейнер будет остановлен
-	inUse    atomic.Bool // открыт пул текущего теста; см. Pool
+	inUse    atomic.Bool // базу занимает текущий тест; см. URL
 	initOnce sync.Once
 	shared   *DB
 	skip     string // непусто — Docker недоступен; тесты с Pool пропускаются
@@ -84,34 +84,50 @@ func Start(m *testing.M) (code int) {
 // (t.Parallel): Restore пересоздаёт базу и обрывает соединения соседа.
 func Pool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
+	pool, err := pgxpool.New(t.Context(), URL(t))
+	if err != nil {
+		t.Fatalf("pgtest: пул: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+// URL — то же, что Pool, но строкой подключения: для кода, который открывает пул сам
+// (composition root мессенджера). Свои соединения тест закрывает до конца теста —
+// t.Cleanup, зарегистрированный после URL, выполнится раньше освобождения базы.
+// Ограничения те же: не для t.Parallel и не дважды за тест.
+func URL(t *testing.T) string {
+	t.Helper()
 	if !started.Load() {
 		t.Fatal("pgtest: в пакете нет TestMain с pgtest.Start — контейнер некому остановить")
 	}
+	required := os.Getenv(EnvRequireDocker) == "1"
+	// -short — быстрый прогон без контейнеров (CI-джоба messenger-test, проверка перед
+	// коммитом): Docker не трогаем вовсе. Интеграционная джоба идёт без -short и с
+	// MESSENGER_REQUIRE_DOCKER=1 — там пропуск недопустим.
+	if testing.Short() && !required {
+		t.Skip("pgtest: -short — интеграционный тест пропущен")
+	}
 	initOnce.Do(initShared)
 	switch {
-	case skip != "" && os.Getenv(EnvRequireDocker) == "1":
+	case skip != "" && required:
 		t.Fatalf("pgtest: %s=1, а Docker недоступен: %s", EnvRequireDocker, skip)
 	case skip != "":
 		t.Skipf("pgtest: Docker недоступен, интеграционный тест пропущен: %s", skip)
 	case startErr != nil:
 		t.Fatalf("pgtest: %v", startErr)
 	}
-	// Второй пул при живом первом — параллельный тест или два Pool в одном тесте: Restore
-	// оборвал бы соединения первого посреди работы, и тест упал бы непонятно где.
+	// Вторая база при живой первой — параллельный тест или два вызова в одном тесте:
+	// Restore оборвал бы соединения первой посреди работы, и тест упал бы непонятно где.
 	if !inUse.CompareAndSwap(false, true) {
-		t.Fatal("pgtest: пул предыдущего вызова ещё открыт — Pool не для t.Parallel и не дважды за тест")
+		t.Fatal("pgtest: база предыдущего вызова ещё занята — Pool и URL не для t.Parallel и не дважды за тест")
 	}
-	t.Cleanup(func() { inUse.Store(false) }) // Cleanup идут в обратном порядке: этот — после pool.Close
+	t.Cleanup(func() { inUse.Store(false) }) // Cleanup идут в обратном порядке: этот — после закрытия пулов теста
 
 	if err := shared.ctr.Restore(t.Context()); err != nil {
 		t.Fatalf("pgtest: восстановление снимка: %v", err)
 	}
-	pool, err := pgxpool.New(t.Context(), shared.dsn)
-	if err != nil {
-		t.Fatalf("pgtest: пул: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
+	return shared.dsn
 }
 
 func initShared() {

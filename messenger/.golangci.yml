@@ -183,6 +183,36 @@ linters:
           deny:
             - pkg: runtime/trace
               desc: "трасса выполнения — только через platform/flightrec (один рекордер на процесс)"
+        #region pgx-rules
+        # Postgres (спека 2a, §3.6): драйвер знают только те, кто говорит с базой, —
+        # адаптеры postgres контекстов и идемпотентности, транзакции (pgtx), перевод
+        # ошибок ограничений (pgerr), помощники тестов (pgtest) и composition root
+        # (cmd/messenger: пул, проверка схемы, подкоманда migrate). Use case и домен
+        # видят базу только через порты; это же правило ловит pgx в соседнем адаптере.
+        pgx-only-storage:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!**/internal/*/adapters/postgres/**"
+            - "!**/internal/platform/idempotency/postgres/**"
+            - "!**/internal/platform/pgtx/**"
+            - "!**/internal/platform/pgerr/**"
+            - "!**/internal/platform/pgtest/**"
+            - "!**/cmd/messenger/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: "pgx — только в адаптерах postgres, pgtx, pgerr, pgtest и composition root; остальным база видна через порты"
+        # database/sql — только там, где без него нельзя: goose и снимки testcontainers
+        # принимают *sql.DB. Сервер работает через pgxpool.
+        sql-only-migrate:
+          list-mode: lax
+          files: ["$all", "!**/cmd/messenger/migrate.go", "!**/internal/platform/pgtest/**"]
+          deny:
+            - pkg: database/sql
+              desc: "database/sql — только в подкоманде migrate и pgtest (goose); сервер — через pgxpool"
+            - pkg: github.com/jackc/pgx/v5/stdlib
+              desc: "pgx/v5/stdlib — только в подкоманде migrate и pgtest (goose); сервер — через pgxpool"
+        #endregion pgx-rules
         platform:
           list-mode: lax
           files: ["**/internal/platform/**"]

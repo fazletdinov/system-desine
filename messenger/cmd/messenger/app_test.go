@@ -10,13 +10,16 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,12 +27,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"messenger/internal/auth/adapters/argon2id"
 	"messenger/internal/auth/adapters/jwt"
+	"messenger/internal/platform/clock"
 	"messenger/internal/platform/idempotency"
+	idemmemory "messenger/internal/platform/idempotency/memory"
 	"messenger/internal/platform/lifecycle"
 	"messenger/internal/platform/openapitest"
+	"messenger/internal/platform/pgtest"
 )
 
 // fastHasher — единственная разница с боевой сборкой: OWASP-минимум (19 МиБ на хеш)
@@ -37,7 +44,8 @@ import (
 var fastHasher = argon2id.Params{MemoryKiB: 64, Iterations: 1, Parallelism: 1, SaltLen: 16, KeyLen: 32}
 
 // testConfig — рабочий конфиг сборки для тестов: новый ключ подписи, быстрый хешер,
-// сроки и параллелизм по умолчанию.
+// сроки и параллелизм по умолчанию, чистая база pgtest. Пул сборки тест обязан закрыть
+// до конца теста — это делает newTestApp.
 func testConfig(t *testing.T) config {
 	t.Helper()
 	_, key, err := ed25519.GenerateKey(rand.Reader)
@@ -51,7 +59,21 @@ func testConfig(t *testing.T) config {
 		IdempotencySweepEvery: defaultIdempotencySweepEvery,
 		HashConcurrency:       2,
 		HashQueue:             8,
+		DatabaseURL:           pgtest.URL(t),
+		DBMaxConns:            defaultDBMaxConns,
 	}
+}
+
+// newTestApp собирает приложение и закрывает его пул после теста — раньше, чем pgtest
+// отдаст базу следующему (Cleanup идут в обратном порядке).
+func newTestApp(t *testing.T, cfg config, log *slog.Logger) *app {
+	t.Helper()
+	a, err := newApp(t.Context(), cfg, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.pool.Close)
+	return a
 }
 
 // Пароли из тел запросов: их не должно быть ни в ответах, ни в журнале.
@@ -163,10 +185,7 @@ func (c client) token(username, password string) string {
 func newClient(t *testing.T) (client, *openapitest.Validator, *syncBuffer) {
 	t.Helper()
 	logs := &syncBuffer{}
-	a, err := newApp(testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := newTestApp(t, testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
 	v := openapitest.New(t)
 	srv := httptest.NewServer(v.Wrap(a.handler))
 	t.Cleanup(srv.Close)
@@ -257,14 +276,22 @@ func TestMessengerEndToEnd(t *testing.T) {
 	// 5. Семь сообщений; повтор с тем же client_message_id — 200, с другим текстом — 409.
 	msgs := "/v1/chats/" + directID + "/messages"
 	var first string
+	var firstSent response
 	for i := range 7 {
 		cmid := uuid.NewString()
+		sent := c.do(http.MethodPost, msgs, aliceToken, `{"client_message_id":"`+cmid+`","text":"сообщение `+string(rune('1'+i))+`"}`)
+		c.expect(sent, http.StatusCreated, "сообщение")
 		if i == 0 {
-			first = cmid
+			first, firstSent = cmid, sent
 		}
-		c.expect(c.do(http.MethodPost, msgs, aliceToken, `{"client_message_id":"`+cmid+`","text":"сообщение `+string(rune('1'+i))+`"}`), http.StatusCreated, "сообщение")
 	}
-	c.expect(c.do(http.MethodPost, msgs, aliceToken, `{"client_message_id":"`+first+`","text":"сообщение 1"}`), http.StatusOK, "повтор сообщения")
+	retry := c.do(http.MethodPost, msgs, aliceToken, `{"client_message_id":"`+first+`","text":"сообщение 1"}`)
+	c.expect(retry, http.StatusOK, "повтор сообщения")
+	// Повтор читает сообщение из базы, а первый ответ собран из часов сервера: sent_at
+	// совпадает, только если часы не точнее timestamptz (микросекунды, clock.System).
+	if got, want := retry.json(t)["sent_at"], firstSent.json(t)["sent_at"]; got != want {
+		t.Errorf("sent_at повтора %v, первого ответа %v", got, want)
+	}
 	c.expect(c.do(http.MethodPost, msgs, aliceToken, `{"client_message_id":"`+first+`","text":"другой текст"}`), http.StatusConflict, "тот же id, другой текст")
 
 	// 6. Боб листает историю по 3 до конца: семь сообщений без повторов. Ева — посторонняя.
@@ -326,46 +353,99 @@ func TestNewAppRejectsBadConfig(t *testing.T) {
 		{"с нулевым периодом очистки", func(c *config) { c.IdempotencySweepEvery = 0 }},
 		{"без мест для хеширования", func(c *config) { c.HashConcurrency = 0 }},
 		{"с отрицательной очередью хешей", func(c *config) { c.HashQueue = -1 }},
+		{"с пустым пулом", func(c *config) { c.DBMaxConns = 0 }},
+		{"с неразборчивой строкой подключения", func(c *config) { c.DatabaseURL = "postgres://%zz" }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			cfg := testConfig(t)
 			c.spoil(&cfg)
-			if _, err := newApp(cfg, slog.New(slog.DiscardHandler)); err == nil {
+			// При ошибке newApp закрывает пул сама: незакрытый пул держал бы соединения
+			// к базе, которую pgtest после теста пересоздаёт.
+			if _, err := newApp(t.Context(), cfg, slog.New(slog.DiscardHandler)); err == nil {
 				t.Fatal("ждали ошибку")
 			}
 		})
 	}
 }
 
+// closedPortURL — строка подключения к порту, который никто не слушает: база «упала».
+func closedPortURL(t *testing.T) string {
+	t.Helper()
+	var lc net.ListenConfig
+	l, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return "postgres://messenger:secret@" + addr + "/messenger?sslmode=disable&connect_timeout=2"
+}
+
+// Без базы или со схемой старше бинаря сервер не стартует: newApp возвращает ошибку
+// до того, как откроется порт, и пароль из строки подключения в неё не попадает.
+func TestNewAppFailsWithoutDB(t *testing.T) {
+	t.Run("база недоступна", func(t *testing.T) {
+		cfg := testConfig(t)
+		cfg.DatabaseURL = closedPortURL(t)
+		_, err := newApp(t.Context(), cfg, slog.New(slog.DiscardHandler))
+		if err == nil || !strings.Contains(err.Error(), "база недоступна") || strings.Contains(err.Error(), "secret") {
+			t.Fatalf("ошибка %v: ждали «база недоступна» без пароля", err)
+		}
+	})
+	t.Run("миграции не применены", func(t *testing.T) {
+		cfg := testConfig(t)
+		dropVersionTable(t, cfg.DatabaseURL)
+		_, err := newApp(t.Context(), cfg, slog.New(slog.DiscardHandler))
+		if err == nil || !strings.Contains(err.Error(), "migrate up") {
+			t.Fatalf("ошибка %v: ждали подсказку про messenger migrate up", err)
+		}
+	})
+}
+
+// dropVersionTable стирает учёт миграций: для сервера база выглядит так, будто migrate
+// up не запускали.
+func dropVersionTable(t *testing.T, dsn string) {
+	t.Helper()
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }()
+	if _, err := conn.Exec(t.Context(), `DROP TABLE goose_db_version`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // #region background-test
-// TestAppBackgroundStops — сборка отдаёт фоновую очистку идемпотентности: по периоду
-// она удаляет просроченный ключ, а остановка через lifecycle проходит без ошибки.
-// Всё в виртуальном времени synctest: сутки TTL проходят мгновенно.
+// TestAppBackgroundStops — фоновая очистка идемпотентности, как её собирает newApp: по
+// периоду она удаляет просроченный ключ, а остановка через lifecycle проходит без ошибки.
+// Всё в виртуальном времени synctest: сутки TTL проходят мгновенно. Хранилище — в памяти:
+// в пузыре synctest настоящая сеть к Postgres не годится (время пузыря не идёт, пока
+// горутина ждёт сокет); ту же очистку на Postgres проверяет TestAppSweepsExpiredKeys.
 func TestAppBackgroundStops(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		logs := &syncBuffer{}
 		log := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		a, err := newApp(testConfig(t), log)
+		store, err := idemmemory.NewStore(defaultRequestTimeout + idempotency.ReservationGrace)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(a.back) != 1 || a.back[0].Name() != "idempotency-sweeper" {
-			t.Fatalf("фоновые компоненты: %v, ждали idempotency-sweeper", a.back)
+		clk := clock.System{}
+		now := clk.Now()
+		if _, _, err := store.Reserve(t.Context(), "alice", uuid.NewString(), idempotency.Record{ExpiresAt: now.Add(idempotency.TTL)}, now); err != nil {
+			t.Fatal(err)
 		}
-		// Ключ идемпотентности — через API, как его создаёт клиент. Сервер в сети в
-		// памяти: в пузыре synctest настоящая сеть не годится.
-		srv := httptest.NewTestServer(t, a.handler)
-		c := client{t: t, base: "http://messenger", http: srv.Client()}
-		bob := c.signUp("bob", bobPassword)
-		c.signUp("alice", alicePassword)
-		token := c.token("alice", alicePassword)
-		body := `{"kind":"group","title":"Команда","member_ids":["` + bob + `"]}`
-		c.expect(c.do(http.MethodPost, "/v1/chats", token, body, "Idempotency-Key", uuid.NewString()), http.StatusCreated, "группа с ключом")
+		sweeper, err := newIdempotencySweeper(store, clk, defaultIdempotencySweepEvery, log)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
-		go func() { done <- lifecycle.Run(ctx, log, lifecycle.Stages{Back: a.back}) }()
+		go func() { done <- lifecycle.Run(ctx, log, lifecycle.Stages{Back: []lifecycle.Component{sweeper}}) }()
 
 		// Через TTL ключ просрочен; ещё два периода (с джиттером ≤ 1.1 × Every) — и
 		// очистка его точно прошла.
@@ -384,14 +464,56 @@ func TestAppBackgroundStops(t *testing.T) {
 
 // #endregion background-test
 
+// TestAppSweepsExpiredKeys — сборка отдаёт фоновую очистку, подключённую к Postgres:
+// ключ, созданный через API и просроченный, она удаляет из platform.idempotency_keys.
+// Без synctest (сеть к контейнеру настоящая): срок истекает правкой строки, а тест ждёт
+// записи об очистке в журнале, а не времени.
+func TestAppSweepsExpiredKeys(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.IdempotencySweepEvery = 10 * time.Millisecond
+	swept := &signalWriter{want: `"removed":1`, done: make(chan struct{})}
+	logs := &syncBuffer{}
+	log := slog.New(slog.NewJSONHandler(io.MultiWriter(logs, swept), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	a := newTestApp(t, cfg, log)
+	if got := backNames(a); !reflect.DeepEqual(got, []string{"idempotency-sweeper"}) {
+		t.Fatalf("фоновые компоненты: %v, ждали idempotency-sweeper", got)
+	}
+	srv := httptest.NewServer(a.handler)
+	t.Cleanup(srv.Close)
+	c := client{t: t, base: srv.URL, http: srv.Client()}
+	bob := c.signUp("bob", bobPassword)
+	c.signUp("alice", alicePassword)
+	token := c.token("alice", alicePassword)
+	body := `{"kind":"group","title":"Команда","member_ids":["` + bob + `"]}`
+	c.expect(c.do(http.MethodPost, "/v1/chats", token, body, "Idempotency-Key", uuid.NewString()), http.StatusCreated, "группа с ключом")
+	if _, err := a.pool.Exec(t.Context(), `UPDATE platform.idempotency_keys SET expires_at = now() - interval '1 second'`); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- lifecycle.Run(ctx, log, lifecycle.Stages{Back: a.back}) }()
+	select {
+	case <-swept.done:
+	case <-time.After(10 * time.Second):
+		t.Error("очистка не удалила просроченный ключ за 10 с")
+	}
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("lifecycle.Run: %v", err)
+	}
+	var n int
+	if err := a.pool.QueryRow(t.Context(), `SELECT count(*) FROM platform.idempotency_keys`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("ключей после очистки %d (ошибка %v), ждали 0", n, err)
+	}
+}
+
 // TestProbesOutsideAPI — пробы отвечают мимо аутентификации и контракта; дренаж
 // переключает только готовность, API продолжает работать.
 func TestProbesOutsideAPI(t *testing.T) {
 	logs := &syncBuffer{}
-	a, err := newApp(testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := newTestApp(t, testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
 	// Без валидатора контракта: проб в контракте нет — и не должно быть.
 	srv := httptest.NewServer(a.handler)
 	t.Cleanup(srv.Close)
@@ -433,6 +555,86 @@ func writeKeyFile(t *testing.T) (ed25519.PrivateKey, string) {
 	return key, path
 }
 
+// writeDBURLFile кладёт строку подключения в файл, как её кладёт секрет compose.
+func writeDBURLFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "db_url")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// setDBEnv — рабочие переменные базы для тестов loadConfig, которые проверяют другое.
+func setDBEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(envDatabaseURLFile, writeDBURLFile(t, "postgres://messenger@db:5432/messenger\n"))
+	t.Setenv(envDBMaxConns, "")
+}
+
+func TestLoadDBConfig(t *testing.T) {
+	const dsn = "postgres://messenger:secret@db:5432/messenger"
+	dir := t.TempDir()
+	type want struct {
+		url      string
+		maxConns int
+	}
+	cases := []struct {
+		name    string
+		file    string // содержимое файла строки подключения; "-" — переменная не задана
+		conns   string
+		want    want
+		wantErr string // непусто — ждём ошибку с этим текстом (именем переменной)
+	}{
+		{"по умолчанию — 10 соединений", dsn, "", want{dsn, 10}, ""},
+		{"перевод строки в конце файла отбрасывается", dsn + "\n", "", want{dsn, 10}, ""},
+		{"размер пула из окружения", dsn, "25", want{dsn, 25}, ""},
+		{"пул на потолке", dsn, "100", want{dsn, 100}, ""},
+		{"без файла строки подключения", "-", "", want{}, envDatabaseURLFile},
+		{"пустой файл", "\n", "", want{}, envDatabaseURLFile},
+		{"пул из нуля соединений", dsn, "0", want{}, envDBMaxConns},
+		{"пул больше потолка", dsn, "101", want{}, envDBMaxConns},
+		{"размер пула — не число", dsn, "десять", want{}, envDBMaxConns},
+	}
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := ""
+			if c.file != "-" {
+				path = filepath.Join(dir, strconv.Itoa(i))
+				if err := os.WriteFile(path, []byte(c.file), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv(envDatabaseURLFile, path)
+			t.Setenv(envDBMaxConns, c.conns)
+			var cfg config
+
+			err := loadDB(&cfg)
+
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("ошибка %v, ждали с %q", err, c.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := (want{cfg.DatabaseURL, cfg.DBMaxConns}); got != c.want {
+				t.Fatalf("конфиг %+v, ждали %+v", got, c.want)
+			}
+		})
+	}
+	t.Run("файл не читается", func(t *testing.T) {
+		t.Setenv(envDatabaseURLFile, filepath.Join(dir, "нет такого"))
+		t.Setenv(envDBMaxConns, "")
+		var cfg config
+		if err := loadDB(&cfg); err == nil || !strings.Contains(err.Error(), envDatabaseURLFile) {
+			t.Fatalf("ошибка %v, ждали с %q", err, envDatabaseURLFile)
+		}
+	})
+}
+
 func TestLoadConfig(t *testing.T) {
 	t.Run("без файла ключа — ошибка с подсказкой", func(t *testing.T) {
 		t.Setenv(envJWTKeyFile, "")
@@ -444,6 +646,7 @@ func TestLoadConfig(t *testing.T) {
 		key, path := writeKeyFile(t)
 		t.Setenv(envJWTKeyFile, path)
 		t.Setenv(envAddr, "")
+		setDBEnv(t)
 
 		cfg, err := loadConfig()
 
@@ -475,6 +678,7 @@ func TestLoadConfig(t *testing.T) {
 		for _, c := range cases {
 			t.Run(c.name, func(t *testing.T) {
 				t.Setenv(envJWTKeyFile, path)
+				setDBEnv(t)
 				for _, name := range []string{req, stop, drain} {
 					t.Setenv(name, c.env[name])
 				}
@@ -556,6 +760,7 @@ func TestLoadConcurrencyConfig(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv(envJWTKeyFile, path)
+			setDBEnv(t)
 			for _, name := range []string{envIdempotencySweepEvery, envHashConcurrency, envHashQueue} {
 				t.Setenv(name, c.env[name])
 			}
@@ -582,10 +787,7 @@ func TestLoadConcurrencyConfig(t *testing.T) {
 // ним: 404 problem+json с request ID, а не голый 307 без журнала (урок 1.7: /v1//x → 404).
 func TestUncleanPathIsAPIError(t *testing.T) {
 	logs := &syncBuffer{}
-	a, err := newApp(testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := newTestApp(t, testConfig(t), slog.New(slog.NewJSONHandler(logs, nil)))
 	srv := httptest.NewServer(a.handler)
 	t.Cleanup(srv.Close)
 	// Клиент не идёт по редиректам: иначе 307 на очищенный путь спрятал бы ошибку.
@@ -682,10 +884,7 @@ func debugAppWith(t *testing.T, flightDir string, threshold time.Duration, log *
 	t.Helper()
 	cfg := testConfig(t)
 	cfg.DebugAddr, cfg.FlightDir, cfg.FlightThreshold = "127.0.0.1:6060", flightDir, threshold
-	a, err := newApp(cfg, log)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := newTestApp(t, cfg, log)
 	t.Cleanup(func() {
 		a.recorder.Stop()
 		// Сборка включила выборку профилей конкуренции — возвращаем умолчания процесса.
@@ -704,10 +903,7 @@ func backNames(a *app) []string {
 }
 
 func TestNewAppDebugDisabled(t *testing.T) {
-	a, err := newApp(testConfig(t), slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := newTestApp(t, testConfig(t), slog.New(slog.DiscardHandler))
 	if got := backNames(a); !reflect.DeepEqual(got, []string{"idempotency-sweeper"}) || a.recorder != nil {
 		t.Fatalf("фоновые компоненты %v, рекордер %v: ждали только очистку и без рекордера", got, a.recorder)
 	}
@@ -793,5 +989,141 @@ func TestFlightMiddlewareInAPIChain(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join(dir, "flight-*.trace"))
 	if err != nil || len(files) != 1 {
 		t.Fatalf("снимки %v, ошибка %v: ждали один файл", files, err)
+	}
+}
+
+// tcpProxy — посредник между пулом и базой: тест «роняет» базу для приложения, не
+// останавливая общий контейнер пакета. stop закрывает слушатель и все соединения —
+// новые подключения получают отказ, как от упавшего сервера.
+type tcpProxy struct {
+	l      net.Listener
+	target string
+	wg     sync.WaitGroup
+	mu     sync.Mutex // защищает conns и closed
+	conns  []net.Conn
+	closed bool
+}
+
+func startProxy(t *testing.T, target string) *tcpProxy {
+	t.Helper()
+	var lc net.ListenConfig
+	l, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &tcpProxy{l: l, target: target}
+	// Владелец горутин — тест: stop в Cleanup закрывает слушатель и соединения и ждёт их.
+	p.wg.Go(func() { p.accept(t.Context()) })
+	t.Cleanup(p.stop)
+	return p
+}
+
+func (p *tcpProxy) accept(ctx context.Context) {
+	var d net.Dialer
+	for {
+		client, err := p.l.Accept()
+		if err != nil {
+			return // слушатель закрыт
+		}
+		server, err := d.DialContext(ctx, "tcp", p.target)
+		if err != nil {
+			_ = client.Close()
+			continue
+		}
+		p.mu.Lock()
+		if p.closed { // stop прошёл, пока мы подключались: это соединение он уже не закроет
+			p.mu.Unlock()
+			_, _ = client.Close(), server.Close()
+			return
+		}
+		p.conns = append(p.conns, client, server)
+		p.mu.Unlock()
+		// Каждая сторона копирует в другую; закрытие любого соединения (stop) обрывает обе.
+		p.wg.Go(func() { _, _ = io.Copy(server, client); _ = server.Close() })
+		p.wg.Go(func() { _, _ = io.Copy(client, server); _ = client.Close() })
+	}
+}
+
+func (p *tcpProxy) stop() {
+	_ = p.l.Close()
+	p.mu.Lock()
+	p.closed = true
+	for _, c := range p.conns {
+		_ = c.Close()
+	}
+	p.mu.Unlock()
+	p.wg.Wait()
+}
+
+// viaProxy — строка подключения dsn с адресом посредника вместо адреса базы.
+func viaProxy(t *testing.T, dsn string) (string, *tcpProxy) {
+	t.Helper()
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := startProxy(t, u.Host)
+	u.Host = p.l.Addr().String()
+	return u.String(), p
+}
+
+// TestReadyzFailsWhenDBDown — /readyz проверяет базу: пока она отвечает — 200, пропала —
+// 503 с именем проверки db (без причины: в ней адреса), а /livez по-прежнему 200 —
+// перезапуск процесса базу не починит.
+func TestReadyzFailsWhenDBDown(t *testing.T) {
+	cfg := testConfig(t)
+	var proxy *tcpProxy
+	cfg.DatabaseURL, proxy = viaProxy(t, cfg.DatabaseURL)
+	logs := &syncBuffer{}
+	a := newTestApp(t, cfg, slog.New(slog.NewJSONHandler(logs, nil)))
+	srv := httptest.NewServer(a.handler)
+	t.Cleanup(srv.Close)
+	c := client{t: t, base: srv.URL, http: srv.Client()}
+	c.expect(c.do(http.MethodGet, "/readyz", "", ""), http.StatusOK, "readyz с базой")
+
+	proxy.stop()
+
+	r := c.do(http.MethodGet, "/readyz", "", "")
+	c.expect(r, http.StatusServiceUnavailable, "readyz без базы")
+	if checks, _ := r.json(t)["checks"].(map[string]any); checks["db"] != "fail" {
+		t.Fatalf("тело %s: ждали checks.db = fail", r.body)
+	}
+	c.expect(c.do(http.MethodGet, "/livez", "", ""), http.StatusOK, "livez без базы")
+	if !strings.Contains(logs.String(), `"check":"db"`) {
+		t.Fatalf("причина не в журнале:\n%s", logs)
+	}
+}
+
+// TestShutdownClosesPoolAfterBack — порядок остановки serve: HTTP, затем фоновые
+// компоненты, и только потом пул — они ещё ходят в базу.
+func TestShutdownClosesPoolAfterBack(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Addr, cfg.DrainDelay, cfg.ShutdownTimeout = "127.0.0.1:0", 0, time.Second
+	listening := &signalWriter{want: "слушаю", done: make(chan struct{})}
+	logs := &syncBuffer{}
+	log := slog.New(slog.NewJSONHandler(io.MultiWriter(logs, listening), nil))
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, log) }()
+	select {
+	case <-listening.done:
+	case err := <-done:
+		t.Fatalf("serve завершился до старта: %v", err)
+	}
+
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	out := logs.String()
+	order := []string{"сервер остановлен", "фоновые компоненты остановлены", "пул закрыт"}
+	last := -1
+	for _, line := range order {
+		i := strings.Index(out, line)
+		if i < 0 || i < last {
+			t.Fatalf("журнал: ждали по порядку %q:\n%s", order, out)
+		}
+		last = i
 	}
 }

@@ -1,6 +1,6 @@
 // Command messenger — HTTP-сервер мессенджера. Сборка зависимостей — в app.go
 // (newApp); здесь только конфигурация, запуск и остановка по сигналу; служебные
-// команды — в cli.go, второй сигнал — в signals.go.
+// команды — в cli.go (миграции — migrate.go), второй сигнал — в signals.go.
 package main
 
 import (
@@ -33,20 +33,8 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	a, err := newApp(cfg, log)
-	if err != nil {
-		return err
-	}
-	if a.recorder != nil {
-		// defer — после lifecycle.Run: служебный порт и запись снимков (Back) к этому
-		// моменту остановлены, и снимать рекордер больше некому.
-		defer a.recorder.Stop()
-	}
-	srv, err := httpserver.New(cfg.Addr, a.handler, log, cfg.RequestTimeout)
-	if err != nil {
-		return err
-	}
-
+	// Сигналы — до сборки: SIGTERM во время старта (база ещё не ответила) отменяет ctx, и
+	// сборка прерывается, а не ждёт dbStartTimeout.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// Второй канал на те же сигналы — для второго сигнала во время остановки
@@ -62,6 +50,31 @@ func run(log *slog.Logger) error {
 		close(sigCh)
 	}()
 	go exitOnSecondSignal(sigCh, ctx.Done(), os.Exit, log)
+	return serve(ctx, cfg, log)
+}
+
+// serve собирает приложение и работает до отмены ctx. Остановка — по стадиям: HTTP,
+// затем фоновые компоненты, затем пул базы.
+func serve(ctx context.Context, cfg config, log *slog.Logger) error {
+	a, err := newApp(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	// #region close-db
+	// defer — после lifecycle.Run: к этому моменту HTTP-сервер дождался начатых запросов,
+	// а фоновые компоненты (очистка ключей) остановлены — в базу больше никто не ходит.
+	// Закрыть пул раньше значило бы оборвать их запросы «закрытым пулом».
+	defer a.closeDB(log)
+	// #endregion close-db
+	if a.recorder != nil {
+		// defer — после lifecycle.Run: служебный порт и запись снимков (Back) к этому
+		// моменту остановлены, и снимать рекордер больше некому.
+		defer a.recorder.Stop()
+	}
+	srv, err := httpserver.New(cfg.Addr, a.handler, log, cfg.RequestTimeout)
+	if err != nil {
+		return err
+	}
 
 	log.Info("слушаю", "addr", cfg.Addr, "version", version)
 	// #region stages-wiring

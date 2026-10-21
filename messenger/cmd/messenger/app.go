@@ -13,17 +13,18 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"messenger/internal/auth/adapters/argon2id"
 	"messenger/internal/auth/adapters/hashlimit"
 	authhttp "messenger/internal/auth/adapters/httpapi"
 	"messenger/internal/auth/adapters/jwt"
-	authmemory "messenger/internal/auth/adapters/memory"
+	authpostgres "messenger/internal/auth/adapters/postgres"
 	"messenger/internal/auth/adapters/userbridge"
 	authusecase "messenger/internal/auth/usecase"
 	chathttp "messenger/internal/chat/adapters/httpapi"
 	chatgen "messenger/internal/chat/adapters/httpapi/gen"
-	chatmemory "messenger/internal/chat/adapters/memory"
-	"messenger/internal/chat/adapters/userchecker"
+	chatpostgres "messenger/internal/chat/adapters/postgres"
 	chatusecase "messenger/internal/chat/usecase"
 	"messenger/internal/platform/clock"
 	"messenger/internal/platform/debugserver"
@@ -31,14 +32,15 @@ import (
 	"messenger/internal/platform/health"
 	"messenger/internal/platform/httpauth"
 	"messenger/internal/platform/idempotency"
-	idemmemory "messenger/internal/platform/idempotency/memory"
+	idempostgres "messenger/internal/platform/idempotency/postgres"
 	"messenger/internal/platform/idgen"
 	"messenger/internal/platform/lifecycle"
 	"messenger/internal/platform/middleware"
 	"messenger/internal/platform/periodic"
+	"messenger/internal/platform/pgtx"
 	"messenger/internal/platform/problem"
 	userhttp "messenger/internal/user/adapters/httpapi"
-	usermemory "messenger/internal/user/adapters/memory"
+	userpostgres "messenger/internal/user/adapters/postgres"
 	userusecase "messenger/internal/user/usecase"
 )
 
@@ -67,6 +69,9 @@ const (
 	envDebugAddr             = "MESSENGER_DEBUG_ADDR"
 	envFlightDir             = "MESSENGER_FLIGHT_DIR"
 	envFlightThreshold       = "MESSENGER_FLIGHT_THRESHOLD"
+	envDBMaxConns            = "MESSENGER_DB_MAX_CONNS"
+	// MESSENGER_DATABASE_URL_FILE — envDatabaseURLFile в migrate.go: строку подключения
+	// читают и сервер, и подкоманда migrate.
 )
 
 // #region config
@@ -228,6 +233,55 @@ func checkListenAddr(addr string) error {
 	return nil
 }
 
+// #region db-config
+// Пул соединений с Postgres (урок 2.9). Каждое соединение — отдельный процесс сервера
+// базы со своей памятью, поэтому размер пула — решение, а не «чем больше, тем лучше».
+const (
+	// defaultDBMaxConns — по закону Литтла соединений занято в среднем RPS × время, на
+	// которое запрос держит соединение. Запросы мессенджера держат его на единицы
+	// миллисекунд (один-два оператора по индексу), и даже сотни RPS — это единицы
+	// соединений; 10 — с запасом на всплески и медленные запросы (расчёт — урок 2.9).
+	// Не умолчание pgxpool max(4, runtime.NumCPU()): NumCPU видит ядра машины, а не
+	// квоту контейнера (cpus: 1 в compose), и на большой машине пул вырос бы зря.
+	defaultDBMaxConns = 10
+	// maxDBMaxConns — потолок: max_connections в Postgres по умолчанию 100 на весь
+	// сервер, и один экземпляр больше не получит; опечатка (лишний ноль) иначе дала бы
+	// отказы в подключении под нагрузкой, а не при старте.
+	maxDBMaxConns = 100
+	// Остальные параметры — умолчания pgxpool v5.11.0, названные явно: их видно в коде,
+	// и смена умолчаний в новой версии pgx не изменит поведение молча.
+	// dbMinConns — 0: простаивающий сервер не держит соединения (и процессы базы).
+	dbMinConns = 0
+	// dbMaxConnLifetime — соединение старше часа закрывается и открывается заново:
+	// память процесса базы (кэш каталога, подготовленные планы) не копится бесконечно,
+	// а после переключения реплики пул сам уходит со старого адреса.
+	dbMaxConnLifetime = time.Hour
+	// dbHealthCheckPeriod — раз в минуту пул проверяет простаивающие соединения и
+	// закрывает старые и мёртвые до того, как их получит запрос.
+	dbHealthCheckPeriod = time.Minute
+	// dbStartTimeout — срок на первое подключение и проверку схемы при старте. Недоступная
+	// база — повод упасть с понятной ошибкой (оркестратор перезапустит), а не висеть,
+	// не открывая порт.
+	dbStartTimeout = 10 * time.Second
+	// dbPingTimeout — срок проверки базы в /readyz: укладывается в общий срок проб
+	// (1 с), и медленная база отвечает «не готов», а не вешает пробу.
+	dbPingTimeout = time.Second
+)
+
+// loadDB читает строку подключения (файлом, как ключ JWT) и размер пула.
+func loadDB(cfg *config) error {
+	var err error
+	if cfg.DatabaseURL, err = databaseURLFromEnv(); err != nil {
+		return err
+	}
+	if cfg.DBMaxConns, err = intEnv(envDBMaxConns, defaultDBMaxConns, 1, maxDBMaxConns); err != nil {
+		return err
+	}
+	return nil
+}
+
+// #endregion db-config
+
 // publicRoutes — маршруты, открытые без аутентификации: метод и путь без параметров.
 // Всё остальное закрыто: забытый здесь маршрут получит 401, а не откроется всем.
 var publicRoutes = []string{"POST /v1/users", "POST /v1/tokens"}
@@ -256,6 +310,10 @@ type config struct {
 	FlightDir string
 	// FlightThreshold — с какой длительности запрос считается медленным.
 	FlightThreshold time.Duration
+	// DatabaseURL — строка подключения к Postgres. В ней пароль: не печатать.
+	DatabaseURL string
+	// DBMaxConns — потолок соединений пула.
+	DBMaxConns int
 }
 
 // app — то, что сборка отдаёт main: обработчик, пробы (main переводит их в дренаж по
@@ -267,6 +325,16 @@ type app struct {
 	// recorder — flight recorder процесса; nil, если служебный порт выключен. Его
 	// останавливает main после остановки компонентов.
 	recorder *flightrec.Recorder
+	// pool — пул соединений с базой. Закрывает его main (closeDB) последним: после HTTP
+	// и фоновых компонентов, которые ещё ходят в базу.
+	pool *pgxpool.Pool
+}
+
+// closeDB закрывает пул. Close ждёт возврата выданных соединений, поэтому звать его — только
+// когда запросы и фоновые компоненты остановлены.
+func (a *app) closeDB(log *slog.Logger) {
+	a.pool.Close()
+	log.Info("пул закрыт")
 }
 
 // addrFromEnv — адрес сервера; его же читает подкоманда healthcheck, чтобы постучаться
@@ -302,20 +370,107 @@ func loadConfig() (config, error) {
 	if cfg.SigningKey, err = jwt.ParsePrivateKey(pemBytes); err != nil {
 		return config{}, fmt.Errorf("ключ подписи %s: %w", path, err)
 	}
+	if err := loadDB(&cfg); err != nil {
+		return config{}, err
+	}
 	return cfg, nil
+}
+
+// #region open-db
+// openDB открывает пул и проверяет базу до того, как сервер откроет порт: база отвечает,
+// и схема не старше той, на которую рассчитан бинарь (checkSchema, урок 2.8). pgxpool
+// подключается лениво, поэтому без Ping недоступная база всплыла бы только на первом
+// запросе пользователя.
+func openDB(ctx context.Context, cfg config) (_ *pgxpool.Pool, err error) {
+	if cfg.DBMaxConns < 1 {
+		return nil, errors.New("нужен размер пула не меньше 1")
+	}
+	pcfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		// Как в migrate: текст ошибки разбора может содержать пароль.
+		return nil, fmt.Errorf("%s: строка подключения не разобрана (текст не выводится — в нём может быть пароль)", envDatabaseURLFile)
+	}
+	pcfg.MaxConns = int32(cfg.DBMaxConns) // в пределах 1–maxDBMaxConns: проверено при чтении конфига
+	pcfg.MinConns = dbMinConns
+	pcfg.MaxConnLifetime = dbMaxConnLifetime
+	pcfg.HealthCheckPeriod = dbHealthCheckPeriod
+	pool, err := pgxpool.NewWithConfig(ctx, pcfg)
+	if err != nil {
+		return nil, fmt.Errorf("пул: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			pool.Close()
+		}
+	}()
+	ctx, cancel := context.WithTimeout(ctx, dbStartTimeout)
+	defer cancel()
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("база недоступна: %w", err)
+	}
+	if err := checkSchema(ctx, pool); err != nil {
+		return nil, err
+	}
+	return pool, nil
+}
+
+// #endregion open-db
+
+// dbCheck — проверка готовности: база отвечает на Ping за dbPingTimeout. Живость (/livez)
+// базу не проверяет — см. health.
+func dbCheck(pool *pgxpool.Pool) health.Checker {
+	return health.CheckerFunc(func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, dbPingTimeout)
+		defer cancel()
+		return pool.Ping(ctx)
+	})
+}
+
+// storage — Postgres-зависимости, общие для контекстов: пул, хранилище пользователей
+// (его используют и user, и регистрация в auth) и транзакции use case'ов.
+type storage struct {
+	pool  *pgxpool.Pool
+	users *userpostgres.Store
+	tx    *pgtx.Transactor
+}
+
+func newStorage(pool *pgxpool.Pool) (storage, error) {
+	users, err := userpostgres.New(pool)
+	if err != nil {
+		return storage{}, err
+	}
+	tx, err := pgtx.New(pool)
+	if err != nil {
+		return storage{}, err
+	}
+	return storage{pool: pool, users: users, tx: tx}, nil
 }
 
 // #region wiring
 // newApp — composition root: единственное место, где конкретные реализации (часы,
 // генератор id, хранилища, JWT, HTTP) соединяются с use case'ами через их порты.
-func newApp(cfg config, log *slog.Logger) (_ *app, err error) {
+// ctx ограничивает только старт (подключение к базе); работающее приложение от него не
+// зависит. Пул в app закрывает вызывающий (closeDB); при ошибке сборки — сама newApp.
+func newApp(ctx context.Context, cfg config, log *slog.Logger) (_ *app, err error) {
 	if cfg.RequestTimeout <= 0 {
 		return nil, errors.New("сборка: нужен таймаут запроса")
 	}
+	pool, err := openDB(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("сборка: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			pool.Close()
+		}
+	}()
+	db, err := newStorage(pool)
+	if err != nil {
+		return nil, fmt.Errorf("сборка: %w", err)
+	}
 	clk, ids := clock.System{}, idgen.UUIDv7{}
-	users := usermemory.NewStore()
 
-	getUser, err := userusecase.NewGetUser(users)
+	getUser, err := userusecase.NewGetUser(db.users)
 	if err != nil {
 		return nil, fmt.Errorf("сборка: %w", err)
 	}
@@ -323,11 +478,11 @@ func newApp(cfg config, log *slog.Logger) (_ *app, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("сборка: %w", err)
 	}
-	authAPI, verifier, err := newAuth(cfg, users, clk, ids, log)
+	authAPI, verifier, err := newAuth(cfg, db, clk, ids, log)
 	if err != nil {
 		return nil, fmt.Errorf("сборка auth: %w", err)
 	}
-	chatAPI, err := newChat(getUser, clk, ids, log)
+	chatAPI, err := newChat(db, clk, ids, log)
 	if err != nil {
 		return nil, fmt.Errorf("сборка chat: %w", err)
 	}
@@ -338,8 +493,13 @@ func newApp(cfg config, log *slog.Logger) (_ *app, err error) {
 	// #region idempotency-wiring
 	// Ключ только у создания чата: у сообщений — естественный ключ client_message_id.
 	// Middleware операции работает после маршрутизатора и аутентификации: ему нужны
-	// шаблон маршрута (r.Pattern) и личность — область ключа.
-	idemStore := idemmemory.NewStore()
+	// шаблон маршрута (r.Pattern) и личность — область ключа. Резервация живёт срок
+	// запроса и ещё ReservationGrace: дольше запрос не идёт, и зависший ключ после этого
+	// перехватит повтор.
+	idemStore, err := idempostgres.New(pool, cfg.RequestTimeout+idempotency.ReservationGrace)
+	if err != nil {
+		return nil, fmt.Errorf("сборка: %w", err)
+	}
 	chatAPI.Register(mux, chatgen.MiddlewareFunc(idempotency.Middleware(idemStore, clk, log, "POST /v1/chats")))
 	// #endregion idempotency-wiring
 	sweeper, err := newIdempotencySweeper(idemStore, clk, cfg.IdempotencySweepEvery, log)
@@ -383,24 +543,27 @@ func newApp(cfg config, log *slog.Logger) (_ *app, err error) {
 	// #region root-mux
 	// Пробы — мимо цепочки: без аутентификации, журнала доступа и таймаута запроса.
 	// Оркестратор дёргает их каждые несколько секунд, и журнал на 90 % состоял бы из них.
-	probes, err := health.New(log)
+	// Но под Recover: паника в проверке (теперь она ходит в базу) — 500 problem+json, а не
+	// оборванное соединение, которое проба приняла бы за сетевой сбой.
+	probes, err := health.New(log, health.Check{Name: "db", Checker: dbCheck(pool)})
 	if err != nil {
 		return nil, fmt.Errorf("сборка: %w", err)
 	}
 	probeMux := http.NewServeMux()
 	probes.Register(probeMux, methodNotAllowed(log))
+	probeHandler := middleware.Recover(log, internalError(log))(probeMux)
 	// Развилка — по точному пути, а не общим ServeMux с маршрутом "/": такой mux
 	// отвечает голым 307 на любой «нечистый» путь (/v1//x) ещё до цепочки — без
 	// request ID, журнала и problem+json. Всё, что не проба, целиком решает API.
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case health.LivePath, health.ReadyPath:
-			probeMux.ServeHTTP(w, r)
+			probeHandler.ServeHTTP(w, r)
 		default:
 			api.ServeHTTP(w, r)
 		}
 	})
-	return &app{handler: root, probes: probes, back: append([]lifecycle.Component{sweeper}, dbg.back...), recorder: dbg.recorder}, nil
+	return &app{handler: root, probes: probes, back: append([]lifecycle.Component{sweeper}, dbg.back...), recorder: dbg.recorder, pool: pool}, nil
 	// #endregion root-mux
 }
 
@@ -451,7 +614,7 @@ func newDebug(cfg config, log *slog.Logger) (_ debugParts, err error) {
 // #endregion debug-wiring
 
 // newIdempotencySweeper — фоновая очистка просроченных ключей идемпотентности. Без неё
-// ключ, к которому клиент не вернулся, жил бы в памяти вечно.
+// ключ, к которому клиент не вернулся, жил бы в таблице вечно.
 func newIdempotencySweeper(store idempotency.Sweeper, clk idempotency.Clock, every time.Duration, log *slog.Logger) (*periodic.Task, error) {
 	return periodic.New(periodic.Config{
 		Name:   "idempotency-sweeper",
@@ -473,12 +636,12 @@ func newIdempotencySweeper(store idempotency.Sweeper, clk idempotency.Clock, eve
 // newAuth собирает контекст auth: регистрацию (создаёт профиль в user через мост
 // userbridge — ADR-0004), вход и JWT. Наружу отдаёт HTTP-адаптер и проверку токенов —
 // её использует middleware аутентификации для всех остальных маршрутов.
-func newAuth(cfg config, users *usermemory.Store, clk clock.System, ids idgen.UUIDv7, log *slog.Logger) (*authhttp.Handler, *jwt.Verifier, error) {
-	registerUser, err := userusecase.NewRegisterUser(users, clk, ids)
+func newAuth(cfg config, db storage, clk clock.System, ids idgen.UUIDv7, log *slog.Logger) (*authhttp.Handler, *jwt.Verifier, error) {
+	registerUser, err := userusecase.NewRegisterUser(db.users, clk, ids)
 	if err != nil {
 		return nil, nil, err
 	}
-	findByUsername, err := userusecase.NewFindByUsername(users)
+	findByUsername, err := userusecase.NewFindByUsername(db.users)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -495,10 +658,13 @@ func newAuth(cfg config, users *usermemory.Store, clk clock.System, ids idgen.UU
 	if err != nil {
 		return nil, nil, err
 	}
-	creds := authmemory.NewStore()
-	// memory.Tx не откатывает — хранилища в памяти не транзакционны; атомарность
-	// регистрации появится с Postgres и platform/pgtx (урок 2.9).
-	signUp, err := authusecase.NewSignUp(hasher, bridge, bridge, creds, authmemory.Tx{})
+	creds, err := authpostgres.New(db.pool)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Профиль (users.users) и учётные данные (auth.credentials) — в одной транзакции:
+	// сбой второй записи откатывает первую (ADR-0015, урок 2.9).
+	signUp, err := authusecase.NewSignUp(hasher, bridge, bridge, creds, db.tx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -524,22 +690,25 @@ func newAuth(cfg config, users *usermemory.Store, clk clock.System, ids idgen.UU
 
 // #endregion auth-wiring
 
-// newChat собирает контекст chat. О пользователях он спрашивает через свой порт:
-// мост userchecker переводит вопрос в use case контекста user.
-func newChat(getUser *userusecase.GetUser, clk clock.System, ids idgen.UUIDv7, log *slog.Logger) (*chathttp.Handler, error) {
-	checker, err := userchecker.New(getUser)
+// newChat собирает контекст chat. О пользователях он спрашивает через свой порт
+// UserChecker: реализация в chat/adapters/postgres проверяет всех участников одним
+// запросом к users.users, а не по одному через use case контекста user (урок 2.5).
+func newChat(db storage, clk clock.System, ids idgen.UUIDv7, log *slog.Logger) (*chathttp.Handler, error) {
+	checker, err := chatpostgres.NewUserChecker(db.pool)
 	if err != nil {
 		return nil, err
 	}
 	// Одно хранилище chats реализует сразу несколько узких портов.
-	chats := chatmemory.NewStore()
+	chats, err := chatpostgres.New(db.pool)
+	if err != nil {
+		return nil, err
+	}
 	createChat, err := chatusecase.NewCreateChat(chats, chats, checker, clk, ids)
 	if err != nil {
 		return nil, err
 	}
-	// memory.Tx — без отката, как и в регистрации: до Postgres атомарность попытки
-	// держит мьютекс хранилища.
-	sendMessage, err := chatusecase.NewSendMessage(chats, chats, chats, chatmemory.Tx{}, clk, ids)
+	// Попытка отправки — в транзакции: выдача seq и запись сообщения либо обе, либо ни одной.
+	sendMessage, err := chatusecase.NewSendMessage(chats, chats, chats, db.tx, clk, ids)
 	if err != nil {
 		return nil, err
 	}

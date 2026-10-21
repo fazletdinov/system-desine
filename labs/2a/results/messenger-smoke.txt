@@ -1,0 +1,40 @@
+# Сквозной прогон мессенджера на Postgres (задача 11 модуля 2a)
+# 2026-10-21T12:42Z, Docker Compose version v5.5.1, Docker Engine 29.9.1, Linux 7.0.0-38-generic
+# Воспроизвести: cd messenger && scripts/smoke.sh --compose (секреты — README.md в корне, «В Docker»)
+
+$ scripts/smoke.sh --compose
+$ docker compose up -d --build
+ Container messenger-db-1 Healthy 
+ Container messenger-messenger-1 Starting 
+ Container messenger-messenger-1 Started 
+миграции: версия схемы: 1
+сценарий:
+  GET /readyz → 200
+  POST /v1/users (алиса) → 201
+  POST /v1/users (боб) → 201
+  POST /v1/tokens (smoke_a_17925865601637325) → 200
+  POST /v1/chats (личный) → 201
+  POST /v1/chats/{id}/messages → 201
+  POST /v1/tokens (smoke_b_17925865601637325) → 200
+  GET /v1/chats/{id}/messages → 200
+  лента: 1 сообщение, seq 1, «привет из smoke 17925865601637325»
+  GET /v1/chats (боб) → 200
+$ docker compose restart messenger
+ Container messenger-messenger-1 Started 
+после перезапуска:
+  POST /v1/tokens (smoke_a_17925865601637325) → 200
+  GET /v1/chats/{id}/messages → 200
+  лента: 1 сообщение, seq 1, «привет из smoke 17925865601637325»
+$ docker compose stop
+ Container messenger-messenger-1 Stopping 
+ Container messenger-messenger-1 Stopped 
+ Container messenger-migrate-1 Stopping 
+ Container messenger-migrate-1 Stopped 
+ Container messenger-db-1 Stopping 
+ Container messenger-db-1 Stopped 
+остановка (код выхода 0), журнал по порядку:
+  сервер остановлен
+  фоновые компоненты остановлены
+  пул закрыт
+smoke (compose): сценарий API, данные пережили перезапуск, остановка с кодом 0 в порядке HTTP → фон → пул
+код выхода smoke.sh: 0

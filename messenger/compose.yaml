@@ -9,9 +9,13 @@ services:
     image: messenger:local
     # Сервер стартует только после того, как migrate применил миграции и вышел с кодом 0:
     # упавшие миграции останавливают выкладку, а не дают серверу работать со старой схемой.
+    # db — отдельно, хотя migrate уже ждал его: при docker compose stop/restart compose
+    # останавливает зависимых первыми, и сервер закрывает пул раньше, чем уходит база.
     depends_on:
       migrate:
         condition: service_completed_successfully
+      db:
+        condition: service_healthy
     # region service
     # Порт — только на loopback хоста: снаружи сервис доступен через шлюз (модуль 6),
     # а не напрямую.
@@ -22,6 +26,10 @@ services:
       - "127.0.0.1:6060:6060"
     environment:
       MESSENGER_JWT_KEY_FILE: /run/secrets/jwt_key
+      # Строка подключения — файлом-секретом, как ключ JWT: в ней пароль (урок 2.9).
+      MESSENGER_DATABASE_URL_FILE: /run/secrets/db_url
+      # Размер пула (урок 2.9, закон Литтла); умолчание бинаря — 10.
+      MESSENGER_DB_MAX_CONNS: ${MESSENGER_DB_MAX_CONNS:-10}
       # Мягкий лимит GC ~90 % от mem_limit: рантайм Go не читает memory.max сам,
       # и без этой строки куча растёт до OOM-kill (урок 1.17).
       GOMEMLIMIT: 230MiB
@@ -49,6 +57,7 @@ services:
       MESSENGER_FLIGHT_THRESHOLD: ${MESSENGER_FLIGHT_THRESHOLD:-1s}
     secrets:
       - jwt_key
+      - db_url
     # Безопасность запуска: файловая система только для чтения, ни одной capability,
     # запрет повышать привилегии через setuid. Мессенджеру ничего из этого не нужно.
     read_only: true

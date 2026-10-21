@@ -881,7 +881,11 @@ func (fixedClock) Now() time.Time { return t0 }
 // ключом — 422. Все ответы сверяются с контрактом.
 func TestCreateChatIdempotencyKey(t *testing.T) {
 	var calls int
-	mw := idempotency.Middleware(idemmemory.NewStore(), fixedClock{}, slog.New(slog.DiscardHandler), "POST /v1/chats")
+	store, err := idemmemory.NewStore(time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mw := idempotency.Middleware(store, fixedClock{}, slog.New(slog.DiscardHandler), "POST /v1/chats")
 	raw, _ := rawServerWith(t, fakes{create: fakeCreate{fn: func(context.Context, usecase.CreateChatCommand) (usecase.CreateChatResult, error) {
 		calls++
 		return usecase.CreateChatResult{Chat: groupChat(t), Created: true}, nil

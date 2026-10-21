@@ -10,6 +10,8 @@ import (
 	"mime"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/principal"
 	"messenger/internal/platform/problem"
@@ -105,7 +107,7 @@ func (g guard) run(w http.ResponseWriter, r *http.Request, next http.Handler, sc
 	cw := &captureWriter{ResponseWriter: w}
 	defer func() {
 		if v := recover(); v != nil {
-			g.release(ctx, scope, key)
+			g.release(ctx, scope, key, rec.Owner)
 			panic(v) // ответит Recover снаружи
 		}
 	}()
@@ -113,7 +115,7 @@ func (g guard) run(w http.ResponseWriter, r *http.Request, next http.Handler, sc
 	// 5xx и «ничего не записано» (клиент ушёл) — запрос не удался: освобождаем ключ,
 	// чтобы повтор прошёл заново. 2xx и 4xx — окончательный ответ, его и повторяем.
 	if cw.status == 0 || cw.status >= http.StatusInternalServerError {
-		g.release(ctx, scope, key)
+		g.release(ctx, scope, key, rec.Owner)
 		return
 	}
 	rec.Done, rec.Status, rec.Body = true, cw.status, cw.body.Bytes()
@@ -123,7 +125,12 @@ func (g guard) run(w http.ResponseWriter, r *http.Request, next http.Handler, sc
 			rec.Header.Set(h, v)
 		}
 	}
-	if err := g.store.Complete(ctx, scope, key, rec); err != nil {
+	err := g.store.Complete(ctx, scope, key, rec)
+	switch {
+	case errors.Is(err, ErrReservationLost):
+		// Не сбой хранилища: запрос шёл дольше резервации, и повтор её уже перехватил.
+		g.log.Warn("idempotency: ответ не сохранён — резервацию перехватил повтор", "key", key)
+	case err != nil:
 		g.log.Error("idempotency: не удалось сохранить ответ", "key", key, "err", err)
 	}
 }
@@ -154,8 +161,8 @@ func (g guard) replay(w http.ResponseWriter, r *http.Request, rec Record, fp [sh
 
 // #endregion replay
 
-func (g guard) release(ctx context.Context, scope, key string) {
-	if err := g.store.Release(ctx, scope, key); err != nil {
+func (g guard) release(ctx context.Context, scope, key string, owner uuid.UUID) {
+	if err := g.store.Release(ctx, scope, key, owner); err != nil {
 		g.log.Error("idempotency: не удалось освободить ключ", "key", key, "err", err)
 	}
 }

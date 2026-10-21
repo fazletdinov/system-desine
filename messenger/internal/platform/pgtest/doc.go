@@ -18,7 +18,8 @@
 //		…
 //	}
 //
-// Без Docker тесты с Pool пропускаются с сообщением; MESSENGER_REQUIRE_DOCKER=1
+// С -short (go test -short) тесты с Pool пропускаются, не трогая Docker: так идёт быстрая
+// CI-джоба messenger-test. Без Docker тесты с Pool пропускаются с сообщением; MESSENGER_REQUIRE_DOCKER=1
 // (CI-джоба messenger-integration) превращает пропуск в провал — иначе сломанный
 // Docker на раннере выглядел бы зелёной сборкой без единого интеграционного теста.
 //

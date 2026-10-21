@@ -100,12 +100,43 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: messenger/go.sum
       # -count=1 — без кэша тестов: CI проверяет код, а не прошлый результат.
-      - run: go test -race -count=1 -coverprofile=coverage.out ./...
+      # -short — без контейнеров: тесты с Postgres (platform/pgtest) пропускаются с
+      # сообщением и идут в messenger-integration. Так юнит-тесты отвечают за минуту и
+      # не зависят от Docker раннера.
+      - run: go test -race -short -count=1 ./...
+
+  # region integration
+  # Полный прогон с настоящим Postgres (testcontainers, тот же образ, что в compose).
+  # MESSENGER_REQUIRE_DOCKER=1 превращает пропуск без Docker в провал: иначе сломанный
+  # Docker на раннере выглядел бы зелёной сборкой без единого интеграционного теста.
+  # Покрытие снимается здесь: только этот прогон проходит и адаптеры postgres.
+  messenger-integration:
+    needs: changes
+    if: needs.changes.outputs.messenger == 'true'
+    runs-on: ubuntu-24.04
+    # Первый запуск тянет образ Postgres (~150 МБ); каждый пакет с тестами базы
+    # поднимает свой контейнер.
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: messenger
+    env:
+      MESSENGER_REQUIRE_DOCKER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: messenger/go.sum
+      - run: go test -race -count=1 -run . -coverprofile=coverage.out ./...
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: messenger/coverage.out
           retention-days: 14
+  # endregion integration
 
   messenger-generate:
     needs: changes
@@ -217,7 +248,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # smoke.sh генерирует одноразовый ключ через go run ./cmd/keygen.
+      # smoke.sh генерирует одноразовый ключ через go run ./cmd/keygen и поднимает рядом
+      # с образом Postgres (тот же образ, что в compose) и миграции.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -270,7 +302,7 @@ jobs:
   # всегда и падает, если хоть одна джоба упала или отменена.
   ci-ok:
     if: always()
-    needs: [changes, messenger-lint, messenger-test, messenger-generate, messenger-vuln, course, labs, image, workflows]
+    needs: [changes, messenger-lint, messenger-test, messenger-integration, messenger-generate, messenger-vuln, course, labs, image, workflows]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

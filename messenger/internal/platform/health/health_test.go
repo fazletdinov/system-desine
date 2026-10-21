@@ -15,11 +15,7 @@ import (
 	"messenger/internal/platform/health"
 )
 
-type checkerFunc func(ctx context.Context) error
-
-func (f checkerFunc) Check(ctx context.Context) error { return f(ctx) }
-
-var ok = checkerFunc(func(context.Context) error { return nil })
+var ok = health.CheckerFunc(func(context.Context) error { return nil })
 
 func serve(t *testing.T, p *health.Probes, method, path string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
@@ -46,7 +42,7 @@ func newProbes(t *testing.T, logs *bytes.Buffer, checks ...health.Check) *health
 }
 
 func TestLiveIgnoresDependencies(t *testing.T) {
-	down := checkerFunc(func(context.Context) error { return errors.New("postgres: connection refused") })
+	down := health.CheckerFunc(func(context.Context) error { return errors.New("postgres: connection refused") })
 	p := newProbes(t, &bytes.Buffer{}, health.Check{Name: "postgres", Checker: down})
 	p.StartDraining()
 
@@ -58,7 +54,7 @@ func TestLiveIgnoresDependencies(t *testing.T) {
 }
 
 func TestReady(t *testing.T) {
-	down := checkerFunc(func(context.Context) error { return errors.New("dial tcp 10.0.0.5:5432: password=секрет") })
+	down := health.CheckerFunc(func(context.Context) error { return errors.New("dial tcp 10.0.0.5:5432: password=секрет") })
 	cases := []struct {
 		name   string
 		checks []health.Check
@@ -113,7 +109,7 @@ func TestReady(t *testing.T) {
 }
 
 func TestReadyBoundsSlowCheck(t *testing.T) {
-	stuck := checkerFunc(func(ctx context.Context) error {
+	stuck := health.CheckerFunc(func(ctx context.Context) error {
 		<-ctx.Done()
 		return ctx.Err()
 	})
