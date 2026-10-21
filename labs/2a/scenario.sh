@@ -133,11 +133,12 @@ has "$out" types.sql 'SQLSTATE 22001' 'SQLSTATE 22P02' 'SQLSTATE 42P21' \
 	'violates unique constraint "users_ci_username_key"' \
 	'violates unique constraint "users_folded_username_key"' \
 	'nondeterministic collations are not supported for regular expressions' \
+	'nondeterministic collations are not supported for ILIKE' \
 	'2025-02-24 02:46:24.503+00'
 # timestamp без зоны: тот же ряд — тот же момент в UTC и другой в Москве.
 printf '%s\n' "$out" | grep -qE '^ 2026-10-21 12:00:00 \| 2026-10-21 15:00:00\+03$' || fail "types.sql: timestamptz не показал 15:00+03 в Москве:
 $out"
-[ "$(printf '%s\n' "$out" | grep -cE '^ [tf]$')" -eq 2 ] && printf '%s\n' "$out" | grep -qE '^ f$' || fail "types.sql: сравнение моментов timestamp и timestamptz не дало t и f:
+[ "$(printf '%s\n' "$out" | grep -E '^ [tf]$' | tr -d ' \n')" = tf ] || fail "types.sql: сравнение моментов timestamp и timestamptz не дало t и f:
 $out"
 # casefold приводит ß к ss, lower — нет.
 printf '%s\n' "$out" | grep -qE '^ straße +\| strasse +\| straße +\| strasse +\| t$' || fail "types.sql: casefold и lower отработали не так, как в уроке:
