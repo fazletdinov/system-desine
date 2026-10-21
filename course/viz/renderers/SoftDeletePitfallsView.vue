@@ -90,7 +90,7 @@ const nameLeft = computed(() => {
         </tbody>
       </table>
       <p v-if="nameLeft" class="left" :class="{ bad: nameLeft.inUsers || nameLeft.inAudit > 0 }">
-        Имя alice в базе: в users — {{ nameLeft.inUsers ? 'есть' : 'нет' }}, в журнале — {{ nameLeft.inAudit }} {{ nameLeft.inAudit === 1 ? 'строка' : nameLeft.inAudit >= 2 && nameLeft.inAudit <= 4 ? 'строки' : 'строк' }}
+        Имя alice (id 1): в users — {{ nameLeft.inUsers ? 'есть' : 'нет' }}, в журнале — {{ nameLeft.inAudit }} {{ nameLeft.inAudit === 1 ? 'строка' : nameLeft.inAudit >= 2 && nameLeft.inAudit <= 4 ? 'строки' : 'строк' }}
       </p>
     </section>
   </div>
