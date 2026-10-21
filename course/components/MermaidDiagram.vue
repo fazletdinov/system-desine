@@ -31,7 +31,7 @@ async function render(): Promise<void> {
     const el = host.value.querySelector('svg')
     const width = el?.viewBox.baseVal?.width ?? 0
     // min-width сильнее max-width: 100 %, поэтому схема шире колонки уходит в прокрутку.
-    if (el && width > 0) el.style.minWidth = `${Math.round(width * MIN_SCALE)}px`
+    if (el && width > 0) el.style.minWidth = `${Math.floor(width * MIN_SCALE)}px`
   } catch (e) {
     document.getElementById(id)?.remove()
     document.getElementById(`d${id}`)?.remove()
