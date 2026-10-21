@@ -11,7 +11,9 @@ import { extractRegion, vitepressFindsRegion } from '../scripts/snippet-regions'
 // правило «snippet» кладёт в fence-токен `token.src = [абсолютный путь, имя региона]`, а его
 // обёртка над fence читает файл, если token.src задан. Обёртка ниже ставится в markdown.config,
 // то есть после snippetPlugin, и вызывается первой. При обновлении VitePress проверьте, что
-// token.src и env.includes устроены так же: тест сборки — урок 2.2 (только регионы в HTML).
+// token.src и env.includes устроены так же: это проверяет sql-regions.test.ts рендером через
+// createMarkdownRenderer. Список меток VitePress повторён в snippet-regions.ts целиком, поэтому
+// регион любого его формата обёртка отдаёт ему, а падает только там, где региона нет нигде.
 type SnippetToken = { src?: [string, string]; content: string }
 
 export function sqlRegionsPlugin(md: MarkdownRenderer): void {
