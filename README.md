@@ -13,7 +13,7 @@
 
 ## Версия Go
 
-Весь репозиторий — на Go 1.27.2: в `messenger/go.mod` и `labs/go.mod` стоят `go 1.27.0` и `toolchain go1.27.2` (1.27.0 уязвим: CVE-2026-78667, CVE-2026-78669, CVE-2026-97031 исправлены в 1.27.2). Локальный Go по умолчанию тоже должен быть 1.27.2, например `mise use -g go@1.27.2`: иначе более старый Go (скажем, 1.26) по строке `toolchain` сам скачает 1.27.2 при каждом запуске команды, а редактор с `gopls` на старом Go будет пытаться скачать неподходящий инструментарий.
+Весь репозиторий — на Go 1.27.3: в `messenger/go.mod` и `labs/go.mod` стоят `go 1.27.0` и `toolchain go1.27.3` (1.27.0 уязвим: CVE-2026-78667, CVE-2026-78669, CVE-2026-97031 исправлены в 1.27.2; 1.27.2 — CVE-2026-111943 в `crypto/x509`, исправлена в 1.27.3). Локальный Go по умолчанию тоже должен быть 1.27.3, например `mise use -g go@1.27.3`: иначе более старый Go (скажем, 1.26) по строке `toolchain` сам скачает 1.27.3 при каждом запуске команды, а редактор с `gopls` на старом Go будет пытаться скачать неподходящий инструментарий.
 
 ## Запуск курса
 
@@ -50,7 +50,7 @@ Workflow лежат в `.github/workflows/` (урок 1.18 — `ci.yml`, уро�
 
 ## Лабораторные
 
-Практика модулей лежит в `labs/` — отдельный Go-модуль (`labs/go.mod`, Go 1.27.2; единственная внешняя зависимость — `golang.org/x/sync` для `errgroup` и `semaphore` в уроке 1.5.5). Каталог модуля 0b:
+Практика модулей лежит в `labs/` — отдельный Go-модуль (`labs/go.mod`, Go 1.27.3; единственная внешняя зависимость — `golang.org/x/sync` для `errgroup` и `semaphore` в уроке 1.5.5). Каталог модуля 0b:
 
 - `labs/0b/compose.yaml` и `Dockerfile` — стенд из трёх контейнеров в сети `172.28.0.0/24`: `client`, `server` и `dns` (CoreDNS с зоной `messenger.example`); в образ собраны программы лабораторной и инструменты (`tcpdump`, `ss`, `dig`, `curl` с HTTP/3, `openssl`, `strace`);
 - `labs/0b/netem.sh 40ms 1%` — задержка и потери через netem на `client` и `server` (половина RTT на каждом конце), `labs/0b/netem.sh off` — снять; нужен модуль ядра `sch_netem`;
@@ -99,7 +99,7 @@ docker compose -f 2a/compose.yaml down -v
 
 ## Мессенджер
 
-Сквозной проект курса лежит в `messenger/` — отдельный Go-модуль (`messenger/go.mod`, Go 1.27.2). Код раскладывается по контекстам (`internal/user`, `internal/chat`, `internal/auth`) и слоям `domain` ← `usecase` ← `adapters` ← `cmd`; правило зависимостей проверяет линтер `depguard` (настройка — `messenger/.golangci.yml`, решения — `messenger/docs/adr/`).
+Сквозной проект курса лежит в `messenger/` — отдельный Go-модуль (`messenger/go.mod`, Go 1.27.3). Код раскладывается по контекстам (`internal/user`, `internal/chat`, `internal/auth`) и слоям `domain` ← `usecase` ← `adapters` ← `cmd`; правило зависимостей проверяет линтер `depguard` (настройка — `messenger/.golangci.yml`, решения — `messenger/docs/adr/`).
 
 ```bash
 cd messenger
