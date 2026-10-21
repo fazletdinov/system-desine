@@ -111,7 +111,7 @@ svg { display: block; width: 100%; height: auto; }
 .kl .cmp { display: table; width: 100%; margin: 0; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .cmp caption { text-align: left; font-size: 14px; margin-bottom: 2px; }
 .kl .cmp tr { background: transparent; border: 0; }
-.kl .cmp th, .kl .cmp td { min-width: 0; padding: 3px 3px; font-size: 13px; background: transparent; border-bottom: 1px solid var(--viz-edge); text-align: right; }
+.kl .cmp th, .kl .cmp td { min-width: 0; padding: 3px; font-size: 13px; background: transparent; border-bottom: 1px solid var(--viz-edge); text-align: right; }
 .cmp th:first-child, .cmp thead th:first-child { text-align: left; }
 .cmp thead th { font-weight: 600; color: var(--viz-muted); }
 /* Отступ под полосу выбора — у всех строк: иначе выбор UUIDv4/UUIDv7 расширял первый столбец,

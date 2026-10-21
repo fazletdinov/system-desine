@@ -64,7 +64,7 @@ describe('строки ER-диаграммы', () => {
   it.each(['dark', 'light'] as const)('%s: текст классов и темы читается на нечётных и чётных строках (≥ 4,5:1)', (theme) => {
     const v = mermaidThemeVariables(theme)
     for (const row of [v.rowOdd!, v.rowEven!]) {
-      for (const text of [...classTextColors(theme), v.primaryTextColor!]) expect(contrast(text, row)).toBeGreaterThanOrEqual(4.5)
+      for (const text of [...classTextColors(theme), v.primaryTextColor!, v.textColor!]) expect(contrast(text, row)).toBeGreaterThanOrEqual(4.5)
     }
   })
 })

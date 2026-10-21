@@ -19,6 +19,9 @@ export url run dir
 # заголовки, тело и строку «код время» в свои файлы — общий вывод перемешался бы.
 # Оборванное соединение (процесс убит) curl отмечает кодом 000; «|| true» — чтобы
 # такой запрос попал в сводку, а не остановил скрипт через set -e.
+# Одинарные кавычки намеренны: $dir, $url и $run раскрывает внутренний bash (переменные
+# экспортированы), а {} подставляет xargs.
+# shellcheck disable=SC2016
 seq 1 "$n" | xargs -P "$n" -I{} bash -c '
 	curl -s -o "$dir/{}.body" -D "$dir/{}.head" -w "%{http_code} %{time_total}\n" \
 		-X POST "$url/v1/users" -H "Content-Type: application/json" \

@@ -3,6 +3,7 @@ import { onMounted, ref, useId, watch } from 'vue'
 import { useData } from 'vitepress'
 import VizFrame from '../viz/components/VizFrame.vue'
 import { mermaidThemeVariables, withPaletteClasses } from '../viz/core/mermaid-palette'
+import { diagramMinWidth } from '../viz/core/diagram-scale'
 
 const props = defineProps<{ code: string; title?: string }>()
 const { isDark } = useData()
@@ -11,11 +12,6 @@ const error = ref<string | null>(null)
 const baseId = `mmd-${useId().replace(/[^a-zA-Z0-9-]/g, '')}`
 // Каждый рендер получает свой id: при смене темы на странице не появятся два SVG с одинаковым id.
 let renderSeq = 0
-// Нижняя граница масштаба схемы. Без неё широкая схема (ER-диаграмма урока 2.1 — 2000 px)
-// ужимается до ширины колонки: на 375 px это 15 % и текст в 2 px. При 0,6 шрифт mermaid
-// (14–16 px) остаётся не меньше 8–10 px, а то, что не влезло, прокручивается внутри рамки,
-// а не всей страницей.
-const MIN_SCALE = 0.6
 
 async function render(): Promise<void> {
   const seq = ++renderSeq
@@ -29,9 +25,9 @@ async function render(): Promise<void> {
     if (seq !== renderSeq || !host.value) return
     host.value.innerHTML = svg
     const el = host.value.querySelector('svg')
-    const width = el?.viewBox.baseVal?.width ?? 0
     // min-width сильнее max-width: 100 %, поэтому схема шире колонки уходит в прокрутку.
-    if (el && width > 0) el.style.minWidth = `${Math.floor(width * MIN_SCALE)}px`
+    const minWidth = el ? diagramMinWidth(el.viewBox.baseVal?.width ?? 0) : null
+    if (el && minWidth !== null) el.style.minWidth = `${minWidth}px`
   } catch (e) {
     document.getElementById(id)?.remove()
     document.getElementById(`d${id}`)?.remove()

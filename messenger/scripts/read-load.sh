@@ -78,6 +78,9 @@ export url auth chat secs dir batch
 # curl отмечает кодом 000; «|| true» — чтобы такой ответ попал в сводку, а не
 # остановил клиента через set -e.
 started=$(date +%s.%N)
+# Одинарные кавычки намеренны: $batch, $url, $chat, $secs, $auth и $dir раскрывает
+# внутренний bash (переменные экспортированы), а {} подставляет xargs.
+# shellcheck disable=SC2016
 seq 1 "$n" | xargs -P "$n" -I{} bash -c '
 	urls=()
 	for _ in $(seq 1 "$batch"); do urls+=(-o /dev/null "$url/v1/chats/$chat/messages"); done

@@ -105,8 +105,9 @@ docker compose -f 2a/compose.yaml down -v
 cd messenger
 go run ./cmd/keygen -out jwt.pem          # один раз: закрытый ключ подписи JWT (Ed25519, права 0600)
 # нужен PostgreSQL с применёнными миграциями (проще всего — compose, см. «В Docker»);
-# db.url — файл со строкой postgres://…, MESSENGER_DATABASE_URL_FILE=db.url go run ./cmd/messenger migrate up
-export MESSENGER_JWT_KEY_FILE=jwt.pem MESSENGER_DATABASE_URL_FILE=db.url
+# secrets/local_url — файл со строкой postgres://… (каталог secrets/ в git не попадает):
+# MESSENGER_DATABASE_URL_FILE=secrets/local_url go run ./cmd/messenger migrate up
+export MESSENGER_JWT_KEY_FILE=jwt.pem MESSENGER_DATABASE_URL_FILE=secrets/local_url
 go run ./cmd/messenger                                         # HTTP-сервер на 127.0.0.1:8080
 MESSENGER_ADDR=:8080 go run ./cmd/messenger                    # слушать все интерфейсы — явное решение
 MESSENGER_DEBUG_ADDR=127.0.0.1:6060 go run ./cmd/messenger     # + служебный порт pprof, только loopback
