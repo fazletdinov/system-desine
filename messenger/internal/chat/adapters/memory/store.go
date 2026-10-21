@@ -119,6 +119,19 @@ func (s *Store) AppendMessage(ctx context.Context, chat *domain.Chat, msg domain
 
 // #endregion append
 
+func (s *Store) FindMessageByClientID(ctx context.Context, chatID domain.ChatID, author domain.UserID, clientID domain.ClientMessageID) (domain.Message, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.Message{}, fmt.Errorf("memory: %w", err)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	msg, ok := s.byClient[clientKey{chat: chatID, author: author, client: clientID}]
+	if !ok {
+		return domain.Message{}, usecase.ErrMessageNotFound
+	}
+	return msg, nil
+}
+
 // #region list-before
 func (s *Store) ListMessagesBefore(ctx context.Context, chatID domain.ChatID, beforeSeq int64, limit int) ([]domain.Message, error) {
 	if err := ctx.Err(); err != nil {

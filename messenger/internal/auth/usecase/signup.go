@@ -20,13 +20,14 @@ type SignUp struct {
 	profiles  ProfileRegistrar
 	validator ProfileValidator
 	creds     CredentialsSaver
+	tx        Transactor
 }
 
-func NewSignUp(hasher PasswordHasher, profiles ProfileRegistrar, validator ProfileValidator, creds CredentialsSaver) (*SignUp, error) {
-	if hasher == nil || profiles == nil || validator == nil || creds == nil {
+func NewSignUp(hasher PasswordHasher, profiles ProfileRegistrar, validator ProfileValidator, creds CredentialsSaver, tx Transactor) (*SignUp, error) {
+	if hasher == nil || profiles == nil || validator == nil || creds == nil || tx == nil {
 		return nil, errors.New("sign up: nil-зависимость")
 	}
-	return &SignUp{hasher: hasher, profiles: profiles, validator: validator, creds: creds}, nil
+	return &SignUp{hasher: hasher, profiles: profiles, validator: validator, creds: creds, tx: tx}, nil
 }
 
 // #region signup
@@ -48,22 +49,32 @@ func (uc *SignUp) Execute(ctx context.Context, cmd SignUpCommand) (Profile, erro
 	if err != nil {
 		return Profile{}, fmt.Errorf("sign up: хеширование: %w", err)
 	}
-	// Имя проверено, но занятость проверяет только сам RegisterProfile: между проверкой
-	// и созданием его мог занять другой запрос.
-	profile, err := uc.profiles.RegisterProfile(ctx, cmd.Username, cmd.DisplayName)
+	// #endregion signup-order
+	// Профиль и учётные данные — в одной транзакции: упадёт второй шаг — откатится и
+	// первый, и имя не останется занятым профилем без пароля (бывшее окно ADR-0004).
+	// Хеш посчитан выше, вне транзакции: она держит соединение с базой, и держать его
+	// сотни миллисекунд Argon2id — значит отнимать его у других запросов.
+	var profile Profile
+	err = uc.tx.WithinTx(ctx, func(ctx context.Context) error {
+		// Имя проверено, но занятость проверяет только сам RegisterProfile: между проверкой
+		// и созданием его мог занять другой запрос.
+		p, err := uc.profiles.RegisterProfile(ctx, cmd.Username, cmd.DisplayName)
+		if err != nil {
+			return err
+		}
+		creds, err := domain.NewCredentials(p.ID, hash)
+		if err != nil {
+			// Без %w: пустой id от соседнего контекста — сбой сервера, а не ошибка данных клиента.
+			return fmt.Errorf("некорректные учётные данные для профиля %q", p.ID)
+		}
+		if err := uc.creds.SaveCredentials(ctx, creds); err != nil {
+			return fmt.Errorf("учётные данные профиля %s: %w", p.ID, err)
+		}
+		profile = p
+		return nil
+	})
 	if err != nil {
 		return Profile{}, fmt.Errorf("sign up: %w", err)
-	}
-	// #endregion signup-order
-	creds, err := domain.NewCredentials(profile.ID, hash)
-	if err != nil {
-		// Без %w: пустой id от соседнего контекста — сбой сервера, а не ошибка данных клиента.
-		return Profile{}, fmt.Errorf("sign up: некорректные учётные данные для профиля %q", profile.ID)
-	}
-	if err := uc.creds.SaveCredentials(ctx, creds); err != nil {
-		// Профиль уже создан, а пароля у него нет — войти он не сможет. Это известная
-		// неатомарность двух контекстов (ADR-0004); закроет её транзакция в модуле 2a.
-		return Profile{}, fmt.Errorf("sign up: профиль %s создан без учётных данных: %w", profile.ID, err)
 	}
 	return profile, nil
 }

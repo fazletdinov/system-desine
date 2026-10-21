@@ -54,14 +54,19 @@ type profiles struct {
 	n       int
 	calls   int
 	failErr error
+	// callsOutsideTx — вызовы RegisterProfile без транзакции recordingTx в ctx.
+	callsOutsideTx int
 }
 
 func newProfiles() *profiles { return &profiles{byName: make(map[string]usecase.Profile)} }
 
-func (p *profiles) RegisterProfile(_ context.Context, username, displayName string) (usecase.Profile, error) {
+func (p *profiles) RegisterProfile(ctx context.Context, username, displayName string) (usecase.Profile, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls++
+	if !inTx(ctx) {
+		p.callsOutsideTx++
+	}
 	if p.failErr != nil {
 		return usecase.Profile{}, p.failErr
 	}
@@ -99,10 +104,15 @@ type countingSaver struct {
 	usecase.CredentialsSaver
 	calls   atomic.Int32
 	failErr error
+	// callsOutsideTx — вызовы SaveCredentials без транзакции recordingTx в ctx.
+	callsOutsideTx atomic.Int32
 }
 
 func (s *countingSaver) SaveCredentials(ctx context.Context, c domain.Credentials) error {
 	s.calls.Add(1)
+	if !inTx(ctx) {
+		s.callsOutsideTx.Add(1)
+	}
 	if s.failErr != nil {
 		return s.failErr
 	}
@@ -114,4 +124,32 @@ type fixedIssuer struct{}
 
 func (fixedIssuer) Issue(id domain.UserID) (usecase.Token, error) {
 	return usecase.Token{Value: "tok:" + id.String(), ExpiresAt: t0.Add(15 * time.Minute)}, nil
+}
+
+// recordingTx — Transactor, который ничего не откатывает, а запоминает: сколько раз
+// его звали и что вернул fn. Метка в ctx позволяет фейкам хранилищ понять, вызваны ли
+// они внутри WithinTx, — так же, как настоящие адаптеры найдут в ctx транзакцию.
+type recordingTx struct {
+	calls atomic.Int32
+	mu    sync.Mutex
+	err   error // что вернул последний fn
+}
+
+type inTxKey struct{}
+
+func inTx(ctx context.Context) bool { return ctx.Value(inTxKey{}) != nil }
+
+func (r *recordingTx) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	r.calls.Add(1)
+	err := fn(context.WithValue(ctx, inTxKey{}, true))
+	r.mu.Lock()
+	r.err = err
+	r.mu.Unlock()
+	return err
+}
+
+func (r *recordingTx) lastErr() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.err
 }

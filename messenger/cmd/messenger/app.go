@@ -496,7 +496,9 @@ func newAuth(cfg config, users *usermemory.Store, clk clock.System, ids idgen.UU
 		return nil, nil, err
 	}
 	creds := authmemory.NewStore()
-	signUp, err := authusecase.NewSignUp(hasher, bridge, bridge, creds)
+	// memory.Tx не откатывает — хранилища в памяти не транзакционны; атомарность
+	// регистрации появится с Postgres и platform/pgtx (урок 2.9).
+	signUp, err := authusecase.NewSignUp(hasher, bridge, bridge, creds, authmemory.Tx{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -535,7 +537,9 @@ func newChat(getUser *userusecase.GetUser, clk clock.System, ids idgen.UUIDv7, l
 	if err != nil {
 		return nil, err
 	}
-	sendMessage, err := chatusecase.NewSendMessage(chats, chats, clk, ids)
+	// memory.Tx — без отката, как и в регистрации: до Postgres атомарность попытки
+	// держит мьютекс хранилища.
+	sendMessage, err := chatusecase.NewSendMessage(chats, chats, chats, chatmemory.Tx{}, clk, ids)
 	if err != nil {
 		return nil, err
 	}

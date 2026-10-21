@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"messenger/internal/chat/domain"
@@ -45,7 +46,8 @@ type MessageAppender interface {
 	// AppendMessage сохраняет сообщение и новое состояние чата, только если версия
 	// чата в хранилище всё ещё expectedVersion; иначе — domain.ErrConcurrentUpdate.
 	// Если чата нет — domain.ErrChatNotFound. Если сообщение с тем же (чат, автор,
-	// client_message_id) уже есть — *domain.DuplicateMessageError с ним.
+	// client_message_id) уже есть — ошибка, равная domain.ErrDuplicateMessage по errors.Is
+	// (само сообщение use case читает через MessageByClientIDFinder).
 	AppendMessage(ctx context.Context, chat *domain.Chat, msg domain.Message, expectedVersion int64) error
 }
 
@@ -71,3 +73,30 @@ type ChatLister interface {
 }
 
 // #endregion ports
+
+// #region message-finder
+// ErrMessageNotFound — часть контракта MessageByClientIDFinder: сообщения с таким ключом нет.
+var ErrMessageNotFound = errors.New("сообщение не найдено")
+
+// MessageByClientIDFinder находит сохранённое сообщение по естественному ключу. Нужен
+// повтору отправки: AppendMessage отвечает только «такое уже есть», потому что в
+// Postgres нарушение уникальности обрывает транзакцию попытки и прочитать в ней
+// сохранённое сообщение нельзя — use case читает его уже после отката.
+type MessageByClientIDFinder interface {
+	// FindMessageByClientID — ErrMessageNotFound, если сообщения нет.
+	FindMessageByClientID(ctx context.Context, chatID domain.ChatID, author domain.UserID, clientID domain.ClientMessageID) (domain.Message, error)
+}
+
+// #endregion message-finder
+
+// #region transactor
+// Transactor задаёт границу транзакции: попытка отправки читает чат и записывает
+// сообщение с новым состоянием чата — целиком или никак (ADR-0015). Use case не знает,
+// чем транзакция обеспечена: в Postgres — platform/pgtx, в тестах — фейк.
+type Transactor interface {
+	// WithinTx выполняет fn в одной транзакции: ошибка fn — откат. fn не запускает
+	// горутины с переданным ctx: транзакция pgx не для одновременного использования.
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+// #endregion transactor

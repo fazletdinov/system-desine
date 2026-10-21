@@ -47,7 +47,7 @@ func TestSendMessageStopsRetryWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	appender := &failingAppender{err: domain.ErrConcurrentUpdate, onCall: cancel}
-	send, err := usecase.NewSendMessage(deafFinder{store}, appender, fixedClock{}, &seqIDs{})
+	send, err := usecase.NewSendMessage(deafFinder{store}, appender, store, memory.Tx{}, fixedClock{}, &seqIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}

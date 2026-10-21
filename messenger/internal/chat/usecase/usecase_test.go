@@ -44,7 +44,7 @@ func newEnvWithClock(t *testing.T, clk usecase.Clock) env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send, err := usecase.NewSendMessage(store, store, clk, ids)
+	send, err := usecase.NewSendMessage(store, store, store, memory.Tx{}, clk, ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,12 +376,20 @@ func TestChatConstructorsRejectNil(t *testing.T) {
 			_, err := usecase.NewCreateChat(store, store, nil, fixedClock{}, ids)
 			return err
 		}},
+		{name: "send: нет поиска по client_message_id", new: func() error {
+			_, err := usecase.NewSendMessage(store, store, nil, memory.Tx{}, fixedClock{}, ids)
+			return err
+		}},
+		{name: "send: нет транзакций", new: func() error {
+			_, err := usecase.NewSendMessage(store, store, store, nil, fixedClock{}, ids)
+			return err
+		}},
 		{name: "send: нет часов", new: func() error {
-			_, err := usecase.NewSendMessage(store, store, nil, ids)
+			_, err := usecase.NewSendMessage(store, store, store, memory.Tx{}, nil, ids)
 			return err
 		}},
 		{name: "send: нет генератора", new: func() error {
-			_, err := usecase.NewSendMessage(store, store, fixedClock{}, nil)
+			_, err := usecase.NewSendMessage(store, store, store, memory.Tx{}, fixedClock{}, nil)
 			return err
 		}},
 		{name: "list: нет MessageLister", new: func() error {
@@ -427,8 +435,8 @@ func TestSendMessageRetryPolicy(t *testing.T) {
 			if err := store.CreateChat(context.Background(), chat); err != nil {
 				t.Fatal(err)
 			}
-			appender := &failingAppender{err: tt.err}
-			send, err := usecase.NewSendMessage(store, appender, fixedClock{}, &seqIDs{})
+			appender, tx := &failingAppender{err: tt.err}, &recordingTx{}
+			send, err := usecase.NewSendMessage(store, appender, store, tx, fixedClock{}, &seqIDs{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -438,6 +446,14 @@ func TestSendMessageRetryPolicy(t *testing.T) {
 			}
 			if len(appender.ids) != tt.wantCalls {
 				t.Fatalf("попыток записи %d, ждали %d", len(appender.ids), tt.wantCalls)
+			}
+			// Каждая попытка — своя транзакция: проигравшая гонку откатывается целиком,
+			// а не тянет за собой следующую.
+			if n := int(tx.calls.Load()); n != tt.wantCalls {
+				t.Fatalf("транзакций %d, ждали по одной на попытку (%d)", n, tt.wantCalls)
+			}
+			if n := appender.callsOutsideTx.Load(); n != 0 {
+				t.Fatalf("записей вне транзакции: %d", n)
 			}
 			for i := range appender.ids[1:] {
 				if appender.ids[i+1] != appender.ids[0] || appender.clients[i+1] != appender.clients[0] {
@@ -475,6 +491,66 @@ func TestSendMessageRetryReturnsExisting(t *testing.T) {
 	if err != nil || len(page.Messages) != 2 {
 		t.Fatalf("в истории %d сообщений, ждали 2 (повторы не сохраняются): %v", len(page.Messages), err)
 	}
+}
+
+// Повтор в Postgres: дубль ключа обрывает транзакцию попытки, и хранилище отвечает
+// голым ErrDuplicateMessage — без сохранённого сообщения. Use case выпускает ошибку из
+// WithinTx (транзакция откатится вместе с прибавленным счётчиком чата) и читает
+// сохранённое сообщение уже вне транзакции.
+func TestSendMessageDuplicateReadsSavedOutsideTx(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		text    string
+		wantErr error
+	}{
+		{name: "тот же текст — сохранённое сообщение", text: "привет"},
+		{name: "другой текст — ключ переиспользован", text: "пока", wantErr: domain.ErrClientMessageIDReused},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := memory.NewStore()
+			chat, err := domain.NewDirectChat(mustChat(t, "00000000-0000-7000-9000-000000000001"), mustUser(t, alice), mustUser(t, bob), t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.CreateChat(context.Background(), chat); err != nil {
+				t.Fatal(err)
+			}
+			cmd := usecase.SendMessageCommand{ChatID: chat.ID().String(), AuthorID: alice, ClientMessageID: clientID(1), Text: "привет"}
+			first, err := newSend(t, store, store, store, memory.Tx{}).Execute(context.Background(), cmd)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			tx, finder := &recordingTx{}, &txAwareFinder{MessageByClientIDFinder: store}
+			appender := &failingAppender{err: fmt.Errorf("postgres: %w", domain.ErrDuplicateMessage)}
+			cmd.Text = tt.text
+			got, err := newSend(t, store, appender, finder, tx).Execute(context.Background(), cmd)
+			if !errors.Is(err, tt.wantErr) || (tt.wantErr == nil) != (err == nil) {
+				t.Fatalf("ждали %v, получили %v", tt.wantErr, err)
+			}
+			if tt.wantErr == nil && (got.Created || got.Message.ID() != first.Message.ID()) {
+				t.Fatalf("повтор: %+v — ждали сохранённое сообщение %s и Created=false", got, first.Message.ID())
+			}
+			if fnErr := tx.lastErr(); !errors.Is(fnErr, domain.ErrDuplicateMessage) {
+				t.Fatalf("из WithinTx вышло %v, ждали ErrDuplicateMessage — транзакция не откатилась бы", fnErr)
+			}
+			if finder.calls.Load() != 1 || finder.callsInTx.Load() != 0 {
+				t.Fatalf("чтений сохранённого %d, из них в транзакции %d — ждали одно вне её", finder.calls.Load(), finder.callsInTx.Load())
+			}
+		})
+	}
+}
+
+func newSend(t *testing.T, chats usecase.ChatFinder, messages usecase.MessageAppender, sent usecase.MessageByClientIDFinder, tx usecase.Transactor) *usecase.SendMessage {
+	t.Helper()
+	send, err := usecase.NewSendMessage(chats, messages, sent, tx, fixedClock{}, &seqIDs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return send
 }
 
 func TestSendMessageRejectsBadClientMessageID(t *testing.T) {

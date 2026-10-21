@@ -32,7 +32,7 @@ func newEnv(t *testing.T) *env {
 	e := &env{hasher: &countingHasher{}, profiles: newProfiles()}
 	store := memory.NewStore()
 	var err error
-	if e.signUp, err = usecase.NewSignUp(e.hasher, e.profiles, stubValidator{}, store); err != nil {
+	if e.signUp, err = usecase.NewSignUp(e.hasher, e.profiles, stubValidator{}, store, memory.Tx{}); err != nil {
 		t.Fatal(err)
 	}
 	if e.login, err = usecase.NewLogin(e.profiles, store, e.hasher, fixedIssuer{}); err != nil {
@@ -140,7 +140,7 @@ func TestOverloadedIsNotInvalidCredentials(t *testing.T) {
 	t.Run("sign up", func(t *testing.T) {
 		t.Parallel()
 		hasher, prof := &countingHasher{hashErr: usecase.ErrOverloaded}, newProfiles()
-		uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore())
+		uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore(), memory.Tx{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,7 +162,7 @@ func TestSignUpOrder(t *testing.T) {
 	t.Run("хешер сломан — профиль не создан", func(t *testing.T) {
 		t.Parallel()
 		hasher, prof := &countingHasher{hashErr: errBoom}, newProfiles()
-		uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore())
+		uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore(), memory.Tx{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -179,7 +179,7 @@ func TestSignUpOrder(t *testing.T) {
 		prof := newProfiles()
 		prof.failErr = errBoom
 		saver := &countingSaver{CredentialsSaver: memory.NewStore()}
-		uc, err := usecase.NewSignUp(&countingHasher{}, prof, stubValidator{}, saver)
+		uc, err := usecase.NewSignUp(&countingHasher{}, prof, stubValidator{}, saver, memory.Tx{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -195,7 +195,7 @@ func TestSignUpOrder(t *testing.T) {
 		t.Parallel()
 		prof := newProfiles()
 		saver := &countingSaver{CredentialsSaver: memory.NewStore(), failErr: errBoom}
-		uc, err := usecase.NewSignUp(&countingHasher{}, prof, stubValidator{}, saver)
+		uc, err := usecase.NewSignUp(&countingHasher{}, prof, stubValidator{}, saver, memory.Tx{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -214,10 +214,53 @@ func TestSignUpOrder(t *testing.T) {
 	})
 }
 
+// Оба шага регистрации — профиль и учётные данные — внутри одного WithinTx, а ошибка
+// второго выходит из fn наружу: настоящий Transactor по ней откатит и профиль.
+// Сам откат проверяет интеграционный тест на Postgres (адаптеры — задача урока 2.9).
+func TestSignUpWritesProfileAndCredentialsInOneTx(t *testing.T) {
+	t.Parallel()
+	cmd := usecase.SignUpCommand{Username: "bob", DisplayName: "Боб", Password: alicePassword}
+	errBoom := errors.New("бум")
+	tests := []struct {
+		name    string
+		saveErr error
+	}{
+		{"успех", nil},
+		{"сохранение учётных данных упало", errBoom},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			prof, tx := newProfiles(), &recordingTx{}
+			saver := &countingSaver{CredentialsSaver: memory.NewStore(), failErr: tt.saveErr}
+			uc, err := usecase.NewSignUp(&countingHasher{}, prof, stubValidator{}, saver, tx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = uc.Execute(context.Background(), cmd)
+			if !errors.Is(err, tt.saveErr) || (tt.saveErr == nil) != (err == nil) {
+				t.Fatalf("ждали %v, получили %v", tt.saveErr, err)
+			}
+			if n := tx.calls.Load(); n != 1 {
+				t.Fatalf("WithinTx вызван %d раз, ждали 1", n)
+			}
+			if prof.callsOutsideTx != 0 || saver.callsOutsideTx.Load() != 0 {
+				t.Fatalf("шаги вне транзакции: профиль %d, учётные данные %d", prof.callsOutsideTx, saver.callsOutsideTx.Load())
+			}
+			if prof.calls != 1 || saver.calls.Load() != 1 {
+				t.Fatalf("шагов в транзакции: профиль %d, учётные данные %d — ждали по одному", prof.calls, saver.calls.Load())
+			}
+			if fnErr := tx.lastErr(); !errors.Is(fnErr, tt.saveErr) || (tt.saveErr == nil) != (fnErr == nil) {
+				t.Fatalf("fn вернул Transactor'у %v, ждали %v — откатывать было бы нечего", fnErr, tt.saveErr)
+			}
+		})
+	}
+}
+
 func TestSignUpPasswordPolicy(t *testing.T) {
 	t.Parallel()
 	hasher, prof := &countingHasher{}, newProfiles()
-	uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore())
+	uc, err := usecase.NewSignUp(hasher, prof, stubValidator{}, memory.NewStore(), memory.Tx{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +281,7 @@ func TestSignUpInvalidUsernameDoesNotHash(t *testing.T) {
 	t.Parallel()
 	hasher, prof := &countingHasher{}, newProfiles()
 	invalid := &domain.ValidationError{Field: "username", Reason: "только a–z, 0–9 и _"}
-	uc, err := usecase.NewSignUp(hasher, prof, stubValidator{err: invalid}, memory.NewStore())
+	uc, err := usecase.NewSignUp(hasher, prof, stubValidator{err: invalid}, memory.NewStore(), memory.Tx{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,15 +311,16 @@ func TestSignUpUsernameTaken(t *testing.T) {
 
 func TestConstructorsRejectNil(t *testing.T) {
 	t.Parallel()
-	h, p, s, v := &countingHasher{}, newProfiles(), memory.NewStore(), stubValidator{}
+	h, p, s, v, x := &countingHasher{}, newProfiles(), memory.NewStore(), stubValidator{}, memory.Tx{}
 	tests := []struct {
 		name string
 		new  func() error
 	}{
-		{"sign up: нет хешера", func() error { _, err := usecase.NewSignUp(nil, p, v, s); return err }},
-		{"sign up: нет профилей", func() error { _, err := usecase.NewSignUp(h, nil, v, s); return err }},
-		{"sign up: нет проверки имени", func() error { _, err := usecase.NewSignUp(h, p, nil, s); return err }},
-		{"sign up: нет хранилища", func() error { _, err := usecase.NewSignUp(h, p, v, nil); return err }},
+		{"sign up: нет хешера", func() error { _, err := usecase.NewSignUp(nil, p, v, s, x); return err }},
+		{"sign up: нет профилей", func() error { _, err := usecase.NewSignUp(h, nil, v, s, x); return err }},
+		{"sign up: нет проверки имени", func() error { _, err := usecase.NewSignUp(h, p, nil, s, x); return err }},
+		{"sign up: нет хранилища", func() error { _, err := usecase.NewSignUp(h, p, v, nil, x); return err }},
+		{"sign up: нет транзакций", func() error { _, err := usecase.NewSignUp(h, p, v, s, nil); return err }},
 		{"login: нет поиска", func() error { _, err := usecase.NewLogin(nil, s, h, fixedIssuer{}); return err }},
 		{"login: нет хранилища", func() error { _, err := usecase.NewLogin(p, nil, h, fixedIssuer{}); return err }},
 		{"login: нет хешера", func() error { _, err := usecase.NewLogin(p, s, nil, fixedIssuer{}); return err }},
