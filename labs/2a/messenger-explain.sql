@@ -16,6 +16,11 @@ DROP SCHEMA IF EXISTS platform, chat, auth, users CASCADE;
 RESET client_min_messages;
 -- Одинаковые «случайные» данные при каждом запуске — и одинаковые планы.
 SELECT setseed(0.42) \g /dev/null
+-- Без параллельных планов: ANALYZE берёт случайную выборку строк, и от прогона к прогону оценка
+-- «сколько чатов у пользователя» колеблется настолько, что планировщик то зовёт параллельного
+-- исполнителя (Gather Merge), то нет. Индексы в плане от этого не меняются, а планы, которые
+-- цитирует урок, должны совпадать при каждом запуске. Параллельные планы — часть 2b.
+SET max_parallel_workers_per_gather = 0;
 \set QUIET off
 \set ECHO queries
 
@@ -49,9 +54,10 @@ SELECT pg_temp.cid(n), pg_temp.uid(1) FROM generate_series(1, 1000) AS n
 UNION
 SELECT pg_temp.cid(n), pg_temp.uid(2) FROM generate_series(1001, 1020) AS n;
 
--- История одного чата: 10 000 сообщений.
+-- История одного чата: 10 000 сообщений. id — UUIDv7, как у idgen мессенджера (растёт со временем);
+-- client_message_id присылает клиент, и он случаен — UUIDv4.
 INSERT INTO chat.messages (chat_id, seq, id, author_id, client_message_id, text, sent_at)
-SELECT pg_temp.cid(1), s, gen_random_uuid(), pg_temp.uid(1), gen_random_uuid(), 'сообщение ' || s,
+SELECT pg_temp.cid(1), s, uuidv7(), pg_temp.uid(1), gen_random_uuid(), 'сообщение ' || s,
        timestamptz '2026-09-01 00:00Z' + s * interval '1 minute'
 FROM generate_series(1, 10000) AS s;
 UPDATE chat.chats SET last_seq = 10000, version = 10000 WHERE id = pg_temp.cid(1);
@@ -126,7 +132,7 @@ RETURNING seq;
 -- статистики сбрасываются в общую память (pg_stat_force_next_flush), иначе прочитали бы старые.
 \set QUIET on
 CREATE FUNCTION pg_temp.send_batch(from_version int) RETURNS SETOF text LANGUAGE sql AS $$
-SELECT format('EXECUTE append_message(%L, %s, %L, gen_random_uuid(), %L, gen_random_uuid(), ''сообщение'', %L)',
+SELECT format('EXECUTE append_message(%L, %s, %L, uuidv7(), %L, gen_random_uuid(), ''сообщение'', %L)',
            pg_temp.cid(2), v, timestamptz '2026-10-01 00:00Z' + v * interval '1 second', pg_temp.uid(3),
            timestamptz '2026-10-01 00:00Z' + v * interval '1 second')
 FROM generate_series(from_version, from_version + 199) AS v
@@ -191,3 +197,49 @@ LIMIT $3;
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
 EXECUTE list_messages_before(pg_temp.cid(1), 5000, 51);
 -- #endregion plan-history
+
+\echo
+\echo '=== 7. OFFSET против keyset: та же страница по номеру позиции ==='
+-- Страница истории из раздела 6 (seq 4999…4949), заданная не ключом, а смещением: от новейшего
+-- seq 10000 до 4999 — 5001 строка. Индекс знает порядок строк, но не их номера, поэтому
+-- пропущенные строки всё равно читаются.
+-- #region offset-history
+PREPARE list_messages_offset(uuid, int, int) AS
+SELECT chat_id, seq, id, author_id, client_message_id, text, sent_at FROM chat.messages
+WHERE chat_id = $1
+ORDER BY seq DESC
+OFFSET $2 LIMIT $3;
+-- #endregion offset-history
+
+SELECT max(seq) AS first_seq, min(seq) AS last_seq
+FROM (SELECT seq FROM chat.messages WHERE chat_id = pg_temp.cid(1) ORDER BY seq DESC OFFSET 5001 LIMIT 51) AS page;
+
+-- #region plan-offset-history
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_messages_offset(pg_temp.cid(1), 5001, 51);
+-- #endregion plan-offset-history
+
+\echo '--- список чатов тяжёлого пользователя: OFFSET 500 — та же страница, что курсор из раздела 3'
+PREPARE list_chats_offset(uuid, int, int) AS
+SELECT c.id, c.kind, c.title, c.last_seq, c.version, c.created_at, c.last_activity_at,
+       ARRAY(SELECT m.user_id FROM chat.members m WHERE m.chat_id = c.id ORDER BY m.user_id)
+FROM chat.chats c
+JOIN chat.members me ON me.chat_id = c.id
+WHERE me.user_id = $1
+ORDER BY c.last_activity_at DESC, c.id DESC
+OFFSET $2 LIMIT $3;
+
+-- #region plan-offset-chats
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_chats_offset(pg_temp.uid(1), 500, 51);
+-- #endregion plan-offset-chats
+
+\echo
+\echo '=== 8. Цена ключей chat.messages: таблица и три её индекса на 10 000 сообщений чата 1 и 400 — чата 2 ==='
+-- Каждый INSERT сообщения пишет строку таблицы и по записи в каждый из трёх индексов: первичный
+-- ключ (chat_id, seq) — для ленты, UNIQUE (id) — для поиска по id, UNIQUE (chat_id, author_id,
+-- client_message_id) — для защиты от повторной отправки.
+SELECT c.relname AS relation, pg_relation_size(c.oid) AS bytes, pg_size_pretty(pg_relation_size(c.oid)) AS size
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'chat' AND c.relname IN ('messages', 'messages_pkey', 'messages_id_key', 'messages_client_id_key')
+ORDER BY bytes DESC;
