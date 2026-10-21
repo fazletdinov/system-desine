@@ -292,7 +292,7 @@ function withoutText(r: QueryResult): CaptionSegment[] {
 
 function hint(s: AccessPatternsState, r: QueryResult): CaptionSegment[] {
   if (r.query.id === 'feed' && s.schema.messagesKey === 'seq-chat') {
-    return [{ text: ' Порядок столбцов составного ключа решает: B-дерево ищет по префиксу, а первым в PK стоит seq, поэтому для «сообщений чата» он бесполезен (skip scan из PostgreSQL 18 перебирал бы сотню тысяч разных seq). Выручает случайный индекс с префиксом chat_id — без порядка по seq. В среднем чате это 100 строк, в чате-канале на миллион сообщений — миллион строк ради 50.' }]
+    return [{ text: ' Порядок столбцов составного ключа решает: B-дерево ищет по префиксу, а первым в PK стоит seq, поэтому для «сообщений чата» он бесполезен (skip scan из PostgreSQL 18 перебирал бы сотню тысяч разных seq). Выручает индекс, созданный для другой цели, — UNIQUE (chat_id, author_id, client_message_id) из защиты от повторной отправки: его префикс chat_id, но порядка по seq в нём нет. В среднем чате это 100 строк, в чате-канале на миллион сообщений — миллион строк ради 50.' }]
   }
   if (r.query.id === 'feed' && s.schema.messagesKey === 'id-only') {
     return [{ text: ' Ключ «id для всего» не знает про seq: сообщения чата разбросаны по индексу, и для ' }, term('keyset-пагинации', 'keyset-pagination'), { text: ' их приходится собирать и сортировать.' }]

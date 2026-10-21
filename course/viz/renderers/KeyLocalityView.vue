@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { HOT_WINDOW, KEY_KINDS, KIND_LABEL, LEAF_FILLFACTOR, PAGE_CAPACITY, type KeyLocalityFrame } from '../simulations/key-locality'
+import { FILL_ALERT, FILL_ALERT_MIN_PAGES, FPI_ALERT, HOT_ALERT, HOT_WINDOW, KEY_KINDS, KIND_LABEL, LEAF_FILLFACTOR, PAGE_CAPACITY, type KeyLocalityFrame } from '../simulations/key-locality'
 
 const props = defineProps<{ frame: KeyLocalityFrame }>()
 
@@ -32,10 +32,10 @@ const summary = computed(
     <dl class="counters">
       <div><dt>Ключей</dt><dd>{{ st.keys }}</dd></div>
       <div><dt>Листьев</dt><dd>{{ st.pages }}</dd></div>
-      <div :class="{ mid: st.keys > 0 && st.fill < 0.8 }"><dt>Заполненность</dt><dd>{{ st.keys === 0 ? '—' : pct(st.fill) }}</dd></div>
+      <div :class="{ mid: st.pages >= FILL_ALERT_MIN_PAGES && st.fill < FILL_ALERT }"><dt>Заполненность</dt><dd>{{ st.keys === 0 ? '—' : pct(st.fill) }}</dd></div>
       <div :class="{ bad: st.splitsMiddle > 0 }"><dt>Разделений: справа / в середине</dt><dd>{{ st.splitsRight }} / {{ st.splitsMiddle }}</dd></div>
-      <div :class="{ mid: st.hotPages > 3 }"><dt>Горячих страниц</dt><dd>{{ st.hotPages }}</dd></div>
-      <div :class="{ bad: st.fpi > 3 }"><dt>Полных образов после CHECKPOINT</dt><dd>{{ frame.checkpoints === 0 ? '—' : st.fpi }}</dd></div>
+      <div :class="{ mid: st.hotPages > HOT_ALERT }"><dt>Горячих страниц</dt><dd>{{ st.hotPages }}</dd></div>
+      <div :class="{ bad: st.fpi > FPI_ALERT }"><dt>Полных образов после CHECKPOINT</dt><dd>{{ frame.checkpoints === 0 ? '—' : st.fpi }}</dd></div>
     </dl>
 
     <figure class="chart">
@@ -75,7 +75,7 @@ const summary = computed(
           <td>{{ frame.stats[k].pages }}</td>
           <td>{{ frame.stats[k].keys === 0 ? '—' : pct(frame.stats[k].fill) }}</td>
           <td :class="{ bad: frame.stats[k].splitsMiddle > 0 }">{{ frame.stats[k].splitsMiddle }}</td>
-          <td :class="{ bad: frame.stats[k].fpi > 3 }">{{ frame.checkpoints === 0 ? '—' : frame.stats[k].fpi }}</td>
+          <td :class="{ bad: frame.stats[k].fpi > FPI_ALERT }">{{ frame.checkpoints === 0 ? '—' : frame.stats[k].fpi }}</td>
         </tr>
       </tbody>
     </table>

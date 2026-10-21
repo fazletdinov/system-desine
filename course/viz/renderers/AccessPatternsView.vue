@@ -6,6 +6,7 @@ const props = defineProps<{ frame: AccessPatternsFrame }>()
 
 // Цвет со смыслом: --viz-db — запрос обслужен индексом (точка или диапазон), --viz-active — индекс
 // есть, но строк читается больше нужного (сортировка, фильтр), --viz-error — полный проход таблицы.
+// Выбранный планом индекс отмечен нейтральным --viz-client (как выбранная строка таблиц), а не цветом оценки.
 const KIND_TEXT: Record<AccessKind, string> = {
   point: 'точечный поиск',
   range: 'диапазон',
@@ -84,7 +85,7 @@ const summary = computed(() => bars.value.map((b) => `${b.text}: ${formatRows(b.
 .indexes ul { margin: 0; padding: 0; list-style: none; font-size: 13px; }
 .indexes li { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 2px 4px; border-radius: 4px; overflow-wrap: anywhere; }
 .indexes li code { overflow-wrap: anywhere; }
-.indexes li.used { background: var(--viz-active-line-bg); box-shadow: inset 4px 0 0 var(--viz-active); padding-left: 10px; font-weight: 600; }
+.indexes li.used { box-shadow: inset 4px 0 0 var(--viz-client); padding-left: 10px; font-weight: 600; }
 .tag { font-size: 12px; color: var(--viz-text); }
 .counters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr)); gap: 8px; margin: 0 0 10px; }
 .counters div { min-width: 0; padding: 4px 10px; border: 2px solid var(--viz-edge); border-left-width: 8px; border-radius: 8px; }

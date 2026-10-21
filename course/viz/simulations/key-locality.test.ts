@@ -32,26 +32,44 @@ describe('key-locality: монотонные ключи', () => {
     for (const p of pages.slice(0, -1)) expect(p.keys.length).toBe(PAGE_CAPACITY * LEAF_FILLFACTOR)
   })
 
-  it('UUIDv7: шум внутри миллисекунды не ломает локальность — заполненность около fillfactor', () => {
-    const st = stats(loaded).uuidv7
-    expect(st.fill).toBeGreaterThan(0.85)
-    expect(st.splitsMiddle).toBeLessThanOrEqual(st.splitsRight / 10)
+  // Перемешанные в пределах миллисекунды ключи не выходят за правый лист: его нижняя граница старше
+  // текущей миллисекунды почти всегда, поэтому модель даёт ровно 0 разделений в середине, как у bigint.
+  it('UUIDv7: шум внутри миллисекунды не ломает локальность — разделения только справа', () => {
+    const st = stats(loaded)
+    expect(st.uuidv7.splitsMiddle).toBe(0)
+    expect(st.uuidv7.pages).toBe(st.bigint.pages)
+    expect(st.uuidv7.fill).toBeCloseTo(st.bigint.fill, 5)
   })
 
-  it('монотонные ключи держат горячими одну-две страницы', () => {
-    const st = stats(loaded)
-    expect(st.bigint.hotPages).toBeLessThanOrEqual(2)
-    expect(st.uuidv7.hotPages).toBeLessThanOrEqual(3)
+  it('монотонные ключи держат горячими ровно два листа — правый и только что отделённый; подпись говорит то же', () => {
+    for (const n of [100, 300, N, MAX_KEYS]) {
+      const s = run({ type: 'insert', count: n })
+      for (const kind of ['bigint', 'uuidv7'] as const) {
+        const hot = treeStats(s.trees[kind]).hotPages
+        expect(hot, `${kind} N=${n}`).toBe(2)
+        const text = captionText(sim.steps(sim.apply(s, { type: 'select', kind }))[0]!.caption)
+        expect(text).toContain(`Горячих страниц ${hot}: правый лист и только что отделённый`)
+      }
+    }
   })
 })
 
 describe('key-locality: случайные ключи', () => {
+  it('до первого разделения горячий лист один, и подпись это говорит', () => {
+    const s = run({ type: 'insert', count: 1 })
+    expect(treeStats(s.trees.bigint).hotPages).toBe(1)
+    expect(captionText(sim.steps(s)[0]!.caption)).toContain('Горячих страниц 1: единственный лист')
+  })
+
   it('UUIDv4: заполненность 0,5–0,75, разделения по всему дереву', () => {
     const st = stats(loaded).uuidv4
     expect(st.fill).toBeGreaterThan(0.5)
     expect(st.fill).toBeLessThan(0.75)
     expect(st.splitsMiddle).toBeGreaterThan(st.splitsRight)
-    expect(st.hotPages).toBeGreaterThan(HOT_WINDOW / 2)
+    // Почти каждая вставка — в свой лист: окно в HOT_WINDOW вставок трогает почти столько же разных листьев.
+    expect(st.hotPages).toBeGreaterThanOrEqual(HOT_WINDOW - 2)
+    const text = captionText(sim.steps(sim.apply(loaded, { type: 'select', kind: 'uuidv4' }))[0]!.caption)
+    expect(text).toContain(`за последние ${HOT_WINDOW} вставок тронуто ${st.hotPages} разных листьев из ${st.pages}`)
   })
 
   it('при одном N у UUIDv4 страниц больше, чем у UUIDv7', () => {

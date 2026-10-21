@@ -52,11 +52,11 @@ const changedCount = (o: Outcome): string => (o.rejected ? 'отказ' : `${o.c
           </thead>
           <tbody>
             <tr v-for="r in frame.flat" :key="r.messageId" :class="{ hit: changed('messages_flat', r.messageId), sel: r.authorId === frame.authorId }">
-              <td>{{ r.messageId }}</td>
+              <td>{{ r.messageId }}<span v-if="changed('messages_flat', r.messageId)" class="sr-only"> (изменена)</span></td>
               <td>{{ r.chatId }}</td>
               <td class="dup">{{ r.chatTitle }}</td>
               <td>{{ r.authorId }}</td>
-              <td :class="['dup', { conflict: bad.has(r.authorId) }]">{{ r.authorName }}<span v-if="bad.has(r.authorId)" class="mark" aria-label="противоречие"> ≠</span></td>
+              <td :class="['dup', { conflict: bad.has(r.authorId) }]">{{ r.authorName }}<span v-if="bad.has(r.authorId)" class="mark" aria-hidden="true"> ≠</span><span v-if="bad.has(r.authorId)" class="sr-only"> (противоречие)</span></td>
               <td class="txt">{{ r.text }}</td>
             </tr>
           </tbody>
@@ -74,7 +74,7 @@ const changedCount = (o: Outcome): string => (o.rejected ? 'отказ' : `${o.c
         <table>
           <thead><tr><th scope="col">id</th><th scope="col">имя</th></tr></thead>
           <tbody>
-            <tr v-for="u in frame.users" :key="u.id" :class="{ hit: changed('users', u.id), sel: u.id === frame.authorId }"><td>{{ u.id }}</td><td>{{ u.name }}</td></tr>
+            <tr v-for="u in frame.users" :key="u.id" :class="{ hit: changed('users', u.id), sel: u.id === frame.authorId }"><td>{{ u.id }}<span v-if="changed('users', u.id)" class="sr-only"> (изменена)</span></td><td>{{ u.name }}</td></tr>
           </tbody>
         </table>
       </figure>
@@ -93,7 +93,7 @@ const changedCount = (o: Outcome): string => (o.rejected ? 'отказ' : `${o.c
           <thead><tr><th scope="col">id</th><th scope="col">чат</th><th scope="col">автор</th><th scope="col">текст</th></tr></thead>
           <tbody>
             <tr v-for="m in frame.messages" :key="m.id" :class="{ hit: changed('messages', m.id), sel: m.authorId === frame.authorId }">
-              <td>{{ m.id }}</td>
+              <td>{{ m.id }}<span v-if="changed('messages', m.id)" class="sr-only"> (изменена)</span></td>
               <td :title="titleOf(m.chatId)">{{ m.chatId }}</td>
               <td>{{ m.authorId }}</td>
               <td class="txt">{{ m.text }}</td>
@@ -119,7 +119,8 @@ dd { margin: 0; font-size: 18px; font-weight: 700; font-variant-numeric: tabular
 figcaption { font-size: 13px; margin-bottom: 2px; color: var(--viz-muted); }
 /* .nf перед селекторами: перебить стили .vp-doc table (display: block, поля 8×16 px, зебра) и custom.css (min-width: 7rem у ячеек на узком экране). */
 .nf table { display: table; width: 100%; margin: 0; border-collapse: collapse; font-size: 13px; line-height: 1.35; border: 2px solid var(--viz-db); }
-.nf th, .nf td { min-width: 0; padding: 3px 4px; font-size: 13px; background: transparent; border-bottom: 1px solid var(--viz-edge); text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }.nf tr { background: transparent; border: 0; }
+.nf th, .nf td { min-width: 0; padding: 3px 4px; font-size: 13px; background: transparent; border-bottom: 1px solid var(--viz-edge); text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }
+.nf tr { background: transparent; border: 0; }
 .nf th { font-weight: 600; color: var(--viz-muted); }
 td.txt { overflow-wrap: anywhere; }
 td.dup { font-style: italic; }
@@ -128,6 +129,7 @@ tr.hit td { background: var(--viz-active-line-bg); }
 tr.hit td:first-child { box-shadow: inset 5px 0 0 var(--viz-active); }
 td.conflict { color: var(--viz-error); font-weight: 700; }
 .mark { font-style: normal; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .legend { margin: 0 0 6px; font-size: 12px; color: var(--viz-muted); }
 .missing { margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .missing li { padding: 4px 10px; margin: 0 0 4px; border: 2px dashed var(--viz-error); border-radius: 8px; }
