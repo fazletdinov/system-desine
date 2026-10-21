@@ -1,12 +1,17 @@
 #!/bin/bash
 # Миграции мессенджера вживую (урок 2.8): status и up на пустой базе, повторный up,
 # отказ сервера стартовать на устаревшей схеме, база новее бинаря, два migrate up
-# одновременно и сбой миграции посередине (lock_timeout) с откатом DDL.
+# одновременно и сбой миграции посередине (lock_timeout) с откатом DDL — настоящим goose
+# через настоящий messenger migrate up.
 #
 # Запуск из каталога messenger (нужны Docker, Go и jq):
 #   scripts/migrate-demo.sh > ../labs/2a/results/messenger-migrate.txt
 # Бинарь собирается из текущего кода, база — одноразовый контейнер с тем же образом,
-# что в compose.yaml; скрипт убирает его за собой.
+# что в compose.yaml; скрипт убирает его за собой. Для раздела 4 собирается ещё учебная
+# сборка с тегом migratedemo: та же подкоманда migrate, но миграции она читает из каталога
+# (cmd/messenger/migrate_source_demo.go), куда скрипт кладёт копию встроенных и условную
+# 00002 — в самом мессенджере её нет. Каждый исход, о котором говорит урок, скрипт
+# проверяет и падает с «ПРОВАЛ», если он не тот.
 set -euo pipefail
 export LC_ALL=C.UTF-8
 
@@ -32,7 +37,9 @@ echo "# образ базы: $pg_image"
 echo "# Воспроизвести: cd messenger && scripts/migrate-demo.sh > ../labs/2a/results/messenger-migrate.txt"
 echo
 
+started=$(date +%s)
 go build -o "$dir/messenger" ./cmd/messenger
+go build -tags migratedemo -o "$dir/messenger-demo" ./cmd/messenger
 go run ./cmd/keygen -out "$dir/jwt.pem" >/dev/null
 password=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
 
@@ -56,20 +63,24 @@ export MESSENGER_JWT_KEY_FILE=$dir/jwt.pem
 export MESSENGER_ADDR=127.0.0.1:18081
 export MESSENGER_DEBUG_ADDR=
 
-psql() { docker exec -i "$db" psql -X -q -U messenger "$@"; }
+psql() { docker exec -i "$db" psql -X -q -v ON_ERROR_STOP=1 -U messenger "$@"; }
 
-# run CMD... — команда бинаря: печатает её, stdout и stderr вместе и код выхода.
+# run WANT CMD... — команда бинаря: печатает её, stdout и stderr вместе и код выхода;
+# код выхода, отличный от WANT, — провал прогона.
 run() {
+	local want=$1 code=0
+	shift
 	echo "\$ messenger $*"
-	local code=0
 	"$dir/messenger" "$@" 2>&1 || code=$?
 	echo "код выхода: $code"
 	echo
+	[ "$code" = "$want" ] || fail "messenger $*: код выхода $code, ждали $want"
 }
 
-# serve — запуск сервера: если он поднялся (GET /readyz → 200), останавливаем SIGTERM;
+# serve WANT — запуск сервера: если он поднялся (GET /readyz → 200), останавливаем SIGTERM;
 # если вышел сам — печатаем его ошибку из журнала (JSON slog: поля msg и err).
 serve() {
+	local want=$1
 	echo "\$ messenger   # сервер"
 	"$dir/messenger" >"$dir/server.log" 2>&1 &
 	local pid=$! code=0 ready=""
@@ -89,29 +100,33 @@ serve() {
 	jq -r 'select(.level == "ERROR") | "\(.level) \(.msg): \(.err)"' "$dir/server.log"
 	echo "код выхода: $code"
 	echo
+	[ "$code" = "$want" ] || fail "сервер: код выхода $code, ждали $want"
 }
+
+# schema_version — версия схемы так, как её читает сервер (checkSchema).
+schema_version() { psql -d "$1" -tA -c 'SELECT coalesce(max(version_id), 0) FROM goose_db_version WHERE is_applied'; }
 
 echo "## 1. Пустая база: сервер без миграций, status, up, повторный up"
 use_db messenger
 # region refuse
-serve
-run migrate status
-run migrate up
-run migrate up
-run migrate status
+serve 1
+run 3 migrate status
+run 0 migrate up
+run 0 migrate up
+run 0 migrate status
 # endregion refuse
 echo "\$ psql -c 'SELECT id, version_id, is_applied FROM goose_db_version ORDER BY id'"
 psql -c 'SELECT id, version_id, is_applied FROM goose_db_version ORDER BY id'
 echo "\$ psql -c 'SELECT schemaname, count(*) AS tables FROM pg_tables …'"
 psql -c "SELECT schemaname, count(*) AS tables FROM pg_tables WHERE schemaname IN ('users', 'auth', 'chat', 'platform') GROUP BY 1 ORDER BY 1"
-serve
+serve 0
 
 echo "## 2. База новее бинаря: применена миграция 2, которой бинарь не знает"
 # Так выглядит база во время выкладки: migrate нового выпуска уже прошёл, а старые
 # экземпляры ещё работают. Строку версии кладём руками — миграции 2 в мессенджере нет.
 psql -c 'INSERT INTO goose_db_version (version_id, is_applied) VALUES (2, true)'
-run migrate status
-serve
+run 0 migrate status
+serve 0
 psql -c 'DELETE FROM goose_db_version WHERE version_id = 2'
 
 echo "## 3. Два migrate up одновременно на пустой базе"
@@ -133,6 +148,11 @@ timed b &
 wait
 # endregion race
 cat "$dir/a.log" "$dir/b.log"
+applied=$(cat "$dir/a.out" "$dir/b.out" | grep -c '^OK    up 00001_init.sql' || true)
+[ "$applied" = 1 ] || fail "из двух одновременных up миграцию применили $applied, ждали ровно 1"
+if ! grep -q 'код выхода 0' "$dir/a.log" || ! grep -q 'код выхода 0' "$dir/b.log"; then
+	fail "один из двух up завершился с ошибкой"
+fi
 psql -d race -c 'SELECT version_id, is_applied FROM goose_db_version ORDER BY id'
 
 echo "## 3б. migrate up, пока блокировку goose держит другой сеанс"
@@ -159,12 +179,39 @@ echo "через 1,5 с: таблица goose_db_version — $(exists goose_db_v
 wait "$waiter"
 wait "$holder"
 cat "$dir/c.log"
+grep -q '^OK    up 00001_init.sql' "$dir/c.out" || fail "up после чужой блокировки ничего не применил"
 echo
 
-echo "## 4. Сбой миграции посередине: lock_timeout и откат DDL"
-# Миграция — та же транзакция, которую goose открывает на файл: операторы файла, затем
-# запись версии, затем COMMIT. Здесь её операторы выполняет psql, чтобы показать сбой на
-# живой схеме мессенджера, не добавляя в него миграцию 00002.
+echo "## 4. Сбой миграции посередине: настоящий goose, lock_timeout и откат DDL"
+mig=$dir/migrations
+mkdir "$mig"
+cp migrations/*.sql "$mig/"
+# region migration-00002
+# Условная вторая миграция: история правок и столбец edited_at у сообщений. Первая
+# строка — lock_timeout: миграция лучше упадёт и будет повторена, чем остановит сервис.
+cat >"$mig/00002_message_edits.sql" <<'SQL'
+-- +goose Up
+SET LOCAL lock_timeout = '2s';
+CREATE TABLE chat.message_edits (message_id uuid NOT NULL, edited_at timestamptz NOT NULL);
+ALTER TABLE chat.messages ADD COLUMN edited_at timestamptz;
+
+-- +goose Down
+ALTER TABLE chat.messages DROP COLUMN edited_at;
+DROP TABLE chat.message_edits;
+SQL
+# endregion migration-00002
+use_db messenger
+# demo WANT CMD... — то же, что run, но учебной сборкой с миграциями из $mig.
+demo() {
+	local want=$1 code=0
+	shift
+	echo "\$ messenger $*   # учебная сборка: 00001_init.sql + 00002_message_edits.sql"
+	MESSENGER_DEMO_MIGRATIONS_DIR=$mig "$dir/messenger-demo" "$@" 2>&1 || code=$?
+	echo "код выхода: $code"
+	echo
+	[ "$code" = "$want" ] || fail "messenger $* (учебная сборка): код выхода $code, ждали $want"
+}
+demo 3 migrate status
 # region lock-holder
 # Долгий отчёт: обычный SELECT держит ACCESS SHARE на chat.messages до конца транзакции.
 psql -d messenger -c 'BEGIN' -c 'SELECT count(*) AS report FROM chat.messages' \
@@ -177,46 +224,45 @@ for _ in $(seq 1 50); do
 	sleep 0.1
 done
 [ "$held" != 0 ] || fail "отчёт не взял блокировку"
-echo "отчёт держит ACCESS SHARE на chat.messages"
-# region migration-tx
-migration_tx() {
-	docker exec -i "$db" psql -X -U messenger -d messenger -e <<'SQL'
-BEGIN;
-SET LOCAL lock_timeout = '2s';
-CREATE TABLE chat.message_edits (message_id uuid NOT NULL, edited_at timestamptz NOT NULL);
-ALTER TABLE chat.messages ADD COLUMN edited_at timestamptz;
-\echo SQLSTATE :SQLSTATE
-INSERT INTO goose_db_version (version_id, is_applied) VALUES (2, true);
-COMMIT;
-SQL
+echo "отчёт держит ACCESS SHARE на chat.messages; версия схемы: $(schema_version messenger)"
+echo
+# region reader
+# read_feed — чтение ленты одного чата: общее время с запуском docker exec и psql и время
+# самого запроса по \timing psql (от отправки запроса до ответа).
+read_feed() {
+	local start query
+	start=$(date +%s%N)
+	query=$(docker exec -i "$db" psql -X -q -U messenger -d messenger -c '\timing on' \
+		-c "SELECT count(*) FROM chat.messages WHERE chat_id = '00000000-0000-0000-0000-000000000001'" |
+		sed -n 's/^Time: \([0-9.]*\) ms.*/\1/p')
+	echo "$((($(date +%s%N) - start) / 1000000)) мс (сам запрос по timing psql — $query мс)"
 }
-# endregion migration-tx
-migration_tx >"$dir/tx.log" 2>&1 &
-tx=$!
+# endregion reader
+demo 1 migrate up >"$dir/up.log" &
+up=$!
 # Пока ALTER ждёт блокировку, приходит обычное чтение ленты — и встаёт в очередь за ним.
 sleep 0.5
-# region reader
-# read_feed — чтение ленты одного чата; печатает, сколько миллисекунд оно заняло.
-read_feed() {
-	local start
-	start=$(date +%s%N)
-	psql -d messenger -tA -c "SELECT count(*) FROM chat.messages WHERE chat_id = '00000000-0000-0000-0000-000000000001'" >/dev/null
-	echo $((($(date +%s%N) - start) / 1000000))
-}
 during=$(read_feed)
-# endregion reader
-wait "$tx" || true
-cat "$dir/tx.log"
-echo "чтение ленты, начатое через 0,5 с после ALTER: $during мс; то же чтение после отката: $(read_feed) мс"
+wait "$up" || fail "migrate up учебной сборки: код выхода не 1 (вывод: $(cat "$dir/up.log"))"
+cat "$dir/up.log"
+echo "чтение ленты, начатое через 0,5 с после migrate up: $during"
+echo "то же чтение после отката: $(read_feed)"
 echo
 echo "после сбоя:"
+# region after-failure
 psql -d messenger -c "SELECT to_regclass('chat.message_edits') AS edits_table,
 	(SELECT count(*) FROM information_schema.columns
 	  WHERE table_schema = 'chat' AND table_name = 'messages' AND column_name = 'edited_at') AS edited_at_columns,
 	(SELECT max(version_id) FROM goose_db_version WHERE is_applied) AS schema_version"
+# endregion after-failure
+[ "$(psql -d messenger -tA -c "SELECT to_regclass('chat.message_edits') IS NULL")" = t ] ||
+	fail "после сбоя осталась таблица chat.message_edits"
+[ "$(schema_version messenger)" = 1 ] || fail "после сбоя версия схемы не 1"
+demo 3 migrate status
 wait "$report"
-echo "отчёт закончился; повтор той же миграции:"
-migration_tx 2>&1
+echo "отчёт закончился; повтор того же migrate up, файл миграции не менялся:"
+demo 0 migrate up
+[ "$(schema_version messenger)" = 2 ] || fail "после повтора версия схемы не 2"
 psql -d messenger -c "SELECT to_regclass('chat.message_edits') AS edits_table,
 	(SELECT max(version_id) FROM goose_db_version WHERE is_applied) AS schema_version"
-echo "migrate-demo: отказ старта на пустой базе, up один раз, база новее бинаря допустима, из двух up сразу применяет один, up под чужой блокировкой ждёт, сбой откатывает DDL целиком"
+echo "migrate-demo: отказ старта на пустой базе, up один раз, база новее бинаря допустима, из двух up сразу применяет один, up под чужой блокировкой ждёт, сбой откатывает DDL целиком (весь прогон — $(($(date +%s) - started)) с)"

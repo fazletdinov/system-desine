@@ -83,7 +83,11 @@ func migrate(ctx context.Context, cmd string, out io.Writer) (err error) {
 	if err != nil {
 		return fmt.Errorf("блокировка: %w", err)
 	}
-	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS, goose.WithSessionLocker(locker))
+	src, err := migrationSource()
+	if err != nil {
+		return err
+	}
+	p, err := goose.NewProvider(goose.DialectPostgres, db, src, goose.WithSessionLocker(locker))
 	if err != nil {
 		return fmt.Errorf("goose: %w", err)
 	}

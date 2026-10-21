@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -14,12 +15,33 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pressly/goose/v3"
 
 	"messenger/internal/platform/pgtest"
 	"messenger/migrations"
 )
 
 func TestMain(m *testing.M) { os.Exit(pgtest.Start(m)) }
+
+// latestMigration — наибольшая версия среди встроенных миграций: до неё доводит up с
+// нуля. Не migrations.Required: Required может отставать от последней миграции (шаг
+// expand готовит схему для следующего выпуска, урок 2.8).
+func latestMigration(t *testing.T) int64 {
+	t.Helper()
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var latest int64
+	for _, name := range names {
+		v, err := goose.NumericComponent(name)
+		if err != nil {
+			t.Fatalf("миграция %s: %v", name, err)
+		}
+		latest = max(latest, v)
+	}
+	return latest
+}
 
 // setDatabaseURL кладёт строку подключения в файл и указывает на него переменной —
 // так же, как compose передаёт секрет db_url.
@@ -91,7 +113,7 @@ func TestMigrateUpFromScratch(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("up: код %d, stderr %s", code, errOut)
 	}
-	mustContain(t, out, "OK    up 00001_init.sql", fmt.Sprintf("версия схемы: %d", migrations.Required))
+	mustContain(t, out, "OK    up 00001_init.sql", fmt.Sprintf("версия схемы: %d", latestMigration(t)))
 
 	code, out, errOut = migrateCmd(t, "status")
 	if code != 0 {
@@ -139,7 +161,7 @@ func TestMigrateIdempotent(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("второй up: код %d, stderr %s", code, errOut)
 	}
-	mustContain(t, out, "применять нечего", fmt.Sprintf("версия схемы: %d", migrations.Required))
+	mustContain(t, out, "применять нечего", fmt.Sprintf("версия схемы: %d", latestMigration(t)))
 	if strings.Contains(out, "OK ") {
 		t.Fatalf("второй up что-то применил:\n%s", out)
 	}
@@ -152,11 +174,13 @@ func TestStartRefusesOutdatedSchema(t *testing.T) {
 		wantErr string // "" — сервер стартует
 	}{
 		{"схема актуальна", "", ""},
+		// Номера миграций идут подряд, поэтому без версий от Required и выше в базе
+		// остаётся Required − 1.
 		{"миграция не применена", fmt.Sprintf("DELETE FROM goose_db_version WHERE version_id >= %d", migrations.Required),
-			fmt.Sprintf("версия схемы 0, бинарю нужна %d — примените миграции", migrations.Required)},
+			fmt.Sprintf("версия схемы %d, бинарю нужна %d — примените миграции", migrations.Required-1, migrations.Required)},
 		{"миграции не применялись", "DROP TABLE goose_db_version",
 			fmt.Sprintf("версия схемы 0, бинарю нужна %d — примените миграции", migrations.Required)},
-		{"база новее бинаря", fmt.Sprintf("INSERT INTO goose_db_version (version_id, is_applied) VALUES (%d, true)", migrations.Required+1), ""},
+		{"база новее бинаря", fmt.Sprintf("INSERT INTO goose_db_version (version_id, is_applied) VALUES (%d, true)", latestMigration(t)+1), ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
