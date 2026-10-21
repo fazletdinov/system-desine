@@ -7,7 +7,7 @@ import type { Step } from '../core/types'
 
 export type RaceVariant = 'code-check' | 'unique'
 export type InstanceId = 'A' | 'B'
-export type InstanceState = 'idle' | 'running' | 'waiting' | 'done' | 'failed'
+export type InstanceState = 'running' | 'waiting' | 'done' | 'failed'
 
 export interface RaceInstance {
   id: InstanceId
@@ -151,9 +151,13 @@ const UNIQUE: readonly Step<RaceFrame>[] = [
     caption: `Postgres-адаптер user переводит ошибку драйвера в доменную: errors.As достаёт *pgconn.PgError, и если Code = "${UNIQUE_VIOLATION}", а ConstraintName = "${CONSTRAINT}", возвращается user/domain.ErrUsernameTaken. Текст сообщения не разбирают: он зависит от языка сервера (lc_messages) и версии. Имя ограничения проверяют, потому что 23505 бывает и у других уникальных ключей таблицы, а «повтор id» — уже ошибка сервера, а не «имя занято».`,
   },
   {
+    state: uq(A_DONE, B_FAILED, [row(ROW_A, 'A')], { actor: 'B', sqlstate: UNIQUE_VIOLATION, chain: 2 }),
+    caption: 'Дальше ошибка идёт по уже знакомой с модуля 1 цепочке. Контекст auth не импортирует домен user: мост userbridge переводит user/domain.ErrUsernameTaken в собственную ошибку auth — auth/domain.ErrUsernameTaken.',
+  },
+  {
     state: uq(A_DONE, B_409, [row(ROW_A, 'A')], { actor: 'B', sqlstate: UNIQUE_VIOLATION, chain: 3 }),
     caption: [
-      { text: 'Дальше ошибка идёт по уже знакомой с модуля 1 цепочке: мост userbridge переводит её в auth/domain.ErrUsernameTaken, HTTP-адаптер — в ' },
+      { text: 'HTTP-адаптер auth переводит её в ' },
       PROBLEM,
       { text: ' с кодом username_taken и статусом 409 Conflict. Use case не изменился ни строкой: он и раньше ждал ErrUsernameTaken от порта.' },
     ],

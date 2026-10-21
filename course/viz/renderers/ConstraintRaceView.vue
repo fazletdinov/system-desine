@@ -8,7 +8,6 @@ const props = defineProps<{ state: RaceFrame }>()
 // --viz-response ответил 2xx, --viz-error получил ошибку); фон — кто действует на этом шаге;
 // рамка таблицы — --viz-db; строки-дубликаты и пройденные звенья ошибки — --viz-error.
 const STATE_TEXT: Record<InstanceState, string> = {
-  idle: 'ждёт запроса',
   running: '● выполняет запрос',
   waiting: '◐ ждёт исхода чужой транзакции',
   done: '✓ ответил',

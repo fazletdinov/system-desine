@@ -94,14 +94,14 @@ const FIRST: readonly Step<MigFrame>[] = [
   {
     state: { ...base('first', 1), files: [file(1, F_INIT, 'pending')], tx: null, versions: null, tables: [], migrate: 'running', server: 'blocked', log: '$ messenger migrate up' },
     caption: [
-      { text: 'Пустая база, первый запуск compose. Сервер messenger не стартует сам: он ждёт сервис migrate (condition: service_completed_successfully). Тот выполняет подкоманду messenger migrate up: goose открывает *sql.DB через pgx/v5/stdlib на одно соединение и читает встроенные в бинарь файлы. ' },
+      { text: 'Пустая база, первый запуск compose. Сервер messenger не стартует сам: он ждёт сервис migrate (condition: service_completed_successfully). Тот выполняет подкоманду messenger migrate up: она открывает *sql.DB через pgx/v5/stdlib на одно соединение и передаёт его goose вместе со встроенными в бинарь файлами. ' },
       MIGRATION,
       { text: ' 00001_init.sql ещё не применена.' },
     ],
   },
   {
     state: { ...base('first', 1), files: [file(1, F_INIT, 'pending')], tx: null, versions: [V0], tables: [], migrate: 'running', server: 'blocked', log: `создана таблица ${VERSION_TABLE}` },
-    caption: `Таблицы версий нет — goose создаёт ${VERSION_TABLE} и кладёт в неё строку с версией 0. Дальше эта таблица — единственный источник правды о том, какие миграции применены: goose сравнивает её с файлами и применяет недостающие по порядку номеров.`,
+    caption: `Таблицы версий нет — goose создаёт ${VERSION_TABLE} и кладёт в неё строку с версией 0. Дальше эта таблица — единственный источник правды о том, какие миграции применены: goose сравнивает её с файлами и применяет миграции с версиями выше текущей, по порядку номеров. Пропуск в середине (файл с номером ниже уже применённого, out-of-order) goose по умолчанию отвергает.`,
   },
   {
     state: { ...base('first', 1), files: [file(1, F_INIT, 'running')], tx: { version: 1, state: 'open', stmts: stmts(INIT_STMTS, 'done') }, versions: [V0], tables: tables([], INIT_TABLES), migrate: 'running', server: 'blocked', log: `применяется ${F_INIT}` },

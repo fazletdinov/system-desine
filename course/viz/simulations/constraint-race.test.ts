@@ -67,3 +67,9 @@ it('подписи: термины из глоссария, constraint и transa
   }
   expect(constraintRaceScenario('unique').flatMap((s) => captionTermIds(s.caption))).toContain('transaction')
 })
+
+it('цепочка ошибки проходит каждое звено по одному, без пропусков', () => {
+  const chain = frames('unique').map((x) => x.chain)
+  chain.forEach((c, i) => i > 0 && expect(c - chain[i - 1]!).toBeLessThanOrEqual(1))
+  for (let k = 0; k < ERROR_CHAIN.length; k++) expect(chain).toContain(k)
+})
