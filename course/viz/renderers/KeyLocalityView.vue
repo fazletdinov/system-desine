@@ -111,9 +111,12 @@ svg { display: block; width: 100%; height: auto; }
 .kl .cmp { display: table; width: 100%; margin: 0; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .cmp caption { text-align: left; font-size: 14px; margin-bottom: 2px; }
 .kl .cmp tr { background: transparent; border: 0; }
-.kl .cmp th, .kl .cmp td { min-width: 0; padding: 3px 4px; font-size: 13px; background: transparent; border-bottom: 1px solid var(--viz-edge); text-align: right; }
+.kl .cmp th, .kl .cmp td { min-width: 0; padding: 3px 3px; font-size: 13px; background: transparent; border-bottom: 1px solid var(--viz-edge); text-align: right; }
 .cmp th:first-child, .cmp thead th:first-child { text-align: left; }
 .cmp thead th { font-weight: 600; color: var(--viz-muted); }
-.cmp tr.on th[scope='row'] { box-shadow: inset 4px 0 0 var(--viz-client); padding-left: 8px; }
+/* Отступ под полосу выбора — у всех строк: иначе выбор UUIDv4/UUIDv7 расширял первый столбец,
+   и на 375 px таблица вылезала за рамку на 4 px. */
+.cmp th[scope='row'] { padding-left: 8px; }
+.cmp tr.on th[scope='row'] { box-shadow: inset 4px 0 0 var(--viz-client); }
 .cmp td.bad { color: var(--viz-error); font-weight: 700; }
 </style>

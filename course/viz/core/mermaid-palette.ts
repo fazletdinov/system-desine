@@ -50,6 +50,11 @@ const THEME_VARIABLES: Record<ThemeName, Record<string, string>> = {
     clusterBkg: '#0f172a',
     clusterBorder: '#1e293b',
     edgeLabelBackground: '#0b1220',
+    // Строки атрибутов ER-диаграммы. Без них тема base (она не знает, что фон тёмный) красит
+    // нечётные строки почти белым, а текст у классов палитры светлый — контраст около 1,2:1.
+    // Чётные строки у сущности с классом берут заливку класса, эти цвета — для остальных.
+    rowOdd: '#111b2e',
+    rowEven: '#0f172a',
     fontFamily: "'Inter Variable', Inter, sans-serif",
   },
   light: {
@@ -64,8 +69,15 @@ const THEME_VARIABLES: Record<ThemeName, Record<string, string>> = {
     clusterBkg: '#f8fafc',
     clusterBorder: '#e2e8f0',
     edgeLabelBackground: '#ffffff',
+    rowOdd: '#ffffff',
+    rowEven: '#f8fafc',
     fontFamily: "'Inter Variable', Inter, sans-serif",
   },
+}
+
+// Цвета текста классов — для проверки контраста со строками ER-диаграммы в тестах.
+export function classTextColors(theme: ThemeName): string[] {
+  return MERMAID_CLASSES.map((name) => CLASS_STYLES[theme][name].color)
 }
 
 export function mermaidThemeVariables(theme: ThemeName): Record<string, string> {
