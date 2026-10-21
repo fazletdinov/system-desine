@@ -126,6 +126,7 @@ func (uc *SendMessage) post(ctx context.Context, out outgoing) (domain.Message, 
 	return msg, err
 }
 
+// #region send-saved
 // saved отвечает на повтор: сообщение с этим ключом уже сохранено. Читаем его после
 // отката попытки, вне её транзакции: в Postgres нарушение уникальности обрывает
 // транзакцию, и до ROLLBACK в ней не выполнится ни один запрос. Тот же ключ и тот же
@@ -141,5 +142,7 @@ func (uc *SendMessage) saved(ctx context.Context, out outgoing) (SendMessageResu
 	}
 	return SendMessageResult{Message: existing}, nil
 }
+
+// #endregion send-saved
 
 // #endregion send-execute

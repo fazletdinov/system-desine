@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// #region is-unique-violation
 // uniqueViolation — SQLSTATE unique_violation: нарушены UNIQUE или PRIMARY KEY.
 const uniqueViolation = "23505"
 
@@ -16,3 +17,5 @@ func IsUniqueViolation(err error, constraint string) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == constraint
 }
+
+// #endregion is-unique-violation

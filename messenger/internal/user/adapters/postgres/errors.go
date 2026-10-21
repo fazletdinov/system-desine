@@ -7,6 +7,7 @@ import (
 	"messenger/internal/user/domain"
 )
 
+// #region create-user-error
 // usernameKey — UNIQUE (username) из миграции 00001_init.sql. Имя ограничения — часть
 // контракта схемы: по нему нарушение уникальности становится «имя занято».
 const usernameKey = "users_username_key"
@@ -19,3 +20,5 @@ func createUserError(err error) error {
 	}
 	return fmt.Errorf("postgres: сохранение пользователя: %w", err)
 }
+
+// #endregion create-user-error

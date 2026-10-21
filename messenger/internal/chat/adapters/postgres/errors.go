@@ -7,6 +7,7 @@ import (
 	"messenger/internal/platform/pgerr"
 )
 
+// #region chat-errors
 // Имена ограничений из миграции 00001_init.sql — часть контракта схемы: по ним
 // нарушение уникальности становится доменной ошибкой.
 const (
@@ -36,3 +37,5 @@ func appendMessageError(err error) error {
 	}
 	return fmt.Errorf("postgres: сохранение сообщения: %w", err)
 }
+
+// #endregion chat-errors
