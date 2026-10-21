@@ -82,6 +82,10 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: messenger
+      # Демонстрация упавшей миграции (урок 2.8) собирается только с тегом migratedemo:
+      # без этого шага ни линтер, ни тесты её не компилируют, и она тихо сгниёт.
+      - run: go vet -tags migratedemo ./cmd/...
+        working-directory: messenger
 
   messenger-test:
     needs: changes

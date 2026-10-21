@@ -60,6 +60,8 @@ if (unformatted !== '') {
 }
 const generated = checkGenerated()
 run('go', ['vet', './...'])
+// Файлы с тегом migratedemo (демонстрация упавшей миграции, урок 2.8) обычный vet не видит.
+run('go', ['vet', '-tags', 'migratedemo', './cmd/...'])
 run('golangci-lint', ['run', './...'], 300_000)
 run('go', ['test', '-race', './...'], 600_000)
 const refs = checkSnippetRefs()
