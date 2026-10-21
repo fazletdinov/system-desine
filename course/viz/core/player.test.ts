@@ -68,4 +68,10 @@ describe('keyToAction', () => {
   ])('%j на %j → %j', (key, target, expected) => {
     expect(keyToAction(key, target)).toEqual(expected)
   })
+  it.each(['altKey', 'ctrlKey', 'metaKey'] as const)('стрелки, пробел и Home/End с %s не перехватываются', (modifier) => {
+    for (const key of ['ArrowRight', 'ArrowLeft', ' ', 'Home', 'End']) expect(keyToAction(key, div, { [modifier]: true })).toBeNull()
+  })
+  it('Shift не мешает: Shift+→ — тот же шаг вперёд', () => {
+    expect(keyToAction('ArrowRight', div, { altKey: false, ctrlKey: false, metaKey: false })).toEqual({ type: 'next' })
+  })
 })
