@@ -1,0 +1,125 @@
+# Миграции мессенджера: status, up, отказ старта, два up сразу, сбой посередине (урок 2.8)
+# 2026-10-21T15:23Z, go1.27.2, Docker 29.9.1, Linux 7.0.0-38-generic
+# образ базы: postgres:18.6-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+# Воспроизвести: cd messenger && scripts/migrate-demo.sh > ../labs/2a/results/messenger-migrate.txt
+
+## 1. Пустая база: сервер без миграций, status, up, повторный up
+$ messenger   # сервер
+ERROR сервер завершился с ошибкой: сборка: версия схемы 0, бинарю нужна 1 — примените миграции: messenger migrate up
+код выхода: 1
+
+$ messenger migrate status
+ожидает     00001_init.sql
+версия схемы: 0, ожидают применения: 1
+миграции: есть неприменённые миграции — messenger migrate up
+код выхода: 3
+
+$ messenger migrate up
+OK    up 00001_init.sql (12.47ms)
+версия схемы: 1
+код выхода: 0
+
+$ messenger migrate up
+применять нечего
+версия схемы: 1
+код выхода: 0
+
+$ messenger migrate status
+применена   00001_init.sql  2026-10-21 15:23:53
+версия схемы: 1, ожидают применения: 0
+код выхода: 0
+
+$ psql -c 'SELECT id, version_id, is_applied FROM goose_db_version ORDER BY id'
+ id | version_id | is_applied 
+----+------------+------------
+  1 |          0 | t
+  2 |          1 | t
+(2 rows)
+
+$ psql -c 'SELECT schemaname, count(*) AS tables FROM pg_tables …'
+ schemaname | tables 
+------------+--------
+ auth       |      1
+ chat       |      3
+ platform   |      1
+ users      |      1
+(4 rows)
+
+$ messenger   # сервер
+GET /readyz → 200
+код выхода: 0
+
+## 2. База новее бинаря: применена миграция 2, которой бинарь не знает
+$ messenger migrate status
+применена   00001_init.sql  2026-10-21 15:23:53
+версия схемы: 2, ожидают применения: 0
+база новее бинаря: его последняя миграция — 1
+код выхода: 0
+
+$ messenger   # сервер
+GET /readyz → 200
+код выхода: 0
+
+## 3. Два migrate up одновременно на пустой базе
+--- процесс a: код выхода 0, 1023 мс
+применять нечего
+версия схемы: 1
+--- процесс b: код выхода 0, 22 мс
+OK    up 00001_init.sql (8.95ms)
+версия схемы: 1
+ version_id | is_applied 
+------------+------------
+          0 | t
+          1 | t
+(2 rows)
+
+## 3б. migrate up, пока блокировку goose держит другой сеанс
+другой сеанс держит блокировку goose 4097083626
+через 1,5 с: таблица goose_db_version — есть, users.users — нет
+--- процесс c: код выхода 0, 5045 мс
+OK    up 00001_init.sql (24.9ms)
+версия схемы: 1
+
+## 4. Сбой миграции посередине: lock_timeout и откат DDL
+отчёт держит ACCESS SHARE на chat.messages
+BEGIN;
+BEGIN
+SET LOCAL lock_timeout = '2s';
+SET
+CREATE TABLE chat.message_edits (message_id uuid NOT NULL, edited_at timestamptz NOT NULL);
+CREATE TABLE
+ALTER TABLE chat.messages ADD COLUMN edited_at timestamptz;
+ERROR:  canceling statement due to lock timeout
+SQLSTATE 55P03
+INSERT INTO goose_db_version (version_id, is_applied) VALUES (2, true);
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+COMMIT;
+ROLLBACK
+чтение ленты, начатое через 0,5 с после ALTER: 1549 мс; то же чтение после отката: 60 мс
+
+после сбоя:
+ edits_table | edited_at_columns | schema_version 
+-------------+-------------------+----------------
+             |                 0 |              1
+(1 row)
+
+отчёт закончился; повтор той же миграции:
+BEGIN;
+BEGIN
+SET LOCAL lock_timeout = '2s';
+SET
+CREATE TABLE chat.message_edits (message_id uuid NOT NULL, edited_at timestamptz NOT NULL);
+CREATE TABLE
+ALTER TABLE chat.messages ADD COLUMN edited_at timestamptz;
+ALTER TABLE
+SQLSTATE 00000
+INSERT INTO goose_db_version (version_id, is_applied) VALUES (2, true);
+INSERT 0 1
+COMMIT;
+COMMIT
+    edits_table     | schema_version 
+--------------------+----------------
+ chat.message_edits |              2
+(1 row)
+
+migrate-demo: отказ старта на пустой базе, up один раз, база новее бинаря допустима, из двух up сразу применяет один, up под чужой блокировкой ждёт, сбой откатывает DDL целиком

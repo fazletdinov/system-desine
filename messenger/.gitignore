@@ -4,5 +4,6 @@
 *.out
 *.pem
 .smoke-*
+.migrate-demo-*
 # Секреты compose: пароль базы и строка подключения (README, раздел «В Docker»).
 /secrets/

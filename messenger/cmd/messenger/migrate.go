@@ -95,6 +95,7 @@ func migrate(ctx context.Context, cmd string, out io.Writer) (err error) {
 
 // #endregion run-migrate
 
+// #region open-migration-db
 // openMigrationDB — единственный продакшен-путь через database/sql: goose принимает
 // *sql.DB. Драйвер — pgx через stdlib, тот же, что у пула сервера. Одно соединение:
 // goose и так работает на одном (на нём же держит блокировку), а лишние ему не нужны.
@@ -112,6 +113,8 @@ func openMigrationDB(dsn string) (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 	return db, nil
 }
+
+// #endregion open-migration-db
 
 func migrateUp(ctx context.Context, p *goose.Provider, out io.Writer) error {
 	results, err := p.Up(ctx)
