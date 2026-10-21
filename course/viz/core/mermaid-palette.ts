@@ -77,12 +77,13 @@ function classDef(name: MermaidClass, s: ClassStyle): string {
   return `  classDef ${name} fill:${s.fill},stroke:${s.stroke},color:${s.color},stroke-width:2px${dash}`
 }
 
-const FLOWCHART_HEADER = /^\s*(flowchart|graph)\b/
+// Классы палитры понимают блок-схемы и ER-диаграммы (с mermaid 11: classDef и `:::` у сущностей).
+const CLASSED_HEADER = /^\s*(flowchart|graph|erDiagram)\b/
 
 export function withPaletteClasses(code: string, theme: ThemeName): string {
   const lines = code.split('\n')
   const header = lines.findIndex((line) => line.trim() !== '')
-  if (header === -1 || !FLOWCHART_HEADER.test(lines[header] ?? '')) return code
+  if (header === -1 || !CLASSED_HEADER.test(lines[header] ?? '')) return code
   const defs = MERMAID_CLASSES.map((name) => classDef(name, CLASS_STYLES[theme][name]))
   return [...lines.slice(0, header + 1), ...defs, ...lines.slice(header + 1)].join('\n')
 }

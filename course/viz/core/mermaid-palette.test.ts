@@ -14,6 +14,13 @@ describe('withPaletteClasses', () => {
     expect(out.findIndex((l) => l.startsWith('graph TB'))).toBeLessThan(out.findIndex((l) => l.includes('classDef client')))
   })
 
+  it('добавляет classDef и в ER-диаграмму', () => {
+    const out = withPaletteClasses('erDiagram\n  u ||--o{ m : ""', 'light').split('\n')
+    expect(out[0]).toBe('erDiagram')
+    for (const name of MERMAID_CLASSES) expect(out.some((l) => l.trim().startsWith(`classDef ${name} `))).toBe(true)
+    expect(out.at(-1)).toBe('  u ||--o{ m : ""')
+  })
+
   it('не трогает другие типы диаграмм', () => {
     const seq = 'sequenceDiagram\n  A->>B: hi'
     expect(withPaletteClasses(seq, 'dark')).toBe(seq)
