@@ -45,7 +45,9 @@ func invalid(field, reason string) error {
 
 // #region duplicate
 // DuplicateMessageError — хранилище уже видело этот client_message_id от этого автора
-// в этом чате. Existing — сохранённое тогда сообщение: use case вернёт его клиенту.
+// в этом чате. Existing — сохранённое тогда сообщение, если хранилище может его
+// приложить (в памяти — может). Postgres не может: нарушение уникальности прерывает
+// транзакцию, поэтому use case читает сохранённое отдельно, через свой порт поиска.
 type DuplicateMessageError struct {
 	Existing Message
 }

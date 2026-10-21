@@ -191,7 +191,7 @@ func TestSignUpOrder(t *testing.T) {
 		}
 	})
 
-	t.Run("сохранение упало — ошибка называет созданный профиль", func(t *testing.T) {
+	t.Run("сохранение упало — ошибка называет профиль, чья регистрация откатывается", func(t *testing.T) {
 		t.Parallel()
 		prof := newProfiles()
 		saver := &countingSaver{CredentialsSaver: memory.NewStore(), failErr: errBoom}
@@ -207,7 +207,8 @@ func TestSignUpOrder(t *testing.T) {
 		if lookupErr != nil {
 			t.Fatal(lookupErr)
 		}
-		// Оператору по журналу нужно найти профиль без пароля (окно ADR-0004).
+		// По журналу оператор видит, какой профиль откатился вместе с регистрацией.
+		// memory.Tx не откатывает, поэтому профиль здесь остаётся и его id можно найти.
 		if !strings.Contains(err.Error(), id.String()) {
 			t.Fatalf("в ошибке нет id профиля %s: %v", id, err)
 		}

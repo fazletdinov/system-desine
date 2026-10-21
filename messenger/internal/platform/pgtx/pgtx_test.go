@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"runtime"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"messenger/internal/platform/pgtest"
@@ -36,6 +38,28 @@ func usersNamed(t *testing.T, pool *pgxpool.Pool, username string) int {
 func newTransactor(t *testing.T) (*pgtx.Transactor, *pgxpool.Pool) {
 	t.Helper()
 	pool := pgtest.Pool(t)
+	tr, err := pgtx.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tr, pool
+}
+
+// newLeakTolerantTransactor — для тестов, проверяющих, что соединение вернулось в пул.
+// Пул свой: если откат не случится, соединение останется занятым, и pool.Close в
+// очистке pgtest ждал бы его вечно — тест завис бы вместо понятного провала. Утёкшее
+// соединение оборвёт Restore следующего теста (DROP DATABASE … WITH (FORCE)).
+func newLeakTolerantTransactor(t *testing.T) (*pgtx.Transactor, *pgxpool.Pool) {
+	t.Helper()
+	pool, err := pgxpool.New(t.Context(), pgtest.Pool(t).Config().ConnString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if pool.Stat().AcquiredConns() == 0 {
+			pool.Close()
+		}
+	})
 	tr, err := pgtx.New(pool)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +112,7 @@ func TestWithinTxRollsBackOnError(t *testing.T) {
 }
 
 func TestWithinTxRollsBackOnPanic(t *testing.T) {
-	tr, pool := newTransactor(t)
+	tr, pool := newLeakTolerantTransactor(t)
 	type boom struct{}
 	func() {
 		defer func() {
@@ -167,6 +191,86 @@ func TestNestedWithinTxReusesOuter(t *testing.T) {
 	}
 	if n := usersNamed(t, pool, "alice"); n != 0 {
 		t.Fatalf("откат внешней не откатил вложенную запись: строк %d", n)
+	}
+}
+
+// runtime.Goexit (так завершает горутину t.Fatal) — не ошибка и не паника, но
+// транзакция всё равно откатывается, и соединение возвращается в пул.
+func TestWithinTxRollsBackOnGoexit(t *testing.T) {
+	tr, pool := newLeakTolerantTransactor(t)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = tr.WithinTx(t.Context(), func(ctx context.Context) error {
+			if err := insertUser(ctx, pgtx.Q(ctx, pool), "alice"); err != nil {
+				t.Error(err)
+			}
+			runtime.Goexit()
+			return nil
+		})
+		t.Error("WithinTx вернулся после runtime.Goexit")
+	}()
+	<-done
+	if n := pool.Stat().AcquiredConns(); n != 0 {
+		t.Fatalf("после Goexit занято соединений: %d — транзакция не вернула его в пул", n)
+	}
+	if n := usersNamed(t, pool, "alice"); n != 0 {
+		t.Fatalf("после Goexit строк %d, ждали откат", n)
+	}
+}
+
+// Ошибка вложенного вызова, возвращённая из внешнего fn, откатывает всю транзакцию:
+// и запись вложенного шага, и то, что внешний успел сделать до него.
+func TestNestedWithinTxErrorRollsBackOuter(t *testing.T) {
+	tr, pool := newTransactor(t)
+	errBoom := errors.New("бум")
+	err := tr.WithinTx(t.Context(), func(ctx context.Context) error {
+		if err := insertUser(ctx, pgtx.Q(ctx, pool), "outer"); err != nil {
+			return err
+		}
+		return tr.WithinTx(ctx, func(ctx context.Context) error {
+			if err := insertUser(ctx, pgtx.Q(ctx, pool), "inner"); err != nil {
+				return err
+			}
+			return errBoom
+		})
+	})
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("ждали ошибку вложенного fn, получили %v", err)
+	}
+	if n := usersNamed(t, pool, "outer") + usersNamed(t, pool, "inner"); n != 0 {
+		t.Fatalf("строк %d, ждали откат всей транзакции", n)
+	}
+}
+
+// Почему ошибку вложенного вызова нельзя проглатывать: после ошибки Postgres транзакция
+// прервана, и следующая команда получает 25P02, а не выполняется.
+func TestSwallowedNestedPgErrorLeavesTxAborted(t *testing.T) {
+	tr, pool := newTransactor(t)
+	err := tr.WithinTx(t.Context(), func(ctx context.Context) error {
+		if err := insertUser(ctx, pgtx.Q(ctx, pool), "alice"); err != nil {
+			return err
+		}
+		nestedErr := tr.WithinTx(ctx, func(ctx context.Context) error {
+			return insertUser(ctx, pgtx.Q(ctx, pool), "alice") // нарушение UNIQUE (username)
+		})
+		var pgErr *pgconn.PgError
+		if !errors.As(nestedErr, &pgErr) || pgErr.Code != "23505" {
+			t.Errorf("вложенный вызов: ждали 23505, получили %v", nestedErr)
+		}
+		// Ошибку «проглотили» и пишем дальше — сервер отказывает.
+		err := insertUser(ctx, pgtx.Q(ctx, pool), "bob")
+		if !errors.As(err, &pgErr) || pgErr.Code != "25P02" {
+			t.Errorf("после проглоченной ошибки ждали 25P02, получили %v", err)
+		}
+		return nil
+	})
+	// COMMIT прерванной транзакции — это откат: pgx сообщает об этом ошибкой.
+	if err == nil {
+		t.Fatal("ждали ошибку фиксации прерванной транзакции")
+	}
+	if n := usersNamed(t, pool, "alice"); n != 0 {
+		t.Fatalf("строк %d, ждали откат", n)
 	}
 }
 

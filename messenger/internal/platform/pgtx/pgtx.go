@@ -52,7 +52,7 @@ func New(pool *pgxpool.Pool) (*Transactor, error) {
 
 // #region within-tx
 // WithinTx выполняет fn в одной транзакции: ошибка fn — откат, паника в fn — откат и
-// та же паника дальше. Ошибку fn возвращает как есть: вызывающий проверяет её через
+// та же паника дальше, runtime.Goexit в fn — тоже откат. Ошибку fn возвращает как есть: вызывающий проверяет её через
 // errors.Is/As так же, как без транзакции. Если ctx уже несёт транзакцию, fn
 // выполняется в ней (см. doc.go: вложенный вызов без SAVEPOINT).
 func (t *Transactor) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
@@ -63,15 +63,24 @@ func (t *Transactor) WithinTx(ctx context.Context, fn func(ctx context.Context) 
 	if err != nil {
 		return fmt.Errorf("pgtx: начало транзакции: %w", err)
 	}
-	// Паника не должна оставить соединение в транзакции: откатываем и паникуем дальше —
+	// finished — fn вернулся обычным путём, и транзакцию закроет код ниже. Иначе fn
+	// ушёл паникой или runtime.Goexit (t.Fatal в тесте), и откатывает defer: соединение
+	// не должно остаться в транзакции и пропасть для пула. Панику передаём дальше —
 	// решать, что с ней делать, не нам (middleware.Recover ответит 500).
+	finished := false
 	defer func() {
-		if p := recover(); p != nil {
-			_ = rollback(ctx, tx) // паника важнее ошибки отката
+		if finished {
+			return
+		}
+		p := recover()
+		_ = rollback(ctx, tx) // паника важнее ошибки отката; при Goexit ошибку некому вернуть
+		if p != nil {
 			panic(p)
 		}
 	}()
-	if err := fn(context.WithValue(ctx, txKey{}, tx)); err != nil {
+	err = fn(context.WithValue(ctx, txKey{}, tx))
+	finished = true
+	if err != nil {
 		if rbErr := rollback(ctx, tx); rbErr != nil {
 			return errors.Join(err, rbErr)
 		}
