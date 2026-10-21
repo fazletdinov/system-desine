@@ -163,7 +163,7 @@ AIP-158 разрешает токенам страниц истекать (ка�
 
 <<< @/../messenger/internal/chat/usecase/ports.go#ports{go}
 
-(Комментарий о повторе `client_message_id` у `AppendMessage` во фрагменте — из урока 1.12, в нынешнем виде из урока [2.9](../02-database/09-postgres-adapter): хранилище отвечает только `ErrDuplicateMessage`, а сохранённое сообщение use case читает через `MessageByClientIDFinder`.) Здесь же новый порт `ChatLister` и ключ `ChatPosition` — пара «время, id» из раздела о строгом порядке. Реализация истории в памяти:
+(Комментарий о повторе `client_message_id` у `AppendMessage` во фрагменте — из урока 1.12, в нынешнем виде из урока [2.9](../02-database/09-postgres-adapter): use case опирается только на `errors.Is(err, ErrDuplicateMessage)`, а сохранённое сообщение читает через `MessageByClientIDFinder`.) Здесь же новый порт `ChatLister` и ключ `ChatPosition` — пара «время, id» из раздела о строгом порядке. Реализация истории в памяти:
 
 <<< @/../messenger/internal/chat/adapters/memory/store.go#list-before{go}
 
