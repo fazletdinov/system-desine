@@ -327,7 +327,7 @@ func tickerLoop(ctx context.Context, every time.Duration, work func(context.Cont
 
 ### Узкий порт Sweeper
 
-Хранилище ключей идемпотентности из урока 1.12 реализует порт `idempotency.Store` с методами `Reserve`, `Complete` и `Release`. Им пользуется middleware. Очистку можно было бы добавить четвёртым методом туда же. Но middleware очистка не нужна, а Postgres-адаптер в модуле 2a, возможно, будет чистить базу по-другому. Поэтому очистка — отдельный узкий порт `idempotency.Sweeper` с одним методом `Sweep(ctx, now) (removed int, err error)`. Хранилище в памяти реализует оба порта. Это принцип разделения интерфейсов (ISP) из нашего стандарта кода.
+Хранилище ключей идемпотентности из урока 1.12 реализует порт `idempotency.Store` с методами `Reserve`, `Complete` и `Release`. Им пользуется middleware. Очистку можно было бы добавить четвёртым методом туда же. Но middleware очистка не нужна, а Postgres-адаптер в модуле 2a мог чистить базу по-другому (и действительно чистит: `DELETE` порциями по индексу `expires_at`, урок [2.9](../02-database/09-postgres-adapter)). Поэтому очистка — отдельный узкий порт `idempotency.Sweeper` с одним методом `Sweep(ctx, now) (removed int, err error)`. Хранилище в памяти реализует оба порта. Это принцип разделения интерфейсов (ISP) из нашего стандарта кода.
 
 <<< @/../messenger/internal/platform/idempotency/memory/store.go#sweep{go}
 
@@ -337,7 +337,7 @@ func tickerLoop(ctx context.Context, every time.Duration, work func(context.Cont
 
 Граница `ExpiresAt <= now` — та же, что у `Reserve`: в момент `ExpiresAt` запись уже просрочена. Записи «в работе» (`Reserve` без `Complete`) тоже имеют срок и удаляются после TTL. Отмена проверяется между порциями: очистка большой карты не задерживает остановку.
 
-Чтобы будущий Postgres-адаптер обязательно прошёл те же проверки, у них есть общая батарея тестов `storetest.RunSweeper`: удаляются только просроченные, запись «в работе» живёт до TTL, повторная очистка ничего не удаляет, много просроченных удаляются все, отменённый `ctx` — ошибка.
+Чтобы Postgres-адаптер обязательно прошёл те же проверки (с модуля 2a он их проходит), у них есть общая батарея тестов `storetest.RunSweeper`: удаляются только просроченные, запись «в работе» живёт до TTL, повторная очистка ничего не удаляет, много просроченных удаляются все, отменённый `ctx` — ошибка.
 
 ### Сборка и проверка
 
@@ -345,17 +345,19 @@ func tickerLoop(ctx context.Context, every time.Duration, work func(context.Cont
 
 <<< @/../messenger/cmd/messenger/app_test.go#background-test{go}
 
-Тест собирает настоящее приложение через `newApp`, создаёт ключ через HTTP-API, ждёт сутки TTL и ещё два периода, а потом проверяет журнал: ровно одна очистка с `"removed":1` и строка «фоновые компоненты остановлены». Сервер работает на сети в памяти — `httptest.NewTestServer` из Go 1.27, обещанный в уроке 1.5.5. Настоящая сеть в пузыре `synctest` не годится: время пузыря не пойдёт, пока горутина ждёт сокет. Сутки и две минуты виртуального времени проходят за 0,01 с реального:
+Тест собирает очистку той же функцией `newIdempotencySweeper`, что и `newApp`, кладёт в хранилище ключ, ждёт сутки TTL и ещё два периода, а потом проверяет журнал: ровно одна очистка с `"removed":1` и строка «фоновые компоненты остановлены». Хранилище — в памяти. В этом уроке тест собирал всё приложение через `newApp` и создавал ключ через HTTP-API на сети в памяти — `httptest.NewTestServer` из Go 1.27, обещанный в уроке 1.5.5. С модуля 2a `newApp` подключается к PostgreSQL, а настоящая сеть в пузыре `synctest` не годится: время пузыря не пойдёт, пока горутина ждёт сокет. Поэтому сборку с Postgres проверяет отдельный тест `TestAppSweepsExpiredKeys` без `synctest`: он создаёт ключ через API, делает его просроченным правкой строки и ждёт записи об очистке в журнале. Сутки и две минуты виртуального времени проходят быстрее, чем `go test` их округляет:
 
 ```text
-$ go test -count=1 -v -run TestAppBackgroundStops ./cmd/messenger/
+$ MESSENGER_REQUIRE_DOCKER=1 go test -count=1 -v -run 'TestAppBackgroundStops|TestAppSweepsExpiredKeys' ./cmd/messenger/
 === RUN   TestAppBackgroundStops
---- PASS: TestAppBackgroundStops (0.01s)
+--- PASS: TestAppBackgroundStops (0.00s)
+=== RUN   TestAppSweepsExpiredKeys
+--- PASS: TestAppSweepsExpiredKeys (2.61s)
 PASS
-ok  	messenger/cmd/messenger	0.012s
+ok  	messenger/cmd/messenger	3.009s
 ```
 
-машина та же, go1.27.2; команда — из каталога `messenger/`.
+машина та же, go1.27.2, Docker (тестовый пакет поднимает PostgreSQL 18.6 в контейнере); строки журнала testcontainers опущены; команда — из каталога `messenger/`. Без Docker `TestAppSweepsExpiredKeys` пропускается, а `TestAppBackgroundStops` — нет: ему база не нужна.
 
 ### Ограничение: у каждого экземпляра своя очистка
 

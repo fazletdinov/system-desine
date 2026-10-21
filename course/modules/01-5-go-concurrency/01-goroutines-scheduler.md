@@ -629,7 +629,7 @@ Java пришла к той же модели через десять лет. В
 |---|---|
 | профиль `goroutineleak` общедоступен (`runtime/pprof`, `/debug/pprof/goroutineleak`); в 1.26 был экспериментом | 1.5.5 — поиск утечек горутин; [1.5.10](./10-profiling) — профилирование мессенджера |
 | `testing/synctest.Sleep` | 1.5.5 и 1.5.6 — тесты со временем без настоящего ожидания |
-| `net/http/httptest.NewTestServer` — фейковая сеть для `synctest` | 1.5.6 — тест собранного обработчика приложения (`TestAppBackgroundStops`); тесты самого `httpserver` используют `net.Pipe` и `httpserver.Serve`, потому что `NewTestServer` сам вызывает `Serve` и `Shutdown` |
+| `net/http/httptest.NewTestServer` — фейковая сеть для `synctest` | 1.5.6 — тест собранного обработчика приложения (`TestAppBackgroundStops`, пока хранилище было в памяти; с модуля 2a приложение ходит в PostgreSQL по настоящей сети, и тест проверяет только фоновую очистку); тесты самого `httpserver` используют `net.Pipe` и `httpserver.Serve`, потому что `NewTestServer` сам вызывает `Serve` и `Shutdown` |
 | каналы таймеров всегда синхронные, `asynctimerchan` удалён | 1.5.2 — таймеры и `time.After` |
 
 Выводы уроков 1.16–1.19, снятые на Go 1.26.9, остались как есть с пометкой версии: они привязаны к тегам модуля 1 и описывают состояние репозитория на тот момент.
