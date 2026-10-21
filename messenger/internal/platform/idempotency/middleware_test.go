@@ -13,7 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
+
+	"github.com/google/uuid"
 
 	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/idempotency"
@@ -551,5 +554,51 @@ func TestIdempotencyLostReservationIsWarning(t *testing.T) {
 
 	if out := s.logs.String(); !strings.Contains(out, "перехватил повтор") || !strings.Contains(out, `"level":"WARN"`) || strings.Contains(out, `"level":"ERROR"`) {
 		t.Fatalf("журнал: ждали WARN о перехвате без ERROR:\n%s", out)
+	}
+}
+
+// hungStore — хранилище, которое зависло после Reserve: Complete и Release ждут, пока
+// не истечёт их ctx, и возвращают его ошибку. Так выглядит база, переставшая отвечать.
+type hungStore struct{ *memory.Store }
+
+func (hungStore) Complete(ctx context.Context, _, _ string, _ idempotency.Record) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (hungStore) Release(ctx context.Context, _, _ string, _ uuid.UUID) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// Complete и Release не наследуют отмену запроса, но срок у них есть: зависшее хранилище
+// не держит горутину запроса вечно. Без срока synctest сообщил бы о вечной блокировке.
+func TestIdempotencyStoreCallsAreBounded(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		logMsg string
+	}{
+		{"сохранение ответа", http.StatusCreated, "не удалось сохранить ответ"},
+		{"освобождение ключа после 5xx", http.StatusInternalServerError, "не удалось освободить ключ"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := serve(t, hungStore{newMemStore(t)}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(tt.status)
+				}))
+				start := time.Now()
+
+				s.do(request(t, "key-1", `{}`))
+
+				if waited := time.Since(start); waited != idempotency.ReservationGrace {
+					t.Errorf("хранилище держало запрос %v, ждали срок %v", waited, idempotency.ReservationGrace)
+				}
+				if out := s.logs.String(); !strings.Contains(out, tt.logMsg) || !strings.Contains(out, context.DeadlineExceeded.Error()) {
+					t.Errorf("журнал: ждали «%s» с истёкшим сроком:\n%s", tt.logMsg, out)
+				}
+			})
+		})
 	}
 }

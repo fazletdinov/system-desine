@@ -52,9 +52,10 @@ func New(pool *pgxpool.Pool) (*Transactor, error) {
 
 // #region within-tx
 // WithinTx выполняет fn в одной транзакции: ошибка fn — откат, паника в fn — откат и
-// та же паника дальше, runtime.Goexit в fn — тоже откат. Ошибку fn возвращает как есть: вызывающий проверяет её через
-// errors.Is/As так же, как без транзакции. Если ctx уже несёт транзакцию, fn
-// выполняется в ней (см. doc.go: вложенный вызов без SAVEPOINT).
+// та же паника дальше, runtime.Goexit в fn — тоже откат. Ошибку fn возвращает как
+// есть: вызывающий проверяет её через errors.Is/As так же, как без транзакции. Если
+// ctx уже несёт транзакцию, fn выполняется в ней (см. doc.go: вложенный вызов без
+// SAVEPOINT).
 func (t *Transactor) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	if _, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
 		return fn(ctx)

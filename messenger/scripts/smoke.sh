@@ -111,7 +111,8 @@ check_stop() {
 	local prev=0 n
 	echo "остановка (код выхода $exit_code), журнал по порядку:"
 	for line in "сервер остановлен" "фоновые компоненты остановлены" "пул закрыт"; do
-		n=$(grep -n -m1 -F "$line" "$dir/stop.log" | cut -d: -f1)
+		# || true: без строки grep завершается с 1, и pipefail оборвал бы скрипт до fail.
+		n=$(grep -n -m1 -F "$line" "$dir/stop.log" | cut -d: -f1 || true)
 		if [ -z "$n" ] || [ "$n" -le "$prev" ]; then
 			fail "в журнале нет «$line» после предыдущего шага остановки"
 		fi
