@@ -6,6 +6,7 @@ import { mermaidFencePlugin } from './mermaid-fence'
 import { termsCheckPlugin } from './terms-check'
 import { anchorLabelPlugin } from './anchor-label'
 import { partSubheadingsPlugin } from './part-subheadings'
+import { sqlRegionsPlugin } from './sql-regions'
 
 const MODULES_DIR = fileURLToPath(new URL('../modules', import.meta.url))
 const GLOSSARY_FILE = fileURLToPath(new URL('../glossary/terms.yaml', import.meta.url))
@@ -39,6 +40,7 @@ export default defineConfig({
       mermaidFencePlugin(md)
       anchorLabelPlugin(md)
       partSubheadingsPlugin(md)
+      sqlRegionsPlugin(md)
     },
   },
   themeConfig: {
