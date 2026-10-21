@@ -57,6 +57,8 @@ SQLSTATE 23505
 
 Ограничение закрывает все три: базе неважно, откуда пришла строка.
 
+Почему гонку из пункта 1 не закрывает сама база, раз оба `SELECT` идут в неё? Каждая транзакция PostgreSQL читает данные через <T id="snapshot">снимок</T> (snapshot) — набор версий строк, зафиксированных к определённому моменту; незафиксированных строк чужих транзакций в снимке нет никогда. Когда снимок берётся, задаёт <T id="isolation-level">уровень изоляции</T> (isolation level). По умолчанию в PostgreSQL — `READ COMMITTED`: свой снимок на каждую команду. `REPEATABLE READ` — один снимок на всю транзакцию. `SERIALIZABLE` — результат как при выполнении транзакций по очереди: заметив опасное пересечение, база откатывает одну из них с кодом `40001`, и её приходится повторять. На первых двух уровнях `SELECT` экземпляра B не видит строку, которую A вставил, но ещё не зафиксировал, и честно отвечает «свободно». Устройство снимков (MVCC — хранение нескольких версий строки) и уровни изоляции подробно разбирает часть 2b; здесь достаточно того, что проверка `SELECT`-ом видит только снимок, а ограничения, как мы увидим, — нет.
+
 ### Почему одной базы тоже мало
 
 Перенести все правила в базу и убрать их из домена тоже нельзя.
@@ -170,13 +172,13 @@ CONSTRAINT chats_title_kind_check CHECK ((kind = 'group') = (title IS NOT NULL))
 
 <Deep title="Что происходит внутри _bt_check_unique">
 
-Каждая запись индекса указывает на версию строки в таблице, а у версии есть номер транзакции, которая её создала (подробно — MVCC в части 2b). Индекс сам по себе не знает, видна ли запись: он хранит и живые версии, и ещё не зафиксированные, и уже удалённые.
+Каждая запись индекса указывает на версию строки в таблице, а у версии есть номер транзакции, которая её создала (это MVCC, multiversion concurrency control: PostgreSQL хранит несколько версий строки, а не перезаписывает её; подробно — часть 2b). Индекс сам по себе не знает, видна ли запись: он хранит и живые версии, и ещё не зафиксированные, и уже удалённые.
 
 Поэтому `_bt_check_unique` в `src/backend/access/nbtree/nbtinsert.c` проходит по всем записям индекса с тем же ключом и для каждой спрашивает таблицу: жива ли эта версия? Ответа три.
 
 - **Версия мертва** (её удалила зафиксированная транзакция или создала откаченная). Конфликта нет, смотрим дальше.
 - **Версия жива и зафиксирована.** Конфликт: ошибка `23505`, текст `duplicate key value violates unique constraint`.
-- **Версию создала или удаляет транзакция, которая ещё идёт.** Ответа пока нет. Функция запоминает номер этой транзакции, отпускает блокировку страницы индекса и вызывает `XactLockTableWait` — ждёт окончания чужой транзакции. Потом проверка начинается заново.
+- **Версию создала или удаляет транзакция, которая ещё идёт.** Ответа пока нет. Функция возвращает номер этой транзакции вызывающей `_bt_doinsert`, а та отпускает блокировку страницы индекса и вызывает `XactLockTableWait` — ждёт окончания чужой транзакции. Потом поиск места и проверка начинаются заново.
 
 Важная деталь: проверка видит **все** версии, а не только те, что видны снимку текущей транзакции. Поэтому `UNIQUE` работает на любом уровне изоляции, а проверка `SELECT`-ом в коде — нет. На `REPEATABLE READ` снимок транзакции B вообще не содержит строку, которую A вставила после начала B, и `SELECT` честно отвечает «свободно».
 
@@ -246,48 +248,43 @@ SQLSTATE 23503
 
 > Since a DELETE of a row from the referenced table or an UPDATE of a referenced column will require a scan of the referencing table for rows matching the old value, it is often a good idea to index the referencing columns too. Because this is not always needed, and there are many choices available on how to index, the declaration of a foreign key constraint does not automatically create an index on the referencing columns.
 
-Проверим, сколько это стоит. Тысяча чатов, миллион сообщений со ссылкой на чат, удаляем чат 1001, у которого сообщений нет, — сначала без индекса по `messages.chat_id`, потом с ним. В базе лабы, из каталога `labs/`:
+Проверим, сколько это стоит. Лаба, шаг 13: тысяча чатов, миллион сообщений со ссылкой на чат; удаляем чат 1001, у которого сообщений нет, — сначала без индекса по `big_messages.chat_id`, потом с ним. Подготовка (её вывод скрипт глушит `\set QUIET on`):
 
-```bash
-docker compose -f 2a/compose.yaml exec -T db psql -X <<'SQL'
-CREATE SCHEMA fkdemo; SET search_path = fkdemo;
-CREATE TABLE chats (id bigint PRIMARY KEY);
-CREATE TABLE messages (
-    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    chat_id bigint NOT NULL CONSTRAINT messages_chat_id_fkey REFERENCES chats (id)
-);
-INSERT INTO chats SELECT g FROM generate_series(1, 1001) AS g;
-INSERT INTO messages (chat_id) SELECT 1 + g % 1000 FROM generate_series(1, 1000000) AS g;
-VACUUM ANALYZE chats, messages;
-EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM chats WHERE id = 1001;
-CREATE INDEX messages_chat_id_idx ON messages (chat_id);
-INSERT INTO chats VALUES (1001);
-EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM chats WHERE id = 1001;
-DROP SCHEMA fkdemo CASCADE;
-SQL
-```
+<<< @/../labs/2a/constraints.sql#fk-index-setup{sql}
+
+Удаление без индекса и с ним:
 
 ```text
- Delete on chats (actual time=0.019..0.019 rows=0.00 loops=1)
-   ->  Index Scan using chats_pkey on chats (actual time=0.010..0.010 rows=1.00 loops=1)
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Delete on big_chats (actual time=0.012..0.013 rows=0.00 loops=1)
+   ->  Index Scan using big_chats_pkey on big_chats (actual time=0.004..0.005 rows=1.00 loops=1)
          Index Cond: (id = 1001)
          Index Searches: 1
- Planning Time: 0.073 ms
- Trigger for constraint messages_chat_id_fkey: time=22.270 calls=1
- Execution Time: 22.320 ms
+ Planning Time: 0.065 ms
+ Trigger for constraint big_messages_chat_id_fkey: time=22.441 calls=1
+ Execution Time: 22.473 ms
 (7 rows)
 
- Delete on chats (actual time=0.011..0.011 rows=0.00 loops=1)
-   ->  Index Scan using chats_pkey on chats (actual time=0.004..0.005 rows=1.00 loops=1)
+CREATE INDEX big_messages_chat_id_idx ON big_messages (chat_id);
+CREATE INDEX
+INSERT INTO big_chats VALUES (1001);
+INSERT 0 1
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Delete on big_chats (actual time=0.011..0.011 rows=0.00 loops=1)
+   ->  Index Scan using big_chats_pkey on big_chats (actual time=0.005..0.005 rows=1.00 loops=1)
          Index Cond: (id = 1001)
          Index Searches: 1
- Planning Time: 0.030 ms
- Trigger for constraint messages_chat_id_fkey: time=0.157 calls=1
- Execution Time: 0.174 ms
+ Planning Time: 0.032 ms
+ Trigger for constraint big_messages_chat_id_fkey: time=0.160 calls=1
+ Execution Time: 0.178 ms
 (7 rows)
 ```
 
-машина та же; три прогона, первый показан. Само удаление строки чата — сотые доли миллисекунды в обоих случаях: строку нашёл первичный ключ. Всё время уходит в строку `Trigger for constraint messages_chat_id_fkey` — проверку детей. Без индекса она читает весь миллион сообщений: <N>22,0–22,3 мс</N> в трёх прогонах. С индексом — <N>0,147–0,162 мс</N>, <N>примерно в 140 раз</N> быстрее. И это на таблице, целиком лежащей в памяти на tmpfs, и на **одном** удаляемом чате. Удаление тысячи чатов одной командой без индекса — тысяча полных просмотров. А `EXPLAIN` без `ANALYZE` эту цену не покажет вовсе: триггеры выполняются только при настоящем выполнении.
+машина та же. Само удаление строки чата — сотые доли миллисекунды в обоих случаях: строку нашёл первичный ключ. Всё время уходит в строку `Trigger for constraint big_messages_chat_id_fkey` — проверку детей. Без индекса она читает весь миллион сообщений: <N>22,441 мс</N>. С индексом — <N>0,160 мс</N>, <N>примерно в 140 раз</N> быстрее. Абсолютные миллисекунды зависят от машины, поэтому `scenario.sh` проверяет только соотношение: без индекса дольше больше чем в 10 раз. И это на таблице, целиком лежащей в памяти на tmpfs, и на **одном** удаляемом чате. Удаление тысячи чатов одной командой без индекса — тысяча полных просмотров. А `EXPLAIN` без `ANALYZE` эту цену не покажет вовсе: триггеры выполняются только при настоящем выполнении.
 
 В схеме мессенджера у каждого внешнего ключа ссылающийся столбец проиндексирован, и не всегда отдельным индексом:
 
@@ -373,9 +370,9 @@ SQLSTATE 23P01
 
 машина та же. Ограничение читается так: «нет двух строк, у которых `chat_id` равны, **и** `user_id` равны, **и** `during` пересекаются (`&&`)». Второй участник в то же время — можно: `user_id` разные. Период 12:00–14:00 встык к 10:00–12:00 — тоже можно: `tstzrange` в записи `[a, b)` — полуоткрытый интервал, он включает начало и не включает конец, поэтому 12:00 принадлежит только второму периоду. А 11:00–11:30 внутри 10:00–12:00 — ошибка `23P01`, `exclusion_violation`.
 
-Три технические детали. Ограничению нужен индекс, который понимает оператор `&&`, — это GiST, а не B-дерево (`USING gist`). Сравнение обычных `bigint` через `=` в GiST даёт расширение `btree_gist` из contrib; лаба создаёт его в начале скрипта. И в PostgreSQL 18 появилась короткая запись для самого частого случая (release notes 18, раздел «Constraints»: «Allow the specification of non-overlapping PRIMARY KEY, UNIQUE, and foreign key constraints… specified by WITHOUT OVERLAPS for PRIMARY KEY and UNIQUE»): `UNIQUE (chat_id, user_id, during WITHOUT OVERLAPS)`. Под капотом это то же исключающее ограничение, и нарушение приходит с тем же кодом `23P01`.
+Три технические детали. Ограничению нужен индекс, который понимает оператор `&&`. B-дерево умеет только «равно», «меньше» и «больше», поэтому здесь <T id="gist">GiST</T> (generalized search tree) — дерево, в узлах которого лежат обобщения ключей (например, охватывающий диапазон), и поиск спускается только в ветви, которые могут пересечься с искомым (`USING gist`). Сравнение обычных `bigint` через `=` в GiST даёт расширение `btree_gist` из contrib; лаба создаёт его в начале скрипта. И в PostgreSQL 18 появилась короткая запись для самого частого случая (release notes 18, раздел «Constraints»: «Allow the specification of non-overlapping PRIMARY KEY, UNIQUE, and foreign key constraints». Там же сказано, что для первичного ключа и `UNIQUE` это записывается словами `WITHOUT OVERLAPS`, а для внешних ключей — `PERIOD`): `UNIQUE (chat_id, user_id, during WITHOUT OVERLAPS)`. Под капотом это то же исключающее ограничение: лаба (шаг 15) вставляет те же 10:00–12:00 и 11:00–11:30 в таблицу `mutes_wo` с `UNIQUE … WITHOUT OVERLAPS` и получает «violates exclusion constraint "mutes_wo_key"» с тем же кодом `23P01`.
 
-Почему это правило не проверить в коде? По той же причине, что и уникальность имени, только хуже. Две транзакции делают `SELECT … WHERE during && $1`, обе ничего не находят, обе вставляют. `SELECT … FOR UPDATE` не поможет: блокировать нечего, конфликтующей строки ещё нет. В коде окно закроет только уровень `SERIALIZABLE` (с повторами транзакций) или ручная блокировка, например `pg_advisory_xact_lock` на пару «чат, пользователь». А `EXCLUDE` закрывает его тем же механизмом, что и `UNIQUE`: проверка и вставка — одна операция в индексе, с ожиданием незавершённых чужих транзакций.
+Почему это правило не проверить в коде? По той же причине, что и уникальность имени, только хуже. Две транзакции делают `SELECT … WHERE during && $1`, обе ничего не находят, обе вставляют. `SELECT … FOR UPDATE` не поможет: блокировать нечего, конфликтующей строки ещё нет. В коде окно закроет только уровень `SERIALIZABLE` (с повторами транзакций) или ручная блокировка, например `pg_advisory_xact_lock` на пару «чат, пользователь» — рекомендательная блокировка (advisory lock) по произвольному числу, которую база держит до конца транзакции, но смысл которой знает только код; писатель, который её не берёт, пройдёт мимо. `EXCLUDE` закрывает окно по тому же принципу, что и `UNIQUE`, хотя механизм другой: вставка сначала кладёт запись в индекс, а потом ищет в нём конфликтующие (`check_exclusion_or_unique_constraint` в `execIndexing.c`). Эта проверка тоже видит незафиксированные чужие записи и ждёт их исхода. Побочный эффект: две транзакции, вставившие конфликтующие строки одновременно, могут дождаться друг друга, и одна получит ошибку взаимоблокировки (deadlock, `40P01`) вместо `23P01`.
 
 ## <Part kind="theory" /> Отложенные ограничения
 
@@ -399,7 +396,7 @@ SQLSTATE 23505
 <T id="deferrable-constraint">Откладываемое ограничение</T> (deferrable constraint) разрешает перенести проверку. У него два режима:
 
 - **`DEFERRABLE INITIALLY IMMEDIATE`** — проверка после каждой **команды**, как требует стандарт. Внутри транзакции её можно отложить командой `SET CONSTRAINTS имя DEFERRED`;
-- **`DEFERRABLE INITIALLY DEFERRED`** — проверка в момент `COMMIT`, всегда.
+- **`DEFERRABLE INITIALLY DEFERRED`** — по умолчанию проверка в момент `COMMIT`; командой `SET CONSTRAINTS имя IMMEDIATE` транзакция может вернуть немедленную проверку (и тогда отложенные до этого нарушения проверяются сразу).
 
 Уже первый режим чинит сдвиг позиций (шаг 10, продолжение):
 
@@ -462,10 +459,10 @@ SQLSTATE 0A000
 ### Цена и почему мессенджер ничего не откладывает
 
 1. **Ошибка приходит не там.** Отложенное нарушение всплывает на `COMMIT`, а не в команде, которая его вызвала. В мессенджере `COMMIT` выполняет `platform/pgtx` — реализация порта `Transactor`, которая ничего не знает о домене и именах ограничений. Перевести `23503` в доменную ошибку там нельзя, а адаптер, который знает, что значит `members_chat_id_fkey`, к этому моменту уже вернул управление. Отложенные ограничения ломают правило «ошибку переводит адаптер, выполнивший запрос».
-2. **`ON CONFLICT` с ними не работает.** Отложенное ограничение нельзя использовать как арбитра конфликта: на попытку PostgreSQL 18 отвечает «ON CONFLICT does not support deferrable unique constraints/exclusion constraints as arbiters» (код `55000`). А на `INSERT … ON CONFLICT` держится резервация ключа идемпотентности.
+2. **`ON CONFLICT` с ними не работает.** Отложенное ограничение нельзя использовать как арбитра конфликта: на попытку PostgreSQL 18 отвечает «ON CONFLICT does not support deferrable unique constraints/exclusion constraints as arbiters» (лаба, шаг 14: код `55000`). А на `INSERT … ON CONFLICT` держится резервация ключа идемпотентности.
 3. **Проверка медленнее.** Тот же раздел документации о `DEFERRABLE INITIALLY IMMEDIATE` у уникальности: «Be aware that this can be significantly slower than immediate uniqueness checking».
 
-Ни одного из двух случаев, ради которых откладывают, у мессенджера нет. Позиций, которые сдвигаются массово, нет. А «чат и его участники» вставляются одной командой: `CTE` вставляет строку чата, основной `INSERT` — участников, и внешний ключ `members → chats`, проверяемый после команды, видит строку из `CTE` (регион `create-chat` в `chat/adapters/postgres/store.go`, разбор — в уроке 2.9). Поэтому в миграции ни одно ограничение не объявлено `DEFERRABLE`.
+Ни одного из двух случаев, ради которых откладывают, у мессенджера нет. Позиций, которые сдвигаются массово, нет. А «чат и его участники» вставляются одной командой: <T id="cte">CTE</T> (common table expression, именованный подзапрос `WITH … AS (…)` в начале команды; в PostgreSQL в нём может стоять и `INSERT`) вставляет строку чата, основной `INSERT` — участников, и внешний ключ `members → chats`, проверяемый после команды, видит строку из `CTE` (регион `create-chat` в `chat/adapters/postgres/store.go`, разбор — в уроке 2.9). Поэтому в миграции ни одно ограничение не объявлено `DEFERRABLE`.
 
 ## <Part kind="theory" /> От ошибки базы к доменной ошибке
 
@@ -541,33 +538,17 @@ func takenByCode(err error) bool {
 
 ### Ошибка ограничения обрывает транзакцию
 
-Есть деталь, которая меняет код use case'а. Ошибка внутри транзакции PostgreSQL не просто отменяет команду: она **обрывает всю транзакцию**, и до `ROLLBACK` база не выполнит в ней ни одной команды. Проверим в базе лабы после прогона `constraints.sql` (там уже есть `alice`):
-
-```bash
-docker compose -f 2a/compose.yaml exec -T db psql -X <<'SQL'
-\set ECHO queries
-SET search_path = constraints;
-BEGIN;
-INSERT INTO users (username) VALUES ('alice');
-\echo SQLSTATE :SQLSTATE
-SELECT username FROM users WHERE username = 'alice';
-\echo SQLSTATE :SQLSTATE
-ROLLBACK;
-SELECT username FROM users WHERE username = 'alice';
-SQL
-```
+Есть деталь, которая меняет код use case'а. Ошибка внутри транзакции PostgreSQL не просто отменяет команду: она **обрывает всю транзакцию**, и до `ROLLBACK` база не выполнит в ней ни одной команды. Лаба, шаг 12 (`alice` в таблице уже есть):
 
 ```text
-SET search_path = constraints;
-SET
 BEGIN;
 BEGIN
 INSERT INTO users (username) VALUES ('alice');
-ERROR:  duplicate key value violates unique constraint "users_username_key"
+psql:/lab/constraints.sql:208: ERROR:  duplicate key value violates unique constraint "users_username_key"
 DETAIL:  Key (username)=(alice) already exists.
 SQLSTATE 23505
 SELECT username FROM users WHERE username = 'alice';
-ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:/lab/constraints.sql:213: ERROR:  current transaction is aborted, commands ignored until end of transaction block
 SQLSTATE 25P02
 ROLLBACK;
 ROLLBACK
@@ -598,7 +579,7 @@ SELECT username FROM users WHERE username = 'alice';
 1. **Окно гонки.** В варианте «Проверка в коде» на шаге 3 у обоих экземпляров результат «0 строк: имя свободно». Обе проверки верны в момент проверки. Это и есть окно «проверь, потом действуй»: в нём уже две проверки и пока ни одной записи.
 2. **Тихий дубль.** На последних шагах того же варианта в таблице две строки `alice`, обе подсвечены цветом ошибки, у обоих клиентов `201 Created`, а плашка сверху сообщает, что правило нарушено. Ошибки не получил никто: база не знала о правиле.
 3. **Незафиксированная строка.** Переключитесь на «Ограничение UNIQUE». На шаге 2 строка `alice` в таблице курсивом с пометкой «не зафиксирована: видит только A». Другие сеансы её не видят, но уникальный индекс видит.
-4. **Ожидание.** На шаге 3 экземпляр B в состоянии «ждёт исхода чужой транзакции». Его `INSERT` нашёл в индексе `alice` от незавершённой транзакции A и не может ответить, пока A не закончит. Это `XactLockTableWait` из блока «Что происходит внутри _bt_check_unique».
+4. **Ожидание.** На шаге 3 экземпляр B в состоянии «ждёт исхода чужой транзакции». Его `INSERT` нашёл в индексе `alice` от незавершённой транзакции A и не может ответить, пока A не закончит. Это ожидание `XactLockTableWait` из блока «Что происходит внутри _bt_check_unique».
 5. **Перевод ошибки.** На шагах 5–8 подсвечиваются звенья пути ошибки: `*pgconn.PgError{Code: "23505", ConstraintName: "users_username_key"}` в `pgx`, `user/domain.ErrUsernameTaken` в Postgres-адаптере, `auth/domain.ErrUsernameTaken` в мосте `userbridge` и `409 application/problem+json` в HTTP-адаптере. Каждое звено знает только соседей, а use case не изменился ни строкой.
 
 <Callout type="simplified">
@@ -687,11 +668,25 @@ SELECT username FROM users WHERE username = 'alice';
 
 <<< @/../labs/2a/constraints.sql#exclude{sql}
 
+<<< @/../labs/2a/constraints.sql#without-overlaps{sql}
+
 <<< @/../labs/2a/constraints.sql#deferrable-fk{sql}
 
 <<< @/../labs/2a/constraints.sql#deferrable-unique{sql}
 
 <<< @/../labs/2a/constraints.sql#deferrable-unique-fix{sql}
+
+<<< @/../labs/2a/constraints.sql#deferrable-on-conflict{sql}
+
+<<< @/../labs/2a/constraints.sql#aborted-transaction{sql}
+
+<<< @/../labs/2a/constraints.sql#aborted-transaction-next{sql}
+
+<<< @/../labs/2a/constraints.sql#aborted-transaction-rollback{sql}
+
+<<< @/../labs/2a/constraints.sql#fk-without-index{sql}
+
+<<< @/../labs/2a/constraints.sql#fk-with-index{sql}
 
 ## <Part kind="practice" /> Что изменилось в мессенджере
 
@@ -730,13 +725,13 @@ docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.
 docker compose -f 2a/compose.yaml down -v
 ```
 
-`bash 2a/scenario.sh` прогоняет `constraints.sql` и проверяет, что в выводе ровно 12 ошибок с кодами `23502`, `23514`, `23505`, `23503`, `23P01` и `0A000`, и что отложенный внешний ключ пропустил участника чата 3. Перевод ошибок в мессенджере проверяют `storetest`-батареи против настоящего PostgreSQL (testcontainers, урок 2.9): `testUsernameTaken` и `testConcurrentSameUsername` в `user`, `testSaveTwice` и `testConcurrentSave` в `auth`, `testDirectUnique`, `testDuplicateClientMessageID` и `testConcurrentDuplicateClientMessageID` в `chat`.
+`bash 2a/scenario.sh` прогоняет `constraints.sql` и проверяет, что в выводе ровно 16 ошибок с кодами `23502`, `23514`, `23505`, `23503`, `23P01`, `0A000`, `25P02` и `55000`, что отложенный внешний ключ пропустил участника чата 3 и что проверка внешнего ключа без индекса дольше, чем с индексом, больше чем в 10 раз (только соотношение: миллисекунды зависят от машины). Перевод ошибок в мессенджере проверяют `storetest`-батареи против настоящего PostgreSQL (testcontainers, урок 2.9): `testUsernameTaken` и `testConcurrentSameUsername` в `user`, `testSaveTwice` и `testConcurrentSave` в `auth`, `testDirectUnique`, `testDuplicateClientMessageID` и `testConcurrentDuplicateClientMessageID` в `chat`.
 
 Попробуйте сами:
 
 - Добавьте в `user/usecase/storetest` тест границы: сохранить пользователя с именем ровно `UsernameMaxLen` символов и отображаемым именем ровно `DisplayNameMaxLen` символов, и прочитать его. Поменяйте в копии миграции `char_length(username) BETWEEN 3 AND 32` на `… AND 16` и убедитесь, что тест падает с `23514`, а in-memory адаптер его проходит.
 - В базе лабы удалите индекс `members_user_id_idx` из схемы мессенджера (её создаёт `messenger-explain.sql`) и повторите опыт с `EXPLAIN (ANALYZE)` для `DELETE FROM users.users` — какой триггер теперь стоит дорого?
-- Перепишите `mutes_no_overlap` через `UNIQUE (chat_id, user_id, during WITHOUT OVERLAPS)` и проверьте, что вставка 11:00–11:30 по-прежнему даёт `23P01`, а период встык — нет.
+- Вставьте в `mutes_wo` из шага 15 период встык, 12:00–14:00, и период другого участника. Пройдут ли они, как в `mutes_no_overlap`?
 - Задайте в сеансе `psql` `SET lc_messages = 'C'` и `SET lc_messages = 'ru_RU.UTF-8'` (если локаль есть в образе) и сравните текст одной и той же ошибки `23505`. Что из полей ошибки не изменилось?
 
 Состояние репозитория после урока — тег `m02-l04`.
@@ -753,7 +748,7 @@ docker compose -f 2a/compose.yaml down -v
 
 **Все `23505` — одна доменная ошибка.** Дубль первичного ключа и дубль имени пользователя — разные события: первое — сбой сервера, второе — нормальный исход запроса. Перевод только по коду превращает сбой генератора id в «имя занято».
 
-**Внешний ключ без индекса на ссылающемся столбце.** PostgreSQL сам индексирует только сторону родителя. Удаление родителя ищет детей, и без индекса это полный просмотр таблицы детей на **каждую** удалённую строку: в опыте урока 22 мс вместо 0,15 мс на одном чате и миллионе сообщений. `EXPLAIN` без `ANALYZE` этого не покажет. Для каждого внешнего ключа проверьте, что ссылающийся столбец — первый в каком-то индексе.
+**Внешний ключ без индекса на ссылающемся столбце.** Объявление внешнего ключа не создаёт ни одного индекса: на стороне родителя индекс обязан уже быть (первичный ключ или `UNIQUE`), а на стороне детей его нет, пока вы его не создадите. Удаление родителя ищет детей, и без индекса это полный просмотр таблицы детей на **каждую** удалённую строку: в лабе (шаг 13) 22,441 мс вместо 0,160 мс на одном чате и миллионе сообщений. `EXPLAIN` без `ANALYZE` этого не покажет. Для каждого внешнего ключа проверьте, что ссылающийся столбец — первый в каком-то индексе.
 
 **`ON DELETE CASCADE` «везде».** Каскад удобен, пока дети — часть родителя и их немного. «Везде» он превращает одно случайное `DELETE` в удаление половины базы, а цепочку `users → chats → messages` — в долгую транзакцию, которая держит блокировки на миллионах строк, пишет гигабайты WAL и отправляет их на реплики. И каскад через границу контекстов удаляет чужие данные без ведома их владельца. Выбирайте действие для каждого ключа: `CASCADE` — для частей агрегата, `NO ACTION` — там, где удаление родителя должно быть явным решением. Большие удаления делают порциями в фоне, а не одним каскадом.
 
@@ -787,7 +782,7 @@ docker compose -f 2a/compose.yaml down -v
 
 <SelfCheck question="Почему UNIQUE закрывает гонку двух регистраций, а SELECT перед INSERT — нет, даже на уровне REPEATABLE READ? Что делает вторая вставка, если первая ещё не зафиксирована?">
 
-У `SELECT` и `INSERT` два шага, и между ними окно, в которое помещается чужая запись. Снимок `REPEATABLE READ` не содержит незафиксированных (и зафиксированных после его начала) строк соседа, поэтому `SELECT` честно отвечает «свободно». `UNIQUE` проверяет и записывает одной операцией в уникальном индексе, и эта проверка видит **все** версии ключа, а не только видимые снимку. Если равный ключ вставлен незавершённой транзакцией, вторая вставка ждёт её исхода (`XactLockTableWait` в `_bt_check_unique`): фиксация — ошибка `23505`, откат — вставка проходит.
+У `SELECT` и `INSERT` два шага, и между ними окно, в которое помещается чужая запись. Снимок `REPEATABLE READ` не содержит незафиксированных (и зафиксированных после его начала) строк соседа, поэтому `SELECT` честно отвечает «свободно». `UNIQUE` проверяет и записывает одной операцией в уникальном индексе, и эта проверка видит **все** версии ключа, а не только видимые снимку. Если равный ключ вставлен незавершённой транзакцией, вторая вставка ждёт её исхода (`_bt_check_unique` находит её запись, `_bt_doinsert` ждёт в `XactLockTableWait`): фиксация — ошибка `23505`, откат — вставка проходит.
 
 </SelfCheck>
 
@@ -817,7 +812,7 @@ docker compose -f 2a/compose.yaml down -v
 
 <SelfCheck question="Для каждого внешнего ключа мессенджера назовите индекс, который обслуживает поиск детей при удалении родителя. Что случится, если для chat.members.user_id такого индекса не будет?">
 
-`credentials_user_id_fkey` — первичный ключ `credentials_pkey (user_id)`; `members_chat_id_fkey` — первый столбец `members_pkey (chat_id, user_id)`; `messages_chat_id_fkey` — первый столбец `messages_pkey (chat_id, seq)`; `members_user_id_fkey` — отдельный `members_user_id_idx (user_id)`, потому что `user_id` — второй столбец первичного ключа, и по нему одному составной индекс не ищет. Без него удаление пользователя (когда оно появится) полностью просматривало бы `chat.members` на каждого удалённого: в опыте урока такой просмотр миллиона строк — 22 мс против 0,15 мс с индексом. И тот же индекс нужен запросу «чаты пользователя».
+`credentials_user_id_fkey` — первичный ключ `credentials_pkey (user_id)`; `members_chat_id_fkey` — первый столбец `members_pkey (chat_id, user_id)`; `messages_chat_id_fkey` — первый столбец `messages_pkey (chat_id, seq)`; `members_user_id_fkey` — отдельный `members_user_id_idx (user_id)`, потому что `user_id` — второй столбец первичного ключа, и по нему одному составной индекс не ищет. Без него удаление пользователя (когда оно появится) полностью просматривало бы `chat.members` на каждого удалённого: в лабе (шаг 13) такой просмотр миллиона строк — 22,441 мс против 0,160 мс с индексом. И тот же индекс нужен запросу «чаты пользователя».
 
 </SelfCheck>
 
@@ -827,13 +822,13 @@ docker compose -f 2a/compose.yaml down -v
 
 - Документация PostgreSQL 18: [Constraints](https://www.postgresql.org/docs/18/ddl-constraints.html) — `CHECK` (только эта строка, `NULL` проходит, неизменность), `UNIQUE` и `NULLS NOT DISTINCT`, внешние ключи (индекс на ссылающихся столбцах, `NO ACTION` против `RESTRICT`, ссылка только на первичный ключ, ограничение уникальности или нечастичный уникальный индекс), исключающие ограничения; [CREATE TABLE](https://www.postgresql.org/docs/18/sql-createtable.html) — `DEFERRABLE` (только `UNIQUE`, `PRIMARY KEY`, `EXCLUDE`, `REFERENCES`), «checked immediately after every command», раздел «Compatibility» о немедленной проверке уникальности и цене `DEFERRABLE INITIALLY IMMEDIATE`, `WITHOUT OVERLAPS`; [SET CONSTRAINTS](https://www.postgresql.org/docs/18/sql-set-constraints.html); [ALTER TABLE](https://www.postgresql.org/docs/18/sql-altertable.html) — `NOT VALID` и `VALIDATE CONSTRAINT`; [INSERT](https://www.postgresql.org/docs/18/sql-insert.html) — `ON CONFLICT` и выбор индекса-арбитра; [Unique Indexes](https://www.postgresql.org/docs/18/indexes-unique.html) и [Partial Indexes](https://www.postgresql.org/docs/18/indexes-partial.html); [btree_gist](https://www.postgresql.org/docs/18/btree-gist.html); [Range Types](https://www.postgresql.org/docs/18/rangetypes.html) — полуоткрытые диапазоны и исключающие ограничения; [PostgreSQL Error Codes](https://www.postgresql.org/docs/18/errcodes-appendix.html) — классы и коды, совет проверять код, а не текст.
 - PostgreSQL 18 Release Notes, раздел «Constraints»: `NOT NULL` в `pg_constraint`, `NOT VALID` для `NOT NULL`, `WITHOUT OVERLAPS` и `PERIOD`: [release-18](https://www.postgresql.org/docs/18/release-18.html).
-- Исходники PostgreSQL 18 (ветка `REL_18_STABLE`): `src/backend/access/nbtree/nbtinsert.c` — `_bt_check_unique`, ожидание незавершённой транзакции через `XactLockTableWait`; `src/backend/utils/adt/ri_triggers.c` — проверки внешнего ключа запросами `… FOR KEY SHARE`.
-- `github.com/jackc/pgx/v5` v5.11.0: `pgconn/errors.go` — `PgError` с полями `Code`, `ConstraintName`, `SchemaName`, `TableName`, `Detail`; `tx.go` — вложенный `Begin` как точка сохранения. Пакет констант кодов — [github.com/jackc/pgerrcode](https://github.com/jackc/pgerrcode).
-- GitLab, «Why we spent the last month eliminating PostgreSQL subtransactions», 2021 — цена подтранзакций (`SAVEPOINT`) под нагрузкой.
+- Исходники PostgreSQL 18.6 (тег `REL_18_6`): [`src/backend/access/nbtree/nbtinsert.c`](https://github.com/postgres/postgres/blob/REL_18_6/src/backend/access/nbtree/nbtinsert.c) — `_bt_check_unique` находит запись незавершённой транзакции, `_bt_doinsert` ждёт её через `XactLockTableWait`; [`src/backend/executor/execIndexing.c`](https://github.com/postgres/postgres/blob/REL_18_6/src/backend/executor/execIndexing.c) — `check_exclusion_or_unique_constraint` для `EXCLUDE`; [`src/backend/utils/adt/ri_triggers.c`](https://github.com/postgres/postgres/blob/REL_18_6/src/backend/utils/adt/ri_triggers.c) — проверки внешнего ключа запросами `… FOR KEY SHARE`.
+- `github.com/jackc/pgx/v5` v5.11.0: [`pgconn/errors.go`](https://github.com/jackc/pgx/blob/v5.11.0/pgconn/errors.go) — `PgError` с полями `Code`, `ConstraintName`, `SchemaName`, `TableName`, `Detail`; [`tx.go`](https://github.com/jackc/pgx/blob/v5.11.0/tx.go) — вложенный `Begin` как точка сохранения. Пакет констант кодов — [github.com/jackc/pgerrcode](https://github.com/jackc/pgerrcode).
+- GitLab, [«Why we spent the last month eliminating PostgreSQL subtransactions»](https://about.gitlab.com/blog/2021/09/29/why-we-spent-the-last-month-eliminating-postgresql-subtransactions/), 2021 — цена подтранзакций (`SAVEPOINT`) под нагрузкой.
 - Michael J. Hernandez, «Database Design for Mere Mortals», 4th ed., Addison-Wesley, 2020 — бизнес-правила и ограничения целостности, правила на уровне поля и связи.
 - Bill Karwin, «SQL Antipatterns, Volume 1», Pragmatic Bookshelf, 2022 — глава «Keyless Entry» (схема без внешних ключей), «ID Required» (суррогатный ключ без `UNIQUE` на естественном).
 - Dimitri Fontaine, «The Art of PostgreSQL», 2nd ed., 2020 — ограничения как часть модели данных, `EXCLUDE` с диапазонами.
 - Курс: урок [1.2](../01-go-service/02-domain) — инварианты и агрегат; [1.12](../01-go-service/12-idempotency) — `client_message_id` и повтор; [2.1](./01-modeling) — схемы по контекстам, межсхемные ключи, `author_id` без внешнего ключа; [2.2](./02-normalization) — правила, которые держит база, а какие код; [2.3](./03-keys-types) — `text` + `CHECK` против `varchar(n)`, `UNIQUE` без учёта регистра.
-- Код: `messenger/migrations/00001_init.sql` (регионы `users`, `credentials`, `chats`, `members`, `members-user-index`, `messages`); `messenger/internal/platform/pgerr/pgerr.go` (регион `is-unique-violation`), `pgerr_test.go`; `messenger/internal/{user,auth,chat}/adapters/postgres/errors.go` (регионы `create-user-error`, `chat-errors`); `messenger/internal/chat/usecase/send_message.go` (регион `send-saved`); `messenger/docs/adr/0014-схема-и-контексты.md`; `labs/2a/constraints.sql` (регионы `schema`, `unique`, `partial-unique`, `exclude`, `deferrable-fk`, `deferrable-unique`, `deferrable-unique-fix`), вывод `labs/2a/results/constraints.txt`, `machine.txt`; сцена `course/viz/simulations/constraint-race.ts`.
+- Код: `messenger/migrations/00001_init.sql` (регионы `users`, `credentials`, `chats`, `members`, `members-user-index`, `messages`); `messenger/internal/platform/pgerr/pgerr.go` (регион `is-unique-violation`), `pgerr_test.go`; `messenger/internal/{user,auth,chat}/adapters/postgres/errors.go` (регионы `create-user-error`, `chat-errors`); `messenger/internal/chat/usecase/send_message.go` (регион `send-saved`); `messenger/docs/adr/0014-схема-и-контексты.md`; `labs/2a/constraints.sql` (регионы `schema`, `unique`, `partial-unique`, `exclude`, `deferrable-fk`, `deferrable-unique`, `deferrable-unique-fix`, `deferrable-on-conflict`, `without-overlaps`, `aborted-transaction`, `aborted-transaction-next`, `aborted-transaction-rollback`, `fk-index-setup`, `fk-without-index`, `fk-with-index`), вывод `labs/2a/results/constraints.txt`, `machine.txt`; сцена `course/viz/simulations/constraint-race.ts`.
 
 </Callout>
