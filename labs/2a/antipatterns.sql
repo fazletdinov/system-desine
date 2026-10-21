@@ -190,3 +190,156 @@ SELECT 0.1::float8 + 0.2::float8 = 0.3::float8 AS float_equal,
        sum(0.1::numeric) AS numeric_sum_of_ten
 FROM generate_series(1, 10);
 -- #endregion float-money
+
+\echo
+\echo '=== 6. SELECT *: запрос зависит от числа и порядка столбцов ==='
+-- #region select-star
+CREATE TABLE messages_archive (id bigint PRIMARY KEY, chat_id bigint NOT NULL, text text NOT NULL);
+-- Представление разворачивает * в список столбцов один раз — в момент CREATE VIEW.
+CREATE VIEW chat_feed AS SELECT * FROM messages;
+
+-- В messages добавили столбец: обычная миграция, ничего не сломала бы при явных списках.
+ALTER TABLE messages ADD COLUMN edited_at timestamptz;
+
+-- Архивация «всё как есть» вчера работала, сегодня падает: столбцов стало четыре.
+INSERT INTO messages_archive SELECT * FROM messages;
+-- #endregion select-star
+\echo SQLSTATE :SQLSTATE
+
+-- #region select-star-view
+-- А представление нового столбца не видит: его * развернулся в три столбца навсегда.
+SELECT table_name, string_agg(column_name, ', ' ORDER BY ordinal_position) AS columns
+FROM information_schema.columns
+WHERE table_schema = 'antipatterns' AND table_name IN ('messages', 'chat_feed')
+GROUP BY table_name
+ORDER BY table_name;
+-- #endregion select-star-view
+
+-- #region select-star-fix
+-- Исправление: явный список столбцов и с той, и с другой стороны — новый столбец ничего не ломает.
+INSERT INTO messages_archive (id, chat_id, text)
+SELECT id, chat_id, text FROM messages;
+-- #endregion select-star-fix
+
+\echo
+\echo '=== 7. «ID для всего»: суррогатный ключ прячет настоящий ==='
+-- #region id-required
+-- У строки участия есть свой id, а пара (chat_id, user_id) ничем не защищена.
+CREATE TABLE members_by_id (
+    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    chat_id bigint NOT NULL REFERENCES chats (id),
+    user_id bigint NOT NULL REFERENCES users (id)
+);
+
+-- Повтор запроса «добавить alice в чат» — и alice в чате дважды.
+INSERT INTO members_by_id (chat_id, user_id) VALUES (10, 1), (10, 2), (10, 1);
+
+SELECT chat_id, user_id, count(*) AS rows_per_member
+FROM members_by_id
+GROUP BY chat_id, user_id
+HAVING count(*) > 1;
+-- #endregion id-required
+
+-- #region id-required-fix
+-- Исправление: ключ — то, что действительно уникально. Таблица members из шага 3 так и сделана:
+-- PRIMARY KEY (chat_id, user_id), и повтор — ошибка, а не вторая строка.
+INSERT INTO members VALUES (10, 1);
+-- #endregion id-required-fix
+\echo SQLSTATE :SQLSTATE
+
+\echo
+\echo '=== 8. Ключ без ограничения: ссылка без FOREIGN KEY ==='
+-- #region keyless
+CREATE TABLE chats_nofk    (id bigint PRIMARY KEY, title text NOT NULL);
+CREATE TABLE messages_nofk (id bigint PRIMARY KEY, chat_id bigint NOT NULL, text text NOT NULL);
+INSERT INTO chats_nofk VALUES (10, 'Бэкенд'), (20, 'Обед');
+INSERT INTO messages_nofk VALUES
+    (1, 10, 'Привет'),
+    (2, 20, 'Кто на обед?'),
+    (3, 30, 'В чат, которого не было');
+
+-- Чат удалили, его сообщение осталось: базе не сказали, что они связаны.
+DELETE FROM chats_nofk WHERE id = 20;
+
+-- Сироты — сообщения чатов, которых нет. Их ищут запросом, а находят обычно в отчёте поддержки.
+SELECT m.id, m.chat_id, m.text
+FROM messages_nofk m
+WHERE NOT EXISTS (SELECT 1 FROM chats_nofk c WHERE c.id = m.chat_id)
+ORDER BY m.id;
+-- #endregion keyless
+
+-- #region keyless-fix
+-- Исправление — внешний ключ. Но на грязные данные он не встаёт: ALTER проверяет все строки.
+ALTER TABLE messages_nofk
+    ADD CONSTRAINT messages_nofk_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES chats_nofk (id);
+-- #endregion keyless-fix
+\echo SQLSTATE :SQLSTATE
+
+-- #region keyless-not-valid
+-- NOT VALID: старые строки не проверяются, но каждая новая и изменённая — уже да.
+ALTER TABLE messages_nofk
+    ADD CONSTRAINT messages_nofk_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES chats_nofk (id) NOT VALID;
+
+INSERT INTO messages_nofk VALUES (4, 40, 'Ещё одна сирота');
+-- #endregion keyless-not-valid
+\echo SQLSTATE :SQLSTATE
+
+-- #region keyless-validate
+-- Разобрали сирот (здесь — удалили; в жизни их сначала выгружают и решают, что с ними делать)
+-- и проверили старые строки. После VALIDATE ограничение ничем не отличается от обычного.
+DELETE FROM messages_nofk m
+WHERE NOT EXISTS (SELECT 1 FROM chats_nofk c WHERE c.id = m.chat_id);
+
+ALTER TABLE messages_nofk VALIDATE CONSTRAINT messages_nofk_chat_id_fkey;
+
+SELECT conname, convalidated
+FROM pg_constraint
+WHERE conname = 'messages_nofk_chat_id_fkey';
+-- #endregion keyless-validate
+
+\echo
+\echo '=== 9. Имена ограничений, которые придумывает PostgreSQL ==='
+-- #region default-names
+-- Ни одного имени не задано явно: их выберет PostgreSQL.
+CREATE TABLE chat_invites (
+    id         bigint      PRIMARY KEY,
+    chat_id    bigint      NOT NULL REFERENCES chats (id),
+    code       text        NOT NULL UNIQUE,
+    max_uses   int         CHECK (max_uses > 0),
+    expires_at timestamptz NOT NULL,
+    CHECK (max_uses < 1000),
+    CHECK (expires_at > '2026-01-01' OR max_uses IS NULL),
+    UNIQUE (chat_id, code)
+);
+CREATE INDEX ON chat_invites (expires_at);
+CREATE INDEX ON chat_invites (expires_at);
+
+SELECT conname, pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE conrelid = 'chat_invites'::regclass AND contype <> 'n'
+ORDER BY conname;
+
+-- PostgreSQL 18 хранит и NOT NULL как ограничения со своими именами.
+SELECT string_agg(conname, ', ' ORDER BY conname) AS not_null_constraints
+FROM pg_constraint
+WHERE conrelid = 'chat_invites'::regclass AND contype = 'n';
+
+SELECT indexname
+FROM pg_indexes
+WHERE schemaname = 'antipatterns' AND tablename = 'chat_invites'
+ORDER BY indexname;
+-- #endregion default-names
+
+-- #region default-names-long
+-- Имя длиннее 63 байт PostgreSQL молча укорачивает — и выбранное имя перестаёт читаться.
+CREATE TABLE notification_delivery_attempts (
+    id                         bigint PRIMARY KEY,
+    subscriber_installation_id bigint NOT NULL,
+    notification_template_code text   NOT NULL,
+    UNIQUE (subscriber_installation_id, notification_template_code)
+);
+
+SELECT conname, octet_length(conname) AS bytes
+FROM pg_constraint
+WHERE conrelid = 'notification_delivery_attempts'::regclass AND contype = 'u';
+-- #endregion default-names-long

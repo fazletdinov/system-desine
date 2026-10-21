@@ -54,6 +54,11 @@ $out"
 	done
 }
 
+# column_value <вывод> <столбец> — значение под заголовком столбца из однострочного результата.
+column_value() {
+	printf '%s\n' "$1" | sed -n "/^ $2 \$/{n;n;p;q;}" | tr -d ' '
+}
+
 # errors_expected <вывод> <имя> <сколько> — ошибок ровно столько, сколько задумано, и после каждой
 # скрипт напечатал её SQLSTATE; SQLSTATE 00000 значит, что задуманная ошибка не случилась.
 errors_expected() {
@@ -111,14 +116,48 @@ ok "constraints.sql: 23502, 23514, 23505, 23503, 23P01 и 0A000; отложен�
 
 # --- 3. antipatterns.sql: запрос, который ломается, и исправление (урок 2.7) ---
 out=$(sql antipatterns.sql)
-errors_expected "$out" antipatterns.sql 5
-has "$out" antipatterns.sql 'SQLSTATE 22007' 'SQLSTATE 23503' 'SQLSTATE 23514' ' 20 | Обед' '(4 rows)'
+errors_expected "$out" antipatterns.sql 9
+has "$out" antipatterns.sql 'SQLSTATE 22007' 'SQLSTATE 23503' 'SQLSTATE 23514' 'SQLSTATE 42601' 'SQLSTATE 23505' ' 20 | Обед' '(4 rows)' \
+	'INSERT has more expressions than target columns' ' chat_feed  | id, chat_id, text' \
+	'violates unique constraint "members_pkey"' ' messages_nofk_chat_id_fkey | t' \
+	'chat_invites_max_uses_check1  | CHECK ((max_uses < 1000))' 'chat_invites_expires_at_idx1' 'chat_invites_expires_at_not_null' \
+	'notification_delivery_attempt_subscriber_installation_id_no_key |    63'
 # Строка результата WITH RECURSIVE (id 4 на глубине 3) — в эхо запросов её нет, только в выводе.
 printf '%s\n' "$out" | grep -qE '^ +4 \| +3 \| +В пятницу некому чинить$' || fail "antipatterns.sql: рекурсивный запрос не дошёл до третьего уровня:
 $out"
 printf '%s\n' "$out" | grep -qE '^ f +\| t +\|' || fail "antipatterns.sql: float и numeric сравнились одинаково:
 $out"
-ok "antipatterns.sql: EAV, полиморфная связь, список через запятую, наивное дерево и float — сломались и исправлены"
+# «ID для всего»: дубль участника принят — строка группировки с двумя строками на пару.
+printf '%s\n' "$out" | grep -qE '^ +10 \| +1 \| +2$' || fail "antipatterns.sql: дубль участника при суррогатном ключе не появился:
+$out"
+ok "antipatterns.sql: EAV, полиморфная связь, список через запятую, наивное дерево, float, SELECT *, «ID для всего» и ключ без FOREIGN KEY — сломались и исправлены; имена по умолчанию — с суффиксом 1 и обрезкой до 63 байт"
+
+# --- 3a. tenancy.sql: общая схема с tenant_id и RLS (урок 2.7) ---
+out=$(sql tenancy.sql)
+errors_expected "$out" tenancy.sql 5
+# $1 в кавычках — текст ошибки PostgreSQL, а не переменная оболочки.
+# shellcheck disable=SC2016
+has "$out" tenancy.sql 'SQLSTATE 42704' 'SQLSTATE 42501' 'SQLSTATE 23503' 'SQLSTATE 22P02' 'SQLSTATE 42601' \
+	'unrecognized configuration parameter "app.tenant_id"' \
+	'new row violates row-level security policy for table "chats"' \
+	'violates foreign key constraint "messages_tenant_id_chat_id_fkey"' \
+	'invalid input syntax for type bigint: ""' \
+	'syntax error at or near "$1"' \
+	'Index Cond: ((tenant_id = (current_setting('\''app.tenant_id'\''::text))::bigint) AND (id = 10))' \
+	' globex: релиз, globex: зарплаты'
+# Запрос acme без WHERE tenant_id видит свои два чата и ни одного чата globex.
+request=$(printf '%s\n' "$out" | sed -n '/=== 4/,/=== 5/p')
+has "$request" tenancy.sql ' 10 | acme: бэкенд' ' 11 | acme: обед' 'UPDATE 0'
+! printf '%s\n' "$request" | grep -q 'globex:' || fail "tenancy.sql: запрос acme увидел чат globex:
+$out"
+[ "$(column_value "$out" globex_chat_visible)" = 0 ] || fail "tenancy.sql: чужой чат виден по id:
+$out"
+[ "$(column_value "$out" acme_chats)" = 2 ] || fail "tenancy.sql: set_config с параметром не выставил арендатора:
+$out"
+[ "$(column_value "$out" owner_sees)" = 4 ] && [ "$(column_value "$out" owner_sees_forced)" = 2 ] && [ "$(column_value "$out" superuser_sees_forced)" = 4 ] ||
+	fail "tenancy.sql: владелец без FORCE должен видеть 4 строки, с FORCE — 2, суперпользователь — 4:
+$out"
+ok "tenancy.sql: без арендатора — 42704, после COMMIT — 22P02; запрос видит только своё; запись в чужого — 42501, ссылка на чужой чат — 23503; SET без LOCAL переживает запрос; SET с \$1 — 42601, set_config — да; владелец обходит RLS до FORCE, суперпользователь — всегда"
 
 # --- 4. jsonb/: настройки в JSONB и GIN (урок 2.6) ---
 out=$(sql jsonb/settings.sql)

@@ -1,0 +1,247 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+# из labs/: docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&1'
+
+=== 1. Общие таблицы: tenant_id в каждой строке и в каждом ключе ===
+CREATE TABLE tenants (id bigint PRIMARY KEY, name text NOT NULL UNIQUE);
+CREATE TABLE
+CREATE TABLE chats (
+    tenant_id bigint NOT NULL REFERENCES tenants (id),
+    id        bigint NOT NULL,
+    title     text   NOT NULL,
+    PRIMARY KEY (tenant_id, id)
+);
+CREATE TABLE
+CREATE TABLE messages (
+    tenant_id bigint NOT NULL,
+    chat_id   bigint NOT NULL,
+    seq       bigint NOT NULL,
+    text      text   NOT NULL,
+    PRIMARY KEY (tenant_id, chat_id, seq),
+    FOREIGN KEY (tenant_id, chat_id) REFERENCES chats (tenant_id, id)
+);
+CREATE TABLE
+INSERT INTO tenants VALUES (1, 'acme'), (2, 'globex');
+INSERT 0 2
+INSERT INTO chats VALUES
+    (1, 10, 'acme: бэкенд'),
+    (1, 11, 'acme: обед'),
+    (2, 20, 'globex: релиз'),
+    (2, 21, 'globex: зарплаты');
+INSERT 0 4
+CREATE ROLE tenancy_app NOLOGIN;
+CREATE ROLE
+GRANT USAGE ON SCHEMA tenancy TO tenancy_app;
+GRANT
+GRANT SELECT, INSERT, UPDATE, DELETE ON chats, messages TO tenancy_app;
+GRANT
+ALTER TABLE chats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE
+CREATE POLICY tenant_isolation ON chats
+    USING (tenant_id = current_setting('app.tenant_id')::bigint);
+CREATE POLICY
+CREATE POLICY tenant_isolation ON messages
+    USING (tenant_id = current_setting('app.tenant_id')::bigint);
+CREATE POLICY
+
+=== 2. Суперпользователь политик не замечает ===
+SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;
+ rolname | rolsuper | rolbypassrls 
+---------+----------+--------------
+ lab     | t        | t
+(1 row)
+
+SELECT tenant_id, id, title FROM chats ORDER BY tenant_id, id;
+ tenant_id | id |      title       
+-----------+----+------------------
+         1 | 10 | acme: бэкенд
+         1 | 11 | acme: обед
+         2 | 20 | globex: релиз
+         2 | 21 | globex: зарплаты
+(4 rows)
+
+
+=== 3. Роль приложения без арендатора ===
+SET ROLE tenancy_app;
+SET
+SELECT id, title FROM chats;
+psql:/lab/tenancy.sql:77: ERROR:  unrecognized configuration parameter "app.tenant_id"
+SQLSTATE 42704
+
+=== 4. Запрос арендатора: настройка живёт до конца транзакции ===
+BEGIN;
+BEGIN
+SELECT set_config('app.tenant_id', '1', true);
+ set_config 
+------------
+ 1
+(1 row)
+
+SELECT id, title FROM chats ORDER BY id;
+ id |    title     
+----+--------------
+ 10 | acme: бэкенд
+ 11 | acme: обед
+(2 rows)
+
+SELECT count(*) AS globex_chat_visible FROM chats WHERE id = 20;
+ globex_chat_visible 
+---------------------
+                   0
+(1 row)
+
+UPDATE chats SET title = 'взломано' WHERE id = 20;
+UPDATE 0
+EXPLAIN (COSTS OFF) SELECT id, title FROM chats WHERE id = 10;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Index Scan using chats_pkey on chats
+   Index Cond: ((tenant_id = (current_setting('app.tenant_id'::text))::bigint) AND (id = 10))
+(2 rows)
+
+COMMIT;
+COMMIT
+
+=== 5. Запись в чужого арендатора ===
+BEGIN;
+BEGIN
+SELECT set_config('app.tenant_id', '1', true);
+ set_config 
+------------
+ 1
+(1 row)
+
+INSERT INTO chats VALUES (2, 22, 'acme подбрасывает чат в globex');
+psql:/lab/tenancy.sql:104: ERROR:  new row violates row-level security policy for table "chats"
+SQLSTATE 42501
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+SELECT set_config('app.tenant_id', '1', true);
+ set_config 
+------------
+ 1
+(1 row)
+
+INSERT INTO messages VALUES (1, 20, 1, 'acme пишет в чат globex');
+psql:/lab/tenancy.sql:113: ERROR:  insert or update on table "messages" violates foreign key constraint "messages_tenant_id_chat_id_fkey"
+DETAIL:  Key is not present in table "chats".
+SQLSTATE 23503
+ROLLBACK;
+ROLLBACK
+
+=== 6. После COMMIT настройки нет ===
+SELECT current_setting('app.tenant_id') = '' AS tenant_is_empty;
+ tenant_is_empty 
+-----------------
+ t
+(1 row)
+
+SELECT id, title FROM chats;
+psql:/lab/tenancy.sql:123: ERROR:  invalid input syntax for type bigint: ""
+SQLSTATE 22P02
+
+=== 7. SET без LOCAL: арендатор переживает запрос ===
+SET app.tenant_id = '2';
+SET
+SELECT count(*) AS globex_chats FROM chats;
+ globex_chats 
+--------------
+            2
+(1 row)
+
+SELECT string_agg(title, ', ' ORDER BY id) AS next_request_sees FROM chats;
+        next_request_sees        
+---------------------------------
+ globex: релиз, globex: зарплаты
+(1 row)
+
+RESET app.tenant_id;
+RESET
+
+=== 8. Параметр в SET не передать, в set_config — можно ===
+BEGIN;
+BEGIN
+SET LOCAL app.tenant_id = $1 
+psql:/lab/tenancy.sql:145: ERROR:  syntax error at or near "$1"
+LINE 1: SET LOCAL app.tenant_id = $1 
+                                  ^
+SQLSTATE 42601
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+SELECT set_config('app.tenant_id', $1, true) 
+ set_config 
+------------
+ 1
+(1 row)
+
+SELECT count(*) AS acme_chats FROM chats;
+ acme_chats 
+------------
+          2
+(1 row)
+
+COMMIT;
+COMMIT
+
+=== 9. Владелец таблицы обходит политики, пока не FORCE ===
+RESET ROLE;
+RESET
+CREATE ROLE tenancy_owner NOLOGIN;
+CREATE ROLE
+GRANT USAGE ON SCHEMA tenancy TO tenancy_owner;
+GRANT
+ALTER TABLE chats OWNER TO tenancy_owner;
+ALTER TABLE
+SET ROLE tenancy_owner;
+SET
+BEGIN;
+BEGIN
+SELECT set_config('app.tenant_id', '1', true);
+ set_config 
+------------
+ 1
+(1 row)
+
+SELECT count(*) AS owner_sees FROM chats;
+ owner_sees 
+------------
+          4
+(1 row)
+
+COMMIT;
+COMMIT
+RESET ROLE;
+RESET
+ALTER TABLE chats FORCE ROW LEVEL SECURITY;
+ALTER TABLE
+SET ROLE tenancy_owner;
+SET
+BEGIN;
+BEGIN
+SELECT set_config('app.tenant_id', '1', true);
+ set_config 
+------------
+ 1
+(1 row)
+
+SELECT count(*) AS owner_sees_forced FROM chats;
+ owner_sees_forced 
+-------------------
+                 2
+(1 row)
+
+COMMIT;
+COMMIT
+RESET ROLE;
+RESET
+SELECT count(*) AS superuser_sees_forced FROM chats;
+ superuser_sees_forced 
+-----------------------
+                     4
+(1 row)
+
