@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { loadGlossaryFile } from '../../glossary/load'
 import { captionTermIds, captionText } from '../core/caption'
-import { ERASED_NAME, FK_VIOLATION, PARTIAL_KEY, PLAIN_KEY, UNIQUE_VIOLATION, softDeleteScenario, type SdFrame, type SoftDeleteVariant } from './soft-delete-pitfalls'
+import { PII_NAME, FK_VIOLATION, PARTIAL_KEY, PLAIN_KEY, UNIQUE_VIOLATION, softDeleteScenario, type SdFrame, type SoftDeleteVariant } from './soft-delete-pitfalls'
 
 const VARIANTS: SoftDeleteVariant[] = ['unique', 'references', 'erasure']
 const frames = (v: SoftDeleteVariant): SdFrame[] => softDeleteScenario(v).map((s) => s.state)
@@ -73,8 +73,8 @@ describe('забытый фильтр и ссылки', () => {
 
 describe('право на удаление', () => {
   const f = frames('erasure')
-  const namesInAudit = (x: SdFrame) => (x.audit ?? []).filter((a) => a.oldName === ERASED_NAME || a.newName === ERASED_NAME).length
-  const namesInUsers = (x: SdFrame) => x.users.filter((u) => u.id === 1 && u.username === ERASED_NAME).length
+  const namesInAudit = (x: SdFrame) => (x.audit ?? []).filter((a) => a.oldName === PII_NAME || a.newName === PII_NAME).length
+  const namesInUsers = (x: SdFrame) => x.users.filter((u) => u.id === 1 && u.username === PII_NAME).length
   it('у варианта есть журнал аудита, и он только растёт', () => {
     f.forEach((x, i) => {
       expect(x.audit).not.toBeNull()

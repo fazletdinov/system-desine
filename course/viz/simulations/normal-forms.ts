@@ -1,5 +1,6 @@
 import type { Caption, CaptionSegment } from '../core/caption'
 import { term } from '../core/caption'
+import { plural } from '../core/format'
 import type { Simulation, Step } from '../core/types'
 
 // Песочница урока 2.2: одни и те же факты мессенджера в двух схемах. «Одна большая таблица»
@@ -284,13 +285,7 @@ function apply(s: NormalFormsState, a: NormalFormsAction): NormalFormsState {
   }
 }
 
-const rows = (n: number): string => {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return `${n} строка`
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} строки`
-  return `${n} строк`
-}
+const rows = (n: number): string => `${n} ${plural(n, 'строка', 'строки', 'строк')}`
 
 function nameOf(s: NormalFormsState, id: number): string {
   return s.users.find((u) => u.id === id)?.name ?? String(id)

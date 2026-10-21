@@ -60,7 +60,9 @@ export const UNIQUE_VIOLATION = '23505'
 export const FK_VIOLATION = '23503'
 export const PLAIN_KEY = 'users_username_key'
 export const PARTIAL_KEY = 'users_username_active_key'
-export const ERASED_NAME = 'alice'
+// PII_NAME — персональные данные (имя alice), которые стирание должно убрать отовсюду,
+// а не значение-замена после стирания (замена — deleted_<id>).
+export const PII_NAME = 'alice'
 
 const SOFT_T = term('мягкое удаление (soft delete)', 'soft-delete')
 const SOFT_IN = term('Мягкое удаление (soft delete)', 'soft-delete')
@@ -202,10 +204,10 @@ const REFERENCES: readonly Step<SdFrame>[] = [
 const e = (f: Omit<FrameInit, 'rule'>): SdFrame => frame('erasure', { rule: 'partial', ...f })
 // История alice в журнале: вставка и мягкое удаление; номера — порядок строк, а не id из лабы.
 const AUDIT_BEFORE: readonly SdAudit[] = [
-  { id: 1, op: 'INSERT', oldName: null, newName: ERASED_NAME },
-  { id: 2, op: 'UPDATE', oldName: ERASED_NAME, newName: ERASED_NAME },
+  { id: 1, op: 'INSERT', oldName: null, newName: PII_NAME },
+  { id: 2, op: 'UPDATE', oldName: PII_NAME, newName: PII_NAME },
 ]
-const AUDIT_ERASED: readonly SdAudit[] = [...AUDIT_BEFORE, { id: 3, op: 'UPDATE', oldName: ERASED_NAME, newName: 'deleted_1' }]
+const AUDIT_ERASED: readonly SdAudit[] = [...AUDIT_BEFORE, { id: 3, op: 'UPDATE', oldName: PII_NAME, newName: 'deleted_1' }]
 const AUDIT_SCRUBBED: readonly SdAudit[] = AUDIT_ERASED.map((a) => ({ ...a, oldName: null, newName: null }))
 const ERASE_USERS = [ALICE_DELETED, BOB, ALICE_NEW]
 const ERASE_REFS = [SESSION, MSG_ALICE, MSG_BOB, MSG_LATE]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatBytes, formatMs, formatNs, formatNumber, formatSeconds } from './format'
+import { formatBytes, formatMs, formatNs, formatNumber, formatSeconds, plural } from './format'
 
 const NBSP = '\u00A0'
 
@@ -55,4 +55,24 @@ describe('formatSeconds', () => {
     [2_000_000, `23${NBSP}дн.`],
     [150_000_000, `4,8${NBSP}г.`],
   ])('%s → %s', (s, expected) => expect(formatSeconds(s)).toBe(expected))
+})
+
+describe('plural', () => {
+  it.each<[number, string]>([
+    [0, 'листьев'],
+    [1, 'лист'],
+    [2, 'листа'],
+    [4, 'листа'],
+    [5, 'листьев'],
+    [11, 'листьев'],
+    [12, 'листьев'],
+    [14, 'листьев'],
+    [21, 'лист'],
+    [22, 'листа'],
+    [101, 'лист'],
+    [111, 'листьев'],
+    [112, 'листьев'],
+  ])('%s → %s', (n, expected) => {
+    expect(plural(n, 'лист', 'листа', 'листьев')).toBe(expected)
+  })
 })

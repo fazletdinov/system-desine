@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ERASED_NAME, PARTIAL_KEY, PLAIN_KEY, type SdFrame, type SdRef } from '../simulations/soft-delete-pitfalls'
+import { PII_NAME, PARTIAL_KEY, PLAIN_KEY, type SdFrame, type SdRef } from '../simulations/soft-delete-pitfalls'
 
 const props = defineProps<{ state: SdFrame }>()
 
@@ -25,8 +25,8 @@ const flaggedRef = (r: SdRef): boolean => props.state.flagRefs.includes(r.key)
 const refLabel = (r: SdRef): string => (r.table === 'sessions' ? `сессия ${r.key}` : `«${r.key}»`)
 const nameLeft = computed(() => {
   if (props.state.audit === null) return null
-  const inUsers = props.state.users.some((u) => u.username === ERASED_NAME && u.id === 1)
-  const inAudit = props.state.audit.filter((a) => a.oldName === ERASED_NAME || a.newName === ERASED_NAME).length
+  const inUsers = props.state.users.some((u) => u.username === PII_NAME && u.id === 1)
+  const inAudit = props.state.audit.filter((a) => a.oldName === PII_NAME || a.newName === PII_NAME).length
   return { inUsers, inAudit }
 })
 </script>
@@ -84,8 +84,8 @@ const nameLeft = computed(() => {
           <tr v-for="a in state.audit" :key="a.id" :class="{ flag: state.flagAudit.includes(a.id) }">
             <td>{{ a.id }}</td>
             <td>{{ a.op }}</td>
-            <td :class="{ pii: a.oldName === ERASED_NAME }">{{ a.oldName ?? '—' }}</td>
-            <td :class="{ pii: a.newName === ERASED_NAME }">{{ a.newName ?? '—' }}</td>
+            <td :class="{ pii: a.oldName === PII_NAME }">{{ a.oldName ?? '—' }}</td>
+            <td :class="{ pii: a.newName === PII_NAME }">{{ a.newName ?? '—' }}</td>
           </tr>
         </tbody>
       </table>

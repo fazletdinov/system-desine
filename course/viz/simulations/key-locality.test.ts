@@ -72,6 +72,17 @@ describe('key-locality: случайные ключи', () => {
     expect(text).toContain(`за последние ${HOT_WINDOW} вставок тронуто ${st.hotPages} разных листьев из ${st.pages}`)
   })
 
+  // При малом N листьев мало, и подпись согласует слова с числом: «тронут 1 лист из 1»,
+  // «тронуто 2 разных листа из 2», а не «1 разных листьев».
+  it.each<[number, string]>([
+    [1, 'тронут 1 лист из 1'],
+    [21, 'тронуто 2 разных листа из 2'],
+  ])('UUIDv4, N=%i: подпись — «%s»', (n, phrase) => {
+    const s = run({ type: 'insert', count: n })
+    const text = captionText(sim.steps(sim.apply(s, { type: 'select', kind: 'uuidv4' }))[0]!.caption)
+    expect(text).toContain(`за последние ${HOT_WINDOW} вставок ${phrase}`)
+  })
+
   it('при одном N у UUIDv4 страниц больше, чем у UUIDv7', () => {
     const st = stats(loaded)
     expect(st.uuidv4.pages).toBeGreaterThan(st.uuidv7.pages)
