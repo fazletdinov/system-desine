@@ -270,6 +270,11 @@ jobs:
           build-args: VERSION=ci-${{ github.sha }}
           cache-from: type=gha,scope=messenger
           cache-to: type=gha,mode=max,scope=messenger
+      # Сжатый размер, пользователь 65532:65532 и version — тем же скриптом, что
+      # check:images локально; порог размера — в нём. SHA — из окружения, а не подстановкой.
+      - name: Размер, пользователь, version
+        run: scripts/check-image.sh messenger:ci "ci-${GITHUB_SHA}"
+        working-directory: messenger
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: messenger:ci
