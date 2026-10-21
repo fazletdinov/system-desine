@@ -122,9 +122,12 @@ services:
     volumes:
       - db-data:/var/lib/postgresql
     healthcheck:
-      # pg_isready отвечает «принимаю соединения», только когда init-скрипты образа
-      # закончили и сервер перезапущен в рабочем режиме, — migrate не придёт раньше.
-      test: ["CMD-SHELL", "pg_isready -U messenger -d messenger"]
+      # По TCP, а не через unix-сокет: при первом запуске на пустом томе образ создаёт
+      # базу временным сервером с listen_addresses='' — сокет уже отвечает, а TCP нет.
+      # Проверка через сокет объявила бы db healthy в этом окне, migrate получил бы
+      # connection refused на db:5432 и вышел с кодом 1. TCP слушает только рабочий
+      # сервер после init-скриптов.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U messenger -d messenger"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -151,7 +154,7 @@ secrets:
   jwt_key:
     file: ./jwt.pem
 # endregion secrets
-# Пароль базы и строка подключения с ним — тоже файлами (как их создать — README).
+  # Пароль базы и строка подключения с ним — тоже файлами (как их создать — README).
   db_password:
     file: ./secrets/db_password
   db_url:

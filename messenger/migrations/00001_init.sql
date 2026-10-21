@@ -141,12 +141,16 @@ CREATE INDEX members_user_id_idx ON chat.members (user_id);
 -- #region idempotency-keys
 -- Ключи идемпотентности (урок 1.5.4). Запись «в работе» (in_progress) держит
 -- reserved_until: после него повтор перехватывает зависшую резервацию, а не получает
--- 409 до конца суток. Ответ (status, header, body) есть только у готовой записи (done).
+-- 409 до конца суток. owner — токен того, кто держит резервацию; новый при каждом
+-- захвате. Complete и Release меняют строку только со своим owner: иначе запоздавший
+-- прежний владелец стёр бы или перезаписал резервацию того, кто её перехватил.
+-- Ответ (status, header, body) есть только у готовой записи (done).
 CREATE TABLE platform.idempotency_keys (
     scope          text        NOT NULL,
     key            text        NOT NULL,
     fingerprint    bytea       NOT NULL,
     state          text        NOT NULL,
+    owner          uuid        NOT NULL,
     status         integer,
     header         jsonb,
     body           bytea,

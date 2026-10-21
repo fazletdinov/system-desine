@@ -80,10 +80,12 @@ func TestMigrateUpFromScratch(t *testing.T) {
 	setDatabaseURL(t, dsn)
 
 	code, out, errOut := migrateCmd(t, "status")
-	if code != 0 {
-		t.Fatalf("status до up: код %d, stderr %s", code, errOut)
+	if code != exitPending {
+		t.Fatalf("status до up: код %d, ожидался %d; stderr %s", code, exitPending, errOut)
 	}
 	mustContain(t, out, "ожидает     00001_init.sql", "версия схемы: 0, ожидают применения: 1")
+	mustContain(t, errOut, "есть неприменённые миграции")
+	assertNoVersionTable(t, dsn)
 
 	code, out, errOut = migrateCmd(t, "up")
 	if code != 0 {
@@ -108,6 +110,23 @@ func TestMigrateUpFromScratch(t *testing.T) {
 	defer pool.Close()
 	if err := checkSchema(t.Context(), pool); err != nil {
 		t.Fatalf("checkSchema после up: %v", err)
+	}
+}
+
+// status — только чтение: на пустой базе он не создаёт таблицу версий goose.
+func assertNoVersionTable(t *testing.T, dsn string) {
+	t.Helper()
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }()
+	var exists bool
+	if err := conn.QueryRow(t.Context(), `SELECT to_regclass('goose_db_version') IS NOT NULL`).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("status создал goose_db_version на пустой базе")
 	}
 }
 

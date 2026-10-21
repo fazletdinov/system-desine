@@ -36,6 +36,14 @@ const undefinedTable = "42P01"
 
 const migrateUsage = "использование: messenger migrate up|status"
 
+// exitPending — код выхода status, если есть неприменённые миграции: отдельный от
+// ошибки (1) и от неверного вызова (2), чтобы проверку перед выкладкой можно было
+// написать по коду выхода, не разбирая текст вывода.
+const exitPending = 3
+
+// errPending — status отработал, но схема отстаёт от бинаря.
+var errPending = errors.New("есть неприменённые миграции")
+
 // #region run-migrate
 // runMigrate — подкоманда `messenger migrate up|status`. Миграции — отдельный шаг до
 // старта сервера (в compose — одноразовый сервис migrate), а не часть старта: так их
@@ -45,11 +53,17 @@ func runMigrate(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		_, _ = fmt.Fprintln(stderr, migrateUsage)
 		return 2
 	}
-	if err := migrate(ctx, args[0], stdout); err != nil {
+	err := migrate(ctx, args[0], stdout)
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, errPending):
+		_, _ = fmt.Fprintf(stderr, "миграции: %v — messenger migrate up\n", err)
+		return exitPending
+	default:
 		_, _ = fmt.Fprintf(stderr, "миграции: %v\n", err)
 		return 1
 	}
-	return 0
 }
 
 func migrate(ctx context.Context, cmd string, out io.Writer) (err error) {
@@ -76,7 +90,7 @@ func migrate(ctx context.Context, cmd string, out io.Writer) (err error) {
 	if cmd == "up" {
 		return migrateUp(ctx, p, out)
 	}
-	return migrateStatus(ctx, p, out)
+	return migrateStatus(ctx, db, p, out)
 }
 
 // #endregion run-migrate
@@ -127,7 +141,18 @@ func migrateUp(ctx context.Context, p *goose.Provider, out io.Writer) error {
 // migrateStatus печатает состояние каждой миграции и сводку. Расхождение видно в обе
 // стороны: миграции, ожидающие применения, и база новее бинаря (миграции следующего
 // выпуска уже применены — нормально при выкладке, но этому бинарю о них ничего не известно).
-func migrateStatus(ctx context.Context, p *goose.Provider, out io.Writer) error {
+//
+// На базе без таблицы goose_db_version status не зовёт goose: его Status и GetDBVersion
+// (v3.28.0) сначала создают таблицу версий, и «посмотреть» превратилось бы в DDL — с
+// правами на него и с таблицей, которой до up не было. Опции «только читать» у Provider нет.
+func migrateStatus(ctx context.Context, db *sql.DB, p *goose.Provider, out io.Writer) error {
+	exists, err := versionTableExists(ctx, db)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return printNothingApplied(p, out)
+	}
 	statuses, err := p.Status(ctx)
 	if err != nil {
 		return fmt.Errorf("status: %w", err)
@@ -150,7 +175,32 @@ func migrateStatus(ctx context.Context, p *goose.Provider, out io.Writer) error 
 	if latest := latestSource(p); current > latest {
 		_, _ = fmt.Fprintf(out, "база новее бинаря: его последняя миграция — %d\n", latest)
 	}
+	if pending > 0 {
+		return errPending
+	}
 	return nil
+}
+
+func printNothingApplied(p *goose.Provider, out io.Writer) error {
+	sources := p.ListSources()
+	for _, s := range sources {
+		_, _ = fmt.Fprintf(out, "ожидает     %s\n", path.Base(s.Path))
+	}
+	_, _ = fmt.Fprintf(out, "версия схемы: 0, ожидают применения: %d\n", len(sources))
+	if len(sources) > 0 {
+		return errPending
+	}
+	return nil
+}
+
+// versionTableExists ищет таблицу goose так же, как goose её создаёт, — без схемы в
+// имени, по search_path.
+func versionTableExists(ctx context.Context, db *sql.DB) (bool, error) {
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, goose.DefaultTablename).Scan(&exists); err != nil {
+		return false, fmt.Errorf("таблица версий: %w", err)
+	}
+	return exists, nil
 }
 
 func latestSource(p *goose.Provider) int64 {
