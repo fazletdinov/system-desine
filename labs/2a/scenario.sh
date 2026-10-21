@@ -134,6 +134,41 @@ row_jsonb=$(first_number "$out" ' jsonb +\| [^|]+\| +([0-9]+)')
 $out"
 ok "jsonb: столбец boolean отвергает строку (22P02), CHECK ловит число, массив и опечатку в ключе; строка $row_columns байт столбцами против $row_jsonb в JSONB; @> идёт по GIN"
 
+# --- 4a. history.sql: мягкое удаление, архив, обезличивание и аудит триггером (урок 2.6) ---
+out=$(sql history.sql)
+errors_expected "$out" history.sql 4
+has "$out" history.sql 'SQLSTATE 23505' 'SQLSTATE 23503' \
+	'violates unique constraint "users_username_key"' \
+	'violates unique constraint "users_username_active_key"' \
+	'Key (id)=(2) is still referenced from table "messages"' \
+	'Key (id)=(1) is still referenced from table "messages"' \
+	' tok-alice |       1' ' deleted_1 | пишу после удаления' \
+	'Index Scan using users_username_active_key on users' 'Trigger audited_audit: calls=100000'
+# Без условия deleted_at IS NULL частичный индекс не годится: первый план после него — полный просмотр.
+printf '%s\n' "$out" | sed -n '/user42/,$p' | grep -m 1 -E '^ (Seq|Index) Scan' | grep -q '^ Seq Scan on users$' || fail "history.sql: запрос без deleted_at IS NULL пошёл не полным просмотром:
+$out"
+# Ручная правка попала в журнал без автора, правка из приложения — с ним.
+printf '%s\n' "$out" | grep -qE '^ UPDATE \| user:2 +\| lab +\| Боб +\| Боб Б\. *$' || fail "history.sql: правка приложения записана без автора:
+$out"
+printf '%s\n' "$out" | grep -qE '^ UPDATE \| +\| lab +\| Боб Б\. +\| Боб *$' || fail "history.sql: ручная правка не попала в журнал:
+$out"
+# История alice: вставка, мягкое удаление и обезличивание — имя в каждой; после чистки — ни в одной.
+printf '%s\n' "$out" | grep -qE '^ UPDATE \| alice +\| deleted_1 *$' || fail "history.sql: журнал не сохранил имя при обезличивании:
+$out"
+printf '%s\n' "$out" | sed -n '/AS audit_rows_with_name/,/row)/p' | grep -qE '^ +0$' || fail "history.sql: после чистки журнала имя осталось в истории:
+$out"
+# Цена триггера — только относительно: время и WAL зависят от машины.
+times=$(printf '%s\n' "$out" | sed -n '/=== 8/,$p' | sed -nE 's/^ Execution Time: ([0-9.]+) ms$/\1/p')
+t_plain=$(printf '%s\n' "$times" | sed -n 1p)
+t_audited=$(printf '%s\n' "$times" | sed -n 2p)
+wal_plain=$(first_number "$out" '^ plain +\| [^|]+\| +([0-9]+)')
+wal_audited=$(first_number "$out" '^ audited +\| [^|]+\| +([0-9]+)')
+[ -n "$t_plain" ] && [ -n "$t_audited" ] && less "$(awk -v a="$t_plain" 'BEGIN { print a * 1.2 }')" "$t_audited" || fail "history.sql: UPDATE с триггером $t_audited мс, без $t_plain мс, ждали дольше хотя бы в 1,2 раза:
+$out"
+[ -n "$wal_plain" ] && [ -n "$wal_audited" ] && less "$(awk -v a="$wal_plain" 'BEGIN { print a * 1.3 }')" "$wal_audited" || fail "history.sql: WAL с триггером $wal_audited байт, без $wal_plain, ждали больше хотя бы в 1,3 раза:
+$out"
+ok "history.sql: UNIQUE держит имя удалённого (23505), частичный индекс — нет; без deleted_at IS NULL — Seq Scan; FK принял сообщение удалённого; архив и DELETE упёрлись в FK (23503); журнал хранит имя после обезличивания, чистка его убирает; UPDATE с аудитом $t_audited мс против $t_plain мс, WAL $wal_audited против $wal_plain байт"
+
 # --- 5. types.sql: типы и сравнение имён без учёта регистра (урок 2.3) ---
 out=$(sql types.sql)
 errors_expected "$out" types.sql 10
