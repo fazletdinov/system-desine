@@ -46,6 +46,7 @@ type keyKind struct {
 	column string
 }
 
+// #region kinds
 // Значение id всегда генерирует база (DEFAULT или identity): все три варианта получают
 // одинаковый поток COPY без столбца id, и различие остаётся только в ключе.
 var kinds = []keyKind{
@@ -53,6 +54,8 @@ var kinds = []keyKind{
 	{name: "uuidv4", column: "id uuid DEFAULT gen_random_uuid()"},
 	{name: "uuidv7", column: "id uuid DEFAULT uuidv7()"},
 }
+
+// #endregion kinds
 
 type config struct {
 	rows int
@@ -162,6 +165,7 @@ func measure(ctx context.Context, conn *pgx.Conn, k keyKind, rows int) (result, 
 	// autovacuum выключен: его проход по таблице посреди вставки добавил бы в окно замера свой WAL.
 	// Имя ограничения PK задано явно: по нему ниже ищется индекс, а не по умолчанию «<таблица>_pkey».
 	pkey := "t_" + k.name + "_pk"
+	// #region measure
 	ddl := fmt.Sprintf("CREATE TABLE %s (%s, n bigint NOT NULL, CONSTRAINT %s PRIMARY KEY (id)) WITH (autovacuum_enabled = false)",
 		table.Sanitize(), k.column, pgx.Identifier{pkey}.Sanitize())
 	if _, err := conn.Exec(ctx, ddl); err != nil {
@@ -183,6 +187,7 @@ func measure(ctx context.Context, conn *pgx.Conn, k keyKind, rows int) (result, 
 	if r.topUp, err = load(ctx, conn, table, rows, topUpRows(rows)); err != nil {
 		return result{}, err
 	}
+	// #endregion measure
 	return r, nil
 }
 
@@ -190,6 +195,7 @@ func measure(ctx context.Context, conn *pgx.Conn, k keyKind, rows int) (result, 
 // а не строила новый.
 func topUpRows(rows int) int { return max(1, rows/topUpDivisor) }
 
+// #region load
 // load вставляет count строк пачками COPY, начиная с номера from+1, и меряет время и WAL.
 func load(ctx context.Context, conn *pgx.Conn, table pgx.Identifier, from, count int) (phase, error) {
 	// После контрольной точки первое изменение каждой уже существующей страницы пишет в WAL её
@@ -223,6 +229,8 @@ func load(ctx context.Context, conn *pgx.Conn, table pgx.Identifier, from, count
 	p.walFPI = fpiAfter - fpi
 	return p, nil
 }
+
+// #endregion load
 
 // walPosition — текущая позиция WAL и счётчик полных образов страниц из pg_stat_wal.
 // Оба счётчика общие для всего кластера, а не для нашей таблицы: в окно замера попадает и чужой

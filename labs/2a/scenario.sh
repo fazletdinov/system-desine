@@ -124,7 +124,27 @@ row_jsonb=$(first_number "$out" ' jsonb +\| [^|]+\| +([0-9]+)')
 $out"
 ok "jsonb: столбец boolean отвергает строку (22P02), CHECK ловит число, массив и опечатку в ключе; строка $row_columns байт столбцами против $row_jsonb в JSONB; @> идёт по GIN"
 
-# --- 5. keys: bigint, UUIDv4, UUIDv7 (урок 2.3) ---
+# --- 5. types.sql: типы и сравнение имён без учёта регистра (урок 2.3) ---
+out=$(sql types.sql)
+errors_expected "$out" types.sql 10
+has "$out" types.sql 'SQLSTATE 22001' 'SQLSTATE 22P02' 'SQLSTATE 42P21' \
+	'violates check constraint "titles_text_title_length"' \
+	'violates unique constraint "users_citext_username_key"' \
+	'violates unique constraint "users_ci_username_key"' \
+	'violates unique constraint "users_folded_username_key"' \
+	'nondeterministic collations are not supported for regular expressions' \
+	'2025-02-24 02:46:24.503+00'
+# timestamp без зоны: тот же ряд — тот же момент в UTC и другой в Москве.
+printf '%s\n' "$out" | grep -qE '^ 2026-10-21 12:00:00 \| 2026-10-21 15:00:00\+03$' || fail "types.sql: timestamptz не показал 15:00+03 в Москве:
+$out"
+[ "$(printf '%s\n' "$out" | grep -cE '^ [tf]$')" -eq 2 ] && printf '%s\n' "$out" | grep -qE '^ f$' || fail "types.sql: сравнение моментов timestamp и timestamptz не дало t и f:
+$out"
+# casefold приводит ß к ss, lower — нет.
+printf '%s\n' "$out" | grep -qE '^ straße +\| strasse +\| straße +\| strasse +\| t$' || fail "types.sql: casefold и lower отработали не так, как в уроке:
+$out"
+ok "types.sql: varchar — 22001, CHECK — 23514 с именем, enum — 22P02 без имени; timestamp теряет зону; citext и ICU-коллация ловят Alice/alice; регулярки — 0A000, FK между коллациями — 42P21; casefold(ß) = ss, и уникальный индекс по casefold ловит Straße/STRASSE"
+
+# --- 6. keys: bigint, UUIDv4, UUIDv7 (урок 2.3) ---
 go build -o "$bin/keys" ./2a/keys
 out=$("$bin/keys" -n 100000 -dsn "postgres://lab:lab@127.0.0.1:$LAB2A_PORT/lab?sslmode=disable") || fail "keys упал:
 $out"
