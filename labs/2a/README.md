@@ -133,7 +133,12 @@ UUIDv4 — `NULL`), `uuid` — 16 байт против 40 у того же id �
 `lower(address) WHERE deleted_at IS NULL` — 23505, `EXCLUDE USING gist` с `btree_gist` для
 непересекающихся периодов — 23P01. Отложенный `FOREIGN KEY` (`DEFERRABLE` + `SET CONSTRAINTS … DEFERRED`)
 проверяется в `COMMIT`; отложенный `UNIQUE` разрешает сдвиг позиций одной командой; `CHECK` и `NOT NULL`
-отложить нельзя — 0A000.
+отложить нельзя — 0A000. Ошибка ограничения обрывает транзакцию: следующий `SELECT` в ней — 25P02, после
+`ROLLBACK` — обычный ответ. Внешний ключ без индекса на ссылающемся столбце: 10⁶ сообщений, удаление
+чата без сообщений, `EXPLAIN (ANALYZE)` до и после `CREATE INDEX` — строка `Trigger for constraint`
+показывает цену поиска детей (`scenario.sh` проверяет только соотношение: без индекса дольше в 10 раз и
+больше). Отложенное ограничение в арбитрах `ON CONFLICT` — 55000; `UNIQUE … WITHOUT OVERLAPS` (PostgreSQL 18)
+ловит пересечение периодов тем же 23P01.
 
 ### jsonb/ — урок 2.6
 

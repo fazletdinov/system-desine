@@ -200,3 +200,68 @@ ALTER TABLE users ADD CONSTRAINT users_username_short CHECK (length(username) <=
 ALTER TABLE chats ADD CONSTRAINT chats_title_not_null NOT NULL title DEFERRABLE;
 -- #endregion not-null-not-deferrable
 \echo SQLSTATE :SQLSTATE
+
+\echo
+\echo '=== 12. Ошибка ограничения обрывает транзакцию — 25P02 in_failed_sql_transaction ==='
+-- #region aborted-transaction
+BEGIN;
+INSERT INTO users (username) VALUES ('alice');
+-- #endregion aborted-transaction
+\echo SQLSTATE :SQLSTATE
+-- #region aborted-transaction-next
+-- Тот же запрос, который до ошибки прошёл бы, — в оборванной транзакции база его не выполняет.
+SELECT username FROM users WHERE username = 'alice';
+-- #endregion aborted-transaction-next
+\echo SQLSTATE :SQLSTATE
+-- #region aborted-transaction-rollback
+ROLLBACK;
+SELECT username FROM users WHERE username = 'alice';
+-- #endregion aborted-transaction-rollback
+
+\echo
+\echo '=== 13. Внешний ключ без индекса на ссылающемся столбце: удаление родителя ищет детей ==='
+-- 1001 чат, 10⁶ сообщений в первых 1000; чат 1001 без сообщений — удаляется без единой ошибки,
+-- но проверка внешнего ключа всё равно ищет его детей. Время — строка «Trigger for constraint».
+\set QUIET on
+-- #region fk-index-setup
+CREATE TABLE big_chats (id bigint PRIMARY KEY);
+CREATE TABLE big_messages (
+    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    chat_id bigint NOT NULL CONSTRAINT big_messages_chat_id_fkey REFERENCES big_chats (id)
+);
+INSERT INTO big_chats SELECT g FROM generate_series(1, 1001) AS g;
+INSERT INTO big_messages (chat_id) SELECT 1 + g % 1000 FROM generate_series(1, 1000000) AS g;
+VACUUM ANALYZE big_chats, big_messages;
+-- #endregion fk-index-setup
+\set QUIET off
+-- #region fk-without-index
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+-- #endregion fk-without-index
+-- #region fk-with-index
+CREATE INDEX big_messages_chat_id_idx ON big_messages (chat_id);
+INSERT INTO big_chats VALUES (1001);
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+-- #endregion fk-with-index
+
+\echo
+\echo '=== 14. Отложенное ограничение не годится в арбитры ON CONFLICT — 55000 ==='
+-- pins_position_key с шага 10 — DEFERRABLE INITIALLY IMMEDIATE.
+-- #region deferrable-on-conflict
+INSERT INTO pins VALUES (2, 1, 'дубль')
+    ON CONFLICT (chat_id, position) DO UPDATE SET note = EXCLUDED.note;
+-- #endregion deferrable-on-conflict
+\echo SQLSTATE :SQLSTATE
+
+\echo
+\echo '=== 15. WITHOUT OVERLAPS (PostgreSQL 18): то же исключающее ограничение короче — 23P01 ==='
+-- #region without-overlaps
+CREATE TABLE mutes_wo (
+    chat_id bigint    NOT NULL,
+    user_id bigint    NOT NULL,
+    during  tstzrange NOT NULL,
+    CONSTRAINT mutes_wo_key UNIQUE (chat_id, user_id, during WITHOUT OVERLAPS)
+);
+INSERT INTO mutes_wo VALUES (2, 1, '[2026-10-20 10:00+00, 2026-10-20 12:00+00)');
+INSERT INTO mutes_wo VALUES (2, 1, '[2026-10-20 11:00+00, 2026-10-20 11:30+00)');
+-- #endregion without-overlaps
+\echo SQLSTATE :SQLSTATE

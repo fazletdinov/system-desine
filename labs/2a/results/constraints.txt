@@ -211,3 +211,81 @@ psql:/lab/constraints.sql:200: ERROR:  NOT NULL constraints cannot be marked DEF
 LINE 1: ...DD CONSTRAINT chats_title_not_null NOT NULL title DEFERRABLE...
                                                              ^
 SQLSTATE 0A000
+
+=== 12. Ошибка ограничения обрывает транзакцию — 25P02 in_failed_sql_transaction ===
+BEGIN;
+BEGIN
+INSERT INTO users (username) VALUES ('alice');
+psql:/lab/constraints.sql:208: ERROR:  duplicate key value violates unique constraint "users_username_key"
+DETAIL:  Key (username)=(alice) already exists.
+SQLSTATE 23505
+SELECT username FROM users WHERE username = 'alice';
+psql:/lab/constraints.sql:213: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+SQLSTATE 25P02
+ROLLBACK;
+ROLLBACK
+SELECT username FROM users WHERE username = 'alice';
+ username 
+----------
+ alice
+(1 row)
+
+
+=== 13. Внешний ключ без индекса на ссылающемся столбце: удаление родителя ищет детей ===
+CREATE TABLE big_chats (id bigint PRIMARY KEY);
+CREATE TABLE big_messages (
+    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    chat_id bigint NOT NULL CONSTRAINT big_messages_chat_id_fkey REFERENCES big_chats (id)
+);
+INSERT INTO big_chats SELECT g FROM generate_series(1, 1001) AS g;
+INSERT INTO big_messages (chat_id) SELECT 1 + g % 1000 FROM generate_series(1, 1000000) AS g;
+VACUUM ANALYZE big_chats, big_messages;
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Delete on big_chats (actual time=0.012..0.013 rows=0.00 loops=1)
+   ->  Index Scan using big_chats_pkey on big_chats (actual time=0.004..0.005 rows=1.00 loops=1)
+         Index Cond: (id = 1001)
+         Index Searches: 1
+ Planning Time: 0.065 ms
+ Trigger for constraint big_messages_chat_id_fkey: time=22.441 calls=1
+ Execution Time: 22.473 ms
+(7 rows)
+
+CREATE INDEX big_messages_chat_id_idx ON big_messages (chat_id);
+CREATE INDEX
+INSERT INTO big_chats VALUES (1001);
+INSERT 0 1
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Delete on big_chats (actual time=0.011..0.011 rows=0.00 loops=1)
+   ->  Index Scan using big_chats_pkey on big_chats (actual time=0.005..0.005 rows=1.00 loops=1)
+         Index Cond: (id = 1001)
+         Index Searches: 1
+ Planning Time: 0.032 ms
+ Trigger for constraint big_messages_chat_id_fkey: time=0.160 calls=1
+ Execution Time: 0.178 ms
+(7 rows)
+
+
+=== 14. Отложенное ограничение не годится в арбитры ON CONFLICT — 55000 ===
+INSERT INTO pins VALUES (2, 1, 'дубль')
+    ON CONFLICT (chat_id, position) DO UPDATE SET note = EXCLUDED.note;
+psql:/lab/constraints.sql:251: ERROR:  ON CONFLICT does not support deferrable unique constraints/exclusion constraints as arbiters
+SQLSTATE 55000
+
+=== 15. WITHOUT OVERLAPS (PostgreSQL 18): то же исключающее ограничение короче — 23P01 ===
+CREATE TABLE mutes_wo (
+    chat_id bigint    NOT NULL,
+    user_id bigint    NOT NULL,
+    during  tstzrange NOT NULL,
+    CONSTRAINT mutes_wo_key UNIQUE (chat_id, user_id, during WITHOUT OVERLAPS)
+);
+CREATE TABLE
+INSERT INTO mutes_wo VALUES (2, 1, '[2026-10-20 10:00+00, 2026-10-20 12:00+00)');
+INSERT 0 1
+INSERT INTO mutes_wo VALUES (2, 1, '[2026-10-20 11:00+00, 2026-10-20 11:30+00)');
+psql:/lab/constraints.sql:265: ERROR:  conflicting key value violates exclusion constraint "mutes_wo_key"
+DETAIL:  Key (chat_id, user_id, during)=(2, 1, ["2026-10-20 11:00:00+00","2026-10-20 11:30:00+00")) conflicts with existing key (chat_id, user_id, during)=(2, 1, ["2026-10-20 10:00:00+00","2026-10-20 12:00:00+00")).
+SQLSTATE 23P01

@@ -87,17 +87,27 @@ ok "anomalies.sql: вставка — 23502, обновление — два и�
 
 # --- 2. constraints.sql: каждое ограничение и его SQLSTATE (урок 2.4) ---
 out=$(sql constraints.sql)
-errors_expected "$out" constraints.sql 12
-has "$out" constraints.sql 'SQLSTATE 23502' 'SQLSTATE 23514' 'SQLSTATE 23503' 'SQLSTATE 23P01' 'SQLSTATE 0A000' \
+errors_expected "$out" constraints.sql 16
+has "$out" constraints.sql 'SQLSTATE 23502' 'SQLSTATE 23514' 'SQLSTATE 23503' 'SQLSTATE 23P01' 'SQLSTATE 0A000' 'SQLSTATE 25P02' 'SQLSTATE 55000' \
+	'current transaction is aborted, commands ignored until end of transaction block' \
 	'ERROR:  23505: duplicate key value violates unique constraint "users_username_key"' \
 	'CONSTRAINT NAME:  users_username_key' \
 	'violates unique constraint "emails_address_active_key"' \
 	'violates exclusion constraint "mutes_no_overlap"' \
+	'violates exclusion constraint "mutes_wo_key"' \
+	'ON CONFLICT does not support deferrable unique constraints/exclusion constraints as arbiters' \
 	'CHECK constraints cannot be marked DEFERRABLE'
 # Отложенный FK: чат 3 вставлен после участника в той же транзакции — COMMIT прошёл.
 printf '%s\n' "$out" | grep -qE '^ +3 \| +1$' || fail "constraints.sql: отложенный FK не пропустил участника чата 3:
 $out"
-ok "constraints.sql: 23502, 23514, 23505, 23503, 23P01 и 0A000; отложенный FK проверяется в COMMIT"
+# Внешний ключ без индекса: время проверки детей до и после CREATE INDEX. Абсолютные мс зависят от
+# машины, поэтому только соотношение: полный просмотр 10⁶ строк против поиска по индексу.
+fk_times=$(printf '%s\n' "$out" | sed -nE 's/^ Trigger for constraint big_messages_chat_id_fkey: time=([0-9.]+) .*$/\1/p')
+fk_no_index=$(printf '%s\n' "$fk_times" | sed -n 1p)
+fk_index=$(printf '%s\n' "$fk_times" | sed -n 2p)
+[ -n "$fk_no_index" ] && [ -n "$fk_index" ] && less "$(awk -v b="$fk_index" 'BEGIN { print b * 10 }')" "$fk_no_index" || fail "constraints.sql: проверка FK без индекса $fk_no_index мс, с индексом $fk_index мс, ждали разницу больше чем в 10 раз:
+$out"
+ok "constraints.sql: 23502, 23514, 23505, 23503, 23P01 и 0A000; отложенный FK проверяется в COMMIT; после 23505 транзакция — 25P02; ON CONFLICT с отложенным — 55000; WITHOUT OVERLAPS — 23P01; FK без индекса $fk_no_index мс против $fk_index мс"
 
 # --- 3. antipatterns.sql: запрос, который ломается, и исправление (урок 2.7) ---
 out=$(sql antipatterns.sql)
