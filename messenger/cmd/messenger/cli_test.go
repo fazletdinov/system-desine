@@ -18,7 +18,7 @@ func TestSubcommand(t *testing.T) {
 		{"без аргументов — запуск сервера", nil, false, 0, "", ""},
 		{"version", []string{"version"}, true, 0, "dev\n", ""},
 		{"--version", []string{"--version"}, true, 0, "dev\n", ""},
-		{"неизвестная команда", []string{"serve"}, true, 2, "", "неизвестная команда \"serve\"; есть: version, healthcheck"},
+		{"неизвестная команда", []string{"serve"}, true, 2, "", "неизвестная команда \"serve\"; есть: version, healthcheck, migrate"},
 		{"healthcheck без сервера", []string{"healthcheck"}, true, 1, "", "проба"},
 	}
 	for _, c := range cases {

@@ -7,6 +7,11 @@ services:
       args:
         VERSION: compose
     image: messenger:local
+    # Сервер стартует только после того, как migrate применил миграции и вышел с кодом 0:
+    # упавшие миграции останавливают выкладку, а не дают серверу работать со старой схемой.
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     # region service
     # Порт — только на loopback хоста: снаружи сервис доступен через шлюз (модуль 6),
     # а не напрямую.
@@ -64,6 +69,81 @@ services:
     # endregion service
     # healthcheck не задаём: он есть в образе (HEALTHCHECK в Dockerfile).
 
+  # region migrate
+  # Миграции — одноразовый сервис из того же образа: применяет встроенные в бинарь
+  # миграции и выходит. Отдельный шаг, а не часть старта сервера: несколько экземпляров
+  # не применяют их наперегонки, и серверу не нужны права на DDL (урок 2.8).
+  migrate:
+    image: messenger:local
+    command: ["migrate", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MESSENGER_DATABASE_URL_FILE: /run/secrets/db_url
+    secrets:
+      - db_url
+    # Повтор после сбоя — решение человека: миграция, упавшая на середине, откатана
+    # целиком, и слепой перезапуск упал бы так же.
+    restart: "no"
+    # HEALTHCHECK образа пробует HTTP-порт сервера, а migrate его не открывает: без
+    # отключения контейнер числился бы unhealthy, пока применяет миграции.
+    healthcheck:
+      disable: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    user: "65532:65532"
+    mem_limit: 64m
+  # endregion migrate
+
+  # region db
+  db:
+    # Тег для человека, digest — для воспроизводимости: тег 18.6-trixie могут
+    # перепубликовать с новой базой Debian. Тот же образ — в labs/2a и в тестах
+    # (platform/pgtest.Image, совпадение проверяет тест).
+    image: postgres:18.6-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    environment:
+      POSTGRES_USER: messenger
+      POSTGRES_DB: messenger
+      # Пароль — файлом-секретом, как ключ JWT: переменная окружения видна в docker inspect.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      # Для psql внутри контейнера: docker compose exec db psql — без -U и -d.
+      PGUSER: messenger
+      PGDATABASE: messenger
+    secrets:
+      - db_password
+    # Порт наружу не публикуется: базу видит только сеть compose. Посмотреть данные —
+    # docker compose exec db psql.
+    # Том, а не слой контейнера: данные переживают docker compose down и пересоздание
+    # контейнера (стираются только down -v). С PostgreSQL 18 образ хранит данные в
+    # /var/lib/postgresql/18/docker, и том монтируется на каталог выше.
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      # pg_isready отвечает «принимаю соединения», только когда init-скрипты образа
+      # закончили и сервер перезапущен в рабочем режиме, — migrate не придёт раньше.
+      test: ["CMD-SHELL", "pg_isready -U messenger -d messenger"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+    # Потолок памяти: shared_buffers по умолчанию 128 МиБ, плюс процесс на каждое
+    # соединение (пул мессенджера — 10, урок 2.9) с work_mem 4 МиБ на сортировку и кэш
+    # каталога. 512 МиБ — с запасом для учебного стенда; без потолка база под нагрузкой
+    # отъедала бы память у мессенджера на той же машине.
+    mem_limit: 512m
+    # /dev/shm контейнера по умолчанию 64 МиБ, а параллельные запросы берут разделяемую
+    # память оттуда; при нехватке запрос падает с «could not resize shared memory segment».
+    shm_size: 128m
+    stop_grace_period: 30s
+  # endregion db
+
+volumes:
+  db-data:
+
 # region secrets
 # Ключ — файлом, а не переменной окружения: окружение видно в docker inspect и
 # /proc/<pid>/environ. Ключ создаёт go run ./cmd/keygen -out jwt.pem.
@@ -71,3 +151,8 @@ secrets:
   jwt_key:
     file: ./jwt.pem
 # endregion secrets
+# Пароль базы и строка подключения с ним — тоже файлами (как их создать — README).
+  db_password:
+    file: ./secrets/db_password
+  db_url:
+    file: ./secrets/db_url
