@@ -102,6 +102,7 @@ func (uc *SendMessage) Execute(ctx context.Context, cmd SendMessageCommand) (Sen
 	}
 }
 
+// #region send-attempt
 // post — одна попытка в своей транзакции: прочитать чат, применить правила агрегата,
 // записать сообщение и новое состояние чата. Каждая попытка заново читает чат и заново
 // зовёт Post: правила проверяются на свежем состоянии, а не на том, что проиграло гонку.
@@ -125,6 +126,8 @@ func (uc *SendMessage) post(ctx context.Context, out outgoing) (domain.Message, 
 	})
 	return msg, err
 }
+
+// #endregion send-attempt
 
 // #region send-saved
 // saved отвечает на повтор: сообщение с этим ключом уже сохранено. Читаем его после

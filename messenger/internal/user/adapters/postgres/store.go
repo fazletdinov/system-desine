@@ -41,6 +41,7 @@ func (s *Store) CreateUser(ctx context.Context, user domain.User) error {
 	return nil
 }
 
+// #region find-user
 func (s *Store) FindUser(ctx context.Context, id domain.UserID) (domain.User, error) {
 	return scanUser(pgtx.Q(ctx, s.pool).QueryRow(ctx, selectUser+` WHERE id = $1`, id.String()))
 }
@@ -48,6 +49,8 @@ func (s *Store) FindUser(ctx context.Context, id domain.UserID) (domain.User, er
 func (s *Store) FindUserByUsername(ctx context.Context, username domain.Username) (domain.User, error) {
 	return scanUser(pgtx.Q(ctx, s.pool).QueryRow(ctx, selectUser+` WHERE username = $1`, username.String()))
 }
+
+// #endregion find-user
 
 // scanUser читает строку users.users и собирает пользователя конструкторами домена.
 func scanUser(row pgx.Row) (domain.User, error) {
