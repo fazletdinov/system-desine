@@ -28,7 +28,7 @@ $ docker logs m-plain
 {"time":"2026-10-15T12:52:24.471541937Z","level":"INFO","msg":"останавливаюсь: /readyz отвечает 503","drain_delay":"5s"}
 ```
 
-<Run dir="messenger" cmd="docker run -d --name m-plain -v &quot;$PWD/jwt.pem:/run/secrets/jwt_key:ro&quot; -e MESSENGER_JWT_KEY_FILE=/run/secrets/jwt_key messenger:local &amp;&amp; docker stop m-plain; docker inspect -f '{{.State.ExitCode}}' m-plain; docker logs m-plain" needs="docker" before="`git checkout m01-l16`, `docker build -t messenger:local .`, ключ `go run ./cmd/keygen -out jwt.pem`" />
+<Run dir="messenger" tag="m01-l16" cmd="docker run -d --name m-plain -v &quot;$PWD/jwt.pem:/run/secrets/jwt_key:ro&quot; -e MESSENGER_JWT_KEY_FILE=/run/secrets/jwt_key messenger:local &amp;&amp; docker stop m-plain; docker inspect -f '{{.State.ExitCode}}' m-plain; docker logs m-plain" needs="docker" before="`docker build -t messenger:local .`, ключ `go run ./cmd/keygen -out jwt.pem && chmod 0444 jwt.pem`" />
 
 Мессенджер получил SIGTERM и начал останавливаться аккуратно, но через <N>3,15 с</N> был убит SIGKILL. Код 137 — это 128 + 9, то есть «убит сигналом 9». Строки «сервер остановлен» в журнале нет. Если бы в этот момент шли запросы, клиенты получили бы обрыв соединения. Почему Docker ждал три секунды, а не десять, как написано в документации, — разберём ниже. Это первая находка урока.
 
@@ -109,7 +109,7 @@ $ docker inspect -f '{{.State.ExitCode}}' nosig
 2
 ```
 
-<Run dir="messenger" cmd="docker run --name nosig -i golang:1.26.9-trixie sh -c 'cat > /tmp/main.go &amp;&amp; go build -o /tmp/nosignal /tmp/main.go &amp;&amp; exec /tmp/nosignal' < nosignal.go" needs="docker" before="сохраните программу выше в `nosignal.go`; в соседнем терминале — `docker stop -t 10 nosig`" />
+<Run dir="messenger" cmd="docker run --name nosig -i golang:1.26.9-trixie sh -c 'cat > /tmp/main.go &amp;&amp; go build -o /tmp/nosignal /tmp/main.go &amp;&amp; exec /tmp/nosignal' < /tmp/nosignal.go" needs="docker" before="сохраните программу выше в `/tmp/nosignal.go`; в соседнем терминале — `docker stop -t 10 nosig`" />
 
 <N>0,19 с</N> и код 2. (Это Go 1.26.9. В Go 1.27 последняя строка `dieFromSignal` — `exit(128 + sig)`, и тот же опыт даёт код 143, как у обычного процесса, убитого SIGTERM; урок [1.5.6](../01-5-go-concurrency/06-background-work).) Go-программа без `signal.Notify` в роли PID 1 **не зависает**. Она умирает сразу, и это не лучше. Не выполнились `defer`, не вызван `Shutdown`, начатые запросы оборваны. Мессенджер с урока 1.7 ловит SIGTERM через `signal.NotifyContext`, поэтому сигнал приходит в наш код, и мы останавливаемся по своим правилам.
 
@@ -138,7 +138,7 @@ start.sh: ключ — /run/secrets/jwt_key
 {"time":"2026-10-15T13:04:13.361841312Z","level":"INFO","msg":"слушаю","addr":":8080","version":"compose"}
 ```
 
-<Run dir="messenger" cmd="docker top m-wrapper -o pid,ppid,args &amp;&amp; docker stop -t 10 m-wrapper; docker inspect -f '{{.State.ExitCode}}' m-wrapper; docker logs m-wrapper" needs="docker" before="`docker build -f ../course/modules/01-go-service/examples/dockerfiles/wrapper.Dockerfile --target wrapper -t messenger-example:wrapper .` и `docker run -d --name m-wrapper -v &quot;$PWD/jwt.pem:/run/secrets/jwt_key:ro&quot; -e MESSENGER_JWT_KEY_FILE=/run/secrets/jwt_key messenger-example:wrapper`" />
+<Run dir="messenger" tag="m01-l17" cmd="docker top m-wrapper -o pid,ppid,args &amp;&amp; docker stop -t 10 m-wrapper; docker inspect -f '{{.State.ExitCode}}' m-wrapper; docker logs m-wrapper" needs="docker" before="`docker build -f ../course/modules/01-go-service/examples/dockerfiles/wrapper.Dockerfile --target wrapper -t messenger-example:wrapper .` и `docker run -d --name m-wrapper -v &quot;$PWD/jwt.pem:/run/secrets/jwt_key:ro&quot; -e MESSENGER_JWT_KEY_FILE=/run/secrets/jwt_key messenger-example:wrapper`" />
 
 <N>10,22 с</N>, код 137. Строки «останавливаюсь» нет: мессенджер о SIGTERM не узнал вовсе. `sh` (busybox ash) обработчика на SIGTERM не ставит. Значит, как PID 1 он сигнал не получает и пересылать детям ему нечего. Через 10 секунд SIGKILL убил весь namespace: когда умирает init, ядро убивает и все остальные процессы его namespace. Лечится одним словом: `exec /messenger` в последней строке скрипта. `exec` заменяет процесс оболочки программой, и `/messenger` становится PID 1 сам.
 
@@ -170,7 +170,7 @@ $ docker logs m-shell-form
 {"time":"2026-10-15T13:04:33.181146281Z","level":"INFO","msg":"сервер остановлен"}
 ```
 
-<Run dir="messenger" cmd="docker top m-shell-form -o pid,ppid,args &amp;&amp; docker stop -t 10 m-shell-form; docker inspect -f '{{.State.ExitCode}}' m-shell-form; docker logs m-shell-form" needs="docker" before="`docker build -f ../course/modules/01-go-service/examples/dockerfiles/wrapper.Dockerfile --target shell-form -t messenger-example:shell-form .` и `docker run -d --name m-shell-form -v &quot;$PWD/jwt.pem:/run/secrets/jwt_key:ro&quot; -e MESSENGER_JWT_KEY_FILE=/run/secrets/jwt_key messenger-example:shell-form`" />
+<Run dir="messenger" tag="m01-l17" cmd="docker top m-shell-form -o pid,ppid,args &amp;&amp; docker stop -t 10 m-shell-form; docker inspect -f '{{.State.ExitCode}}' m-shell-form; docker logs m-shell-form" needs="docker" before="`docker build -f ../course/modules/01-go-service/examples/dockerfiles/wrapper.Dockerfile --target shell-form -t messenger-example:shell-form .` и `docker run -d --name m-shell-form -v &quot;$PWD/jwt.pem:/run/secrets/jwt_key:ro&quot; -e MESSENGER_JWT_KEY_FILE=/run/secrets/jwt_key messenger-example:shell-form`" />
 
 Неожиданно: процесса `sh` нет, PID 1 — сам `/messenger`, и остановка прошла чисто. Дело в оптимизации busybox ash. Когда строка `-c` кончается простой командой, оболочка не порождает процесс, а выполняет её через `exec`. В наших опытах она сделала так же и для `sh -c 'echo старт; /messenger'`, и для `sh -c 'trap "" HUP; /messenger'`. А вот скрипт-файл (`/start.sh`) она так не оптимизирует. Многие оболочки умеют подобное, но POSIX этого не требует. Такое поведение зависит от оболочки, её версии и вида строки. Стоит дописать в конец `; echo готово`, сменить базовый образ или оболочку — и `sh` снова окажется PID 1 и снова «съест» сигнал. Поэтому правило остаётся прежним: **только exec-форма**. Shell-форма работает у вас лишь до первого изменения, которое сломает её незаметно.
 
@@ -368,7 +368,7 @@ $ go run main.go
 через 3s: ошибка клиента: Get "http://127.0.0.1:37277/": EOF
 ```
 
-<Run dir="labs/timeouts" cmd="go run main.go" before="положите программу выше в `labs/timeouts/main.go`" />
+<Run dir="labs/timeouts" cmd="go run main.go" before="создайте каталог и положите программу выше в `main.go` (потом удалите каталог)" />
 
 Клиент ждал не 1 секунду, а все **3** — пока обработчик не вернулся. Только тогда сервер попытался отправить ответ, упёрся в истёкший дедлайн записи и закрыл соединение, а клиент получил `EOF`. Даже `io.WriteString` в обработчике ошибки не вернул: он писал в буфер ответа, а не в сокет. Значит, для HTTP/1.1 `WriteTimeout` гарантирует две вещи: опоздавший ответ не будет доставлен, а соединение закроется, когда обработчик закончит. От зависшего обработчика он **не защищает**: клиент ждёт столько же, сколько висит обработчик. (В HTTP/2 иначе: по истечении срока сервер сбрасывает поток сразу.) Настоящая защита — обработчики, которые уважают `ctx`, как наш `Timeout` и use case'ы под ним, а со стороны клиента — собственные таймауты клиента и прокси перед сервисом (шлюз в модуле 6, Nginx в модуле 2.5). Сама горутина обработчика в любом случае доработает до конца.
 
@@ -392,7 +392,7 @@ $ docker inspect -f '{{json .Config.Env}}' messenger-messenger-1
 ["GOMEMLIMIT=230MiB","MESSENGER_JWT_KEY_FILE=/run/secrets/jwt_key","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt","MESSENGER_ADDR=:8080"]
 ```
 
-<Run dir="messenger" cmd="docker inspect -f '{{json .Config.Env}}' messenger-messenger-1; docker inspect -f '{{range .Mounts}}{{.Type}} {{.Source}} -> {{.Destination}} rw={{.RW}}{{end}}' messenger-messenger-1" needs="docker" before="`git checkout m01-l17` и `docker compose up -d --build`" />
+<Run dir="messenger" tag="m01-l17" cmd="docker inspect -f '{{json .Config.Env}}' messenger-messenger-1; docker inspect -f '{{range .Mounts}}{{.Type}} {{.Source}} -> {{.Destination}} rw={{.RW}}{{end}}' messenger-messenger-1" needs="docker" before="`docker compose up -d --build`" />
 
 В окружении — **путь** к ключу, а не сам ключ. Сам ключ compose монтирует файлом: секрет из `file:` — это bind mount только для чтения в `/run/secrets/<имя>`:
 
@@ -459,7 +459,7 @@ GOMAXPROCS: 12
 лимит памяти: 9223372036854775807
 ```
 
-<Run dir="messenger" cmd="docker run --rm -i --cpus 1 --memory 256m golang:1.26.9-trixie sh -c 'cat > /tmp/main.go &amp;&amp; go run /tmp/main.go' < limits.go" needs="docker" before="сохраните программу выше в `limits.go`; другие строки — с `--cpus 2.5` и без лимитов" />
+<Run dir="messenger" cmd="docker run --rm -i --cpus 1 --memory 256m golang:1.26.9-trixie sh -c 'cat > /tmp/main.go &amp;&amp; go run /tmp/main.go' < /tmp/limits.go" needs="docker" before="сохраните программу выше в `/tmp/limits.go`; другие строки — с `--cpus 2.5` и без лимитов" />
 
 Без лимита — 12, по числу процессоров VM Docker Desktop. С `--cpus 2.5` — 3: дробная часть округляется вверх. А с `--cpus 1` — <N>2</N>, а не 1, как можно было ждать. Это не ошибка. В комментарии к `defaultGOMAXPROCS` (`runtime/cgroup_linux.go`) сказано: «лимит меньше 2 округляется до 2». Release notes Go 1.25 об этом молчат. При одном потоке сборщик мусора и код приложения не могли бы работать одновременно ни на миг. Два потока при квоте в одно ядро немного рискуют троттлингом, но не дают сборке мусора замораживать приложение. Наш мессенджер с `cpus: 1` в compose тоже получит `GOMAXPROCS` = 2. NumCPU при этом остаётся 12: `--cpus` ограничивает не число видимых процессоров, а время на них.
 
@@ -476,7 +476,7 @@ GOMAXPROCS: 2
 лимит памяти: 241172480
 ```
 
-<Run dir="messenger" cmd="docker run --rm -i --cpus 1 --memory 256m -e GOMEMLIMIT=230MiB golang:1.26.9-trixie sh -c 'cat > /tmp/main.go &amp;&amp; go run /tmp/main.go' < limits.go" needs="docker" before="сохраните программу из раздела о GOMAXPROCS в `limits.go`" />
+<Run dir="messenger" cmd="docker run --rm -i --cpus 1 --memory 256m -e GOMEMLIMIT=230MiB golang:1.26.9-trixie sh -c 'cat > /tmp/main.go &amp;&amp; go run /tmp/main.go' < /tmp/limits.go" needs="docker" before="сохраните программу из раздела о GOMAXPROCS в `/tmp/limits.go`" />
 
 241 172 480 байт = 230 МиБ, около 90 % от 256 МиБ. Руководство по сборщику мусора Go советует для контейнеров с фиксированной памятью оставлять 5–10 % запаса. В лимит не входит память, о которой рантайм не знает: память, выделенная через cgo, страничный кэш файлов в cgroup, память ядра на сокеты.
 
@@ -659,7 +659,7 @@ NAME                    IMAGE             COMMAND        SERVICE     CREATED    
 messenger-messenger-1   messenger:local   "/messenger"   messenger   3 seconds ago   Up 3 seconds (healthy)   127.0.0.1:8080->8080/tcp
 ```
 
-<Run dir="messenger" cmd="docker compose up -d --build &amp;&amp; docker compose ps" needs="docker" before="`git checkout m01-l17`, ключ — `go run ./cmd/keygen -out jwt.pem`" />
+<Run dir="messenger" tag="m01-l17" cmd="docker compose up -d --build &amp;&amp; docker compose ps" needs="docker" before="ключ — `go run ./cmd/keygen -out jwt.pem && chmod 0444 jwt.pem`" />
 
 Ключ на Docker Desktop прочитался без настроек — как и обещал разбор прав выше.
 
@@ -684,7 +684,7 @@ Content-Length: 16
 {"status":"ok"}
 ```
 
-<Run dir="messenger" cmd="curl -si localhost:8080/livez; curl -si localhost:8080/readyz" needs="docker" before="стенд из раздела выше: `docker compose up -d --build`" />
+<Run dir="messenger" tag="m01-l17" cmd="curl -si localhost:8080/livez; curl -si localhost:8080/readyz" needs="docker" before="стенд из раздела выше: `docker compose up -d --build`" />
 
 У ответов проб нет `X-Request-Id`: они прошли мимо цепочки.
 
@@ -710,7 +710,7 @@ $ curl -s "localhost:8080/v1/chats/$CHAT/messages" -H "Authorization: Bearer $TO
 [{"seq":1,"text":"Привет из контейнера!"}]
 ```
 
-<Run dir="messenger" cmd="curl -s -X POST localhost:8080/v1/users -H 'Content-Type: application/json' -d '{&quot;username&quot;:&quot;alice&quot;,&quot;display_name&quot;:&quot;Алиса&quot;,&quot;password&quot;:&quot;конь батарейка скоба 42&quot;}'" needs="docker" before="стенд из раздела выше; id из ответов сохраняйте в `BOB`, `TOKEN`, `CHAT`; остальные запросы — в блоке" />
+<Run dir="messenger" tag="m01-l17" cmd="curl -s -X POST localhost:8080/v1/users -H 'Content-Type: application/json' -d '{&quot;username&quot;:&quot;alice&quot;,&quot;display_name&quot;:&quot;Алиса&quot;,&quot;password&quot;:&quot;конь батарейка скоба 42&quot;}'" needs="docker" before="стенд из раздела выше; id из ответов сохраняйте в `BOB`, `TOKEN`, `CHAT`; остальные запросы — в блоке" />
 
 ### PID 1, привилегии и лимиты
 
@@ -724,7 +724,7 @@ $ docker inspect -f '{{json .Config.Entrypoint}} {{json .Config.Cmd}} user={{.Co
 ["/messenger"] null user=65532:65532 ro=true caps=[ALL] sec=[no-new-privileges:true] mem=268435456 nano=1000000000 stop=30
 ```
 
-<Run dir="messenger" cmd="docker top messenger-messenger-1 &amp;&amp; docker stats --no-stream messenger-messenger-1" needs="docker" before="стенд из раздела выше" />
+<Run dir="messenger" tag="m01-l17" cmd="docker top messenger-messenger-1 &amp;&amp; docker stats --no-stream messenger-messenger-1" needs="docker" before="стенд из раздела выше" />
 
 В контейнере один процесс, `/messenger`, от UID 65532. `PID` в `docker top` — номер с точки зрения VM. А какой номер у процесса внутри и что ядро знает о нём? Это читаем в `/proc` VM (`--pid=host`) и в cgroup VM (`--cgroupns=host`):
 
@@ -773,7 +773,7 @@ $ curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/v1/users/me
 401
 ```
 
-<Run dir="messenger" cmd="docker compose stop &amp; sleep 1; curl -si localhost:8080/readyz; curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/livez" needs="docker" before="стенд из раздела выше" />
+<Run dir="messenger" tag="m01-l17" cmd="docker compose stop &amp; sleep 1; curl -si localhost:8080/readyz; curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/livez" needs="docker" before="стенд из раздела выше" />
 
 `/readyz` уже говорит «уходим». `/livez` по-прежнему 200: процесс жив, перезапускать его не за что. А запрос к API обслужен: 401, потому что мы не передали токен, но ответил на него сервис, а не закрытый порт. В журнале этот запрос записан между «останавливаюсь» и «сервер остановлен». Повторный прогон с замером времени:
 

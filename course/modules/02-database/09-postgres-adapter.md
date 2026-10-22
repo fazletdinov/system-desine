@@ -23,7 +23,7 @@ $ docker compose stop
   пул закрыт
 ```
 
-<Run dir="messenger" cmd="scripts/smoke.sh --compose" needs="docker" />
+<Run dir="messenger" cmd="scripts/smoke.sh --compose" needs="docker" before="секреты и ключ — по README в корне репозитория, раздел «В Docker»" />
 
 машина: 12th Gen Intel Core i5-12400, 12 логических процессоров (в шапке файла её нет — та же машина, что у замеров пула ниже); прогон 2026-10-21, Docker Engine 29.9.1, Docker Compose v5.5.1, Linux 7.0.0-38-generic; полный вывод — `labs/2a/results/messenger-smoke.txt` (`scripts/smoke.sh --compose`). Строки `docker compose stop` о контейнерах опущены (`...`).
 
@@ -84,7 +84,7 @@ $ docker compose stop
 1    1882(1834–2090)    32.55(29.8–33.4)   0.19(0.125–0.236)     0.0965(0.063–0.127)   528(475–542)    133.5(117–136)  99(98–100)
 ```
 
-<Run dir="messenger" cmd="scripts/pool-load.sh 8 20 6 10 2 1" needs="docker" />
+<Run dir="messenger" cmd="scripts/pool-load.sh 8 20 6 10 2 1" needs="docker" before="секреты и ключ — по README в корне репозитория, раздел «В Docker»" />
 
 машина: 12th Gen Intel Core i5-12400, 12 логических процессоров, регулятор частоты `powersave`. Стенд — `messenger/compose.yaml`: у мессенджера `cpus: 1` и `mem_limit: 256m`, у базы квоты CPU нет. Все 18 прогонов построчно (в каком раунде, в каком порядке, сколько соединений пул открыл) — в `labs/2a/results/messenger-pool.txt`. Столбцы: λ — запросов в секунду; L — среднее число активных соединений; W — время базы на запрос API (два запроса: чат и страница истории); «CPU м» и «CPU б» — процессор мессенджера и базы на запрос API; «трот» — доля периодов квоты мессенджера, в которых он упёрся в `cpus: 1`. Прочитаем по порядку.
 

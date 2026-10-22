@@ -24,7 +24,7 @@ IMAGE                       ID             DISK USAGE   CONTENT SIZE   EXTRA
 messenger-example:naive     8cd85035c8dc       1.47GB          352MB
 ```
 
-<Run dir="messenger" cmd="docker images messenger-example:naive" needs="docker" before="`git checkout m01-l16` и `docker build -t messenger-example:naive -f ../course/modules/01-go-service/examples/dockerfiles/naive.Dockerfile .`" />
+<Run dir="messenger" tag="m01-l16" cmd="docker images messenger-example:naive" needs="docker" before="`docker build -t messenger-example:naive -f ../course/modules/01-go-service/examples/dockerfiles/naive.Dockerfile .`" />
 
 **Размер.** <N>352 МБ</N> скачает каждый сервер при каждой выкатке новой версии, а на диске образ занимает почти полтора гигабайта. Сам бинарь мессенджера весит 10 МБ — остальное компилятор Go, исходники, кэш модулей и половина Debian.
 
@@ -76,7 +76,7 @@ $ docker buildx imagetools inspect --raw gcr.io/distroless/static-debian13@sha25
 }
 ```
 
-<Run dir="messenger" cmd="docker buildx imagetools inspect --raw gcr.io/distroless/static-debian13:nonroot" needs="docker" />
+<Run dir="messenger" cmd="docker buildx imagetools inspect --raw gcr.io/distroless/static-debian13@$(docker buildx imagetools inspect --raw gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 | jq -r '.manifests[] | select(.platform.architecture==&quot;amd64&quot;) | .digest')" needs="docker" before="нужен `jq`; по digest из `Dockerfile` приходит индекс, из него берём манифест linux/amd64" />
 
 Тринадцать слоёв, самый большой — 288 КБ в сжатом виде. В манифесте у слоя digest **сжатого** архива: именно эти байты лежат в реестре и передаются по сети. А в конфиге слои перечислены по-другому — в поле `rootfs.diff_ids`, хешами **несжатого** tar (спецификация специально предупреждает: не путайте DiffID с digest слоя из манифеста). Зачем два хеша? Сжатие можно повторить по-разному (другой уровень gzip, другой алгоритм — zstd), и digest сжатого архива изменится, а содержимое слоя — нет. DiffID определяет «что в слое», digest — «какие байты передать».
 
@@ -168,7 +168,7 @@ IMAGE          CREATED          CREATED BY                                      
 <missing>      N/A              bazel build @trixie//base-files/amd64:data_s…   745kB
 ```
 
-<Run dir="messenger" cmd="docker history messenger:local" needs="docker" before="`git checkout m01-l16` и `docker build -t messenger:local --build-arg VERSION=1c-dev .`" />
+<Run dir="messenger" tag="m01-l16" cmd="docker history messenger:local" needs="docker" before="`docker build -t messenger:local --build-arg VERSION=1c-dev .`" />
 
 Шесть верхних строк — наш Dockerfile: один слой на 7,11 МБ (`COPY` бинаря) и пять записей по 0 байт. Ниже — 13 слоёв distroless. Их собирают не Dockerfile'ом, а системой сборки Bazel, поэтому вместо инструкций — имена целей Bazel: сертификаты, `/etc/passwd`, `/tmp`, tzdata, файлы пакетов Debian. `<missing>` в колонке `IMAGE` — не ошибка: у промежуточных шагов нет своего образа, есть только слои. Сложив колонку `SIZE`, получим 12,9 МБ — распакованный размер образа.
 
@@ -295,7 +295,7 @@ $ file messenger
 messenger: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, Go BuildID=E4YBSLm94Wqb…, stripped
 ```
 
-<Run dir="messenger" cmd="go build -o m-notrim ./cmd/messenger &amp;&amp; strings m-notrim | grep -c /home/idel; CGO_ENABLED=0 go build -trimpath -o m-full ./cmd/messenger &amp;&amp; strings m-full | grep -c /home/idel" before="`git checkout m01-l16`; `/home/idel` замените на свой домашний каталог" />
+<Run dir="messenger" tag="m01-l16" cmd="docker create --name m-bin messenger:local &amp;&amp; docker cp m-bin:/messenger messenger &amp;&amp; docker rm m-bin &amp;&amp; file messenger &amp;&amp; go version -m messenger" needs="docker" before="образ урока: `docker build -t messenger:local --build-arg VERSION=1c-dev .`; бинарь достаём из него" />
 
 Когда cgo **нужен** по-настоящему — SQLite через `mattn/go-sqlite3`, драйвер с C-библиотекой, требование ходить в LDAP через системный NSS, — статической сборкой не обойтись, и distroless static не подойдёт: нужен образ с glibc (`distroless/base`). Это прописано в ADR-0007 как условие пересмотра решения.
 
@@ -307,6 +307,8 @@ $ go build -o m-notrim ./cmd/messenger && strings m-notrim | grep -c /home/idel
 $ CGO_ENABLED=0 go build -trimpath -o m-full ./cmd/messenger && strings m-full | grep -c /home/idel
 0
 ```
+
+<Run dir="messenger" tag="m01-l16" cmd="go build -o m-notrim ./cmd/messenger &amp;&amp; strings m-notrim | grep -c /home/idel; CGO_ENABLED=0 go build -trimpath -o m-full ./cmd/messenger &amp;&amp; strings m-full | grep -c /home/idel" before="`/home/idel` замените на свой домашний каталог" />
 
 843 упоминания домашнего каталога автора против нуля. Пути — это и утечка сведений о машине сборки, и причина, по которой один и тот же код, собранный в двух каталогах, даёт разные бинари. `-trimpath` — необходимое условие **воспроизводимой сборки** (reproducible build): одинаковые исходники и одинаковый тулчейн дают бит в бит одинаковый бинарь.
 
@@ -323,6 +325,8 @@ $ stat -c '%s %n' m-full m-sw
 10226910 m-full
 7090338 m-sw
 ```
+
+<Run dir="messenger" tag="m01-l16" cmd="CGO_ENABLED=0 go build -trimpath -ldflags=&quot;-s -w&quot; -o m-sw ./cmd/messenger &amp;&amp; stat -c '%s %n' m-full m-sw" before="`m-full` — из блока с `-trimpath` выше" />
 
 10,2 МБ → 7,1 МБ, минус 31 %. Чем платим? Отладчик (`dlv`) не покажет переменные и не поставит точку останова по строке. Трассировка паники при этом **не** ломается: имена функций и номера строк для неё Go хранит в отдельной таблице (`pclntab`), которую `-s` не трогает. Для сервиса в контейнере это хороший обмен: отлаживать удобнее локально, а не в проде.
 
@@ -550,7 +554,7 @@ $ echo $?
 2
 ```
 
-<Run dir="messenger" cmd="docker build -t messenger:local --build-arg VERSION=1c-dev . &amp;&amp; docker image inspect messenger:local --format '{{.Size}} {{.Config.User}}' &amp;&amp; docker run --rm messenger:local version" needs="docker" before="`git checkout m01-l16`" />
+<Run dir="messenger" tag="m01-l16" cmd="docker build -t messenger:local --build-arg VERSION=1c-dev . &amp;&amp; docker image inspect messenger:local --format '{{.Size}} {{.Config.User}}' &amp;&amp; docker run --rm messenger:local version" needs="docker" />
 
 Образ — <N>3,84 МБ</N>, пользователь 65532. Без ключа подписи сервер не стартует и говорит, чего не хватает, — как в 1.14. Ключ мы передадим контейнеру в 1.17 через секрет compose.
 
@@ -588,7 +592,7 @@ $ docker build --progress=plain -t messenger:local --build-arg VERSION=1c-dev .
 #16 DONE 0.2s
 ```
 
-<Run dir="messenger" cmd="docker build --progress=plain -t messenger:local --build-arg VERSION=1c-dev ." needs="docker" before="та же сборка выше уже прошла один раз" />
+<Run dir="messenger" tag="m01-l16" cmd="docker build --progress=plain -t messenger:local --build-arg VERSION=1c-dev ." needs="docker" before="та же сборка выше уже прошла один раз" />
 
 Шаги выводятся не по порядку номеров — BuildKit проверяет их параллельно. В конце — те самые объекты OCI: манифест, конфиг, манифест аттестации и индекс («manifest list»), digest которого `060824686528…` и есть ID образа в `docker images`.
 

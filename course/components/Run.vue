@@ -1,28 +1,46 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { inlineCode, runLine } from './run'
+import { inlineCode, runDir, runLine, worktreeAdd, worktreeRemove } from './run'
 
 // dir — каталог от корня репозитория; cmd — команда из этого каталога; needs — что нужно
-// кроме Go (сейчас только Docker); before — подготовка: старт стенда, сборка, правка кода.
-const props = defineProps<{ dir: string; cmd: string; needs?: 'docker'; before?: string }>()
+// кроме Go (сейчас только Docker); before — подготовка, тоже из dir; tag — тег урока,
+// код которого нужен команде: тогда dir берётся в рабочем дереве этого тега.
+const props = defineProps<{ dir: string; cmd: string; needs?: 'docker'; before?: string; tag?: string }>()
 
-const line = computed(() => runLine(props.dir, props.cmd))
+const line = computed(() => runLine(props.dir, props.cmd, props.tag))
+const beforeDir = computed(() => runDir(props.dir, props.tag))
 const beforeParts = computed(() => (props.before === undefined ? [] : inlineCode(props.before)))
 
-type CopyState = 'idle' | 'done' | 'failed'
+type CopyState = 'idle' | 'done' | 'selected'
 const copyState = ref<CopyState>('idle')
-const COPY_LABEL: Record<CopyState, string> = { idle: 'копировать', done: 'скопировано', failed: 'не вышло' }
+const COPY_LABEL: Record<CopyState, string> = { idle: 'копировать', done: 'скопировано', selected: 'выделено — Ctrl+C' }
+const COPY_STATUS: Record<CopyState, string> = { idle: '', done: 'Команда скопирована', selected: 'Команда выделена, скопируйте её сочетанием Ctrl+C' }
 // Сколько держится подпись «скопировано»: достаточно, чтобы заметить, и не мешает следующему клику.
 const COPY_FEEDBACK_MS = 2000
 let resetTimer: ReturnType<typeof setTimeout> | undefined
+const cmdEl = ref<HTMLElement | null>(null)
 
+function selectCommand(): void {
+  const el = cmdEl.value
+  const selection = window.getSelection()
+  if (el === null || selection === null) return
+  const range = document.createRange()
+  range.selectNodeContents(el)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
+// Clipboard API есть только в безопасном контексте (https, localhost). Сайт, открытый
+// с другой машины по http://<IP>, его не получит — тогда выделяем команду и пробуем
+// старый execCommand; не вышло — выделение остаётся, и хватает Ctrl+C.
 async function copy(): Promise<void> {
   try {
+    if (navigator.clipboard === undefined) throw new Error('нет Clipboard API')
     await navigator.clipboard.writeText(line.value)
     copyState.value = 'done'
   } catch {
-    // Буфер обмена недоступен (не https, запрет браузера) — команда остаётся на экране, её можно выделить.
-    copyState.value = 'failed'
+    selectCommand()
+    copyState.value = document.execCommand('copy') ? 'done' : 'selected'
   }
   clearTimeout(resetTimer)
   resetTimer = setTimeout(() => (copyState.value = 'idle'), COPY_FEEDBACK_MS)
@@ -34,15 +52,18 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 <template>
   <div class="run">
     <div class="run-row">
-      <span class="run-label"><span aria-hidden="true">▶</span> Запустить самому:</span>
-      <code class="run-cmd">{{ line }}</code>
-      <span v-if="needs === 'docker'" class="run-needs">· нужен Docker</span>
-      <button type="button" class="run-copy" @click="copy">
-        <span aria-live="polite">{{ COPY_LABEL[copyState] }}</span>
-      </button>
+      <span class="run-label"><span aria-hidden="true">▶</span> Запустить самому <span class="run-from">(из корня репозитория)</span>:</span>
+      <code ref="cmdEl" class="run-cmd">{{ line }}</code>
+      <span v-if="needs === 'docker'" class="run-needs">нужен Docker</span>
+      <button type="button" class="run-copy" aria-label="копировать команду" @click="copy">{{ COPY_LABEL[copyState] }}</button>
+      <span role="status" class="run-sr-only">{{ COPY_STATUS[copyState] }}</span>
     </div>
+    <p v-if="tag" class="run-before">
+      код урока — тег <code>{{ tag }}</code> в отдельном рабочем дереве, курс остаётся на main:
+      <code>{{ worktreeAdd(tag) }}</code>; убрать — <code>{{ worktreeRemove(tag) }}</code>
+    </p>
     <p v-if="before" class="run-before">
-      сначала:
+      сначала, из <code>{{ beforeDir }}</code>:
       <template v-for="(part, i) in beforeParts" :key="i">
         <code v-if="part.code">{{ part.text }}</code>
         <template v-else>{{ part.text }}</template>
@@ -71,7 +92,10 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 .run-label {
   color: var(--vp-c-brand-1);
   font-weight: 600;
-  white-space: nowrap;
+}
+.run-from {
+  color: var(--vp-c-text-2);
+  font-weight: 400;
 }
 /* Длинная команда переносится внутри строки блока, а не растягивает страницу. */
 .run-cmd {
@@ -80,8 +104,13 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Бейдж без разделителя-точки: при переносе на узком экране строка не начинается с «·». */
 .run-needs {
+  padding: 0 6px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 4px;
   color: var(--vp-c-text-2);
+  font-size: 12px;
   white-space: nowrap;
 }
 .run-copy {
@@ -95,6 +124,14 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 }
 .run-copy:hover { background: var(--vp-c-brand-soft); }
 .run-copy:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
+.run-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .run-before {
   margin: 4px 0 0;
   color: var(--vp-c-text-2);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inlineCode, runLine } from './run'
+import { inlineCode, runDir, runLine, worktreeAdd, worktreeRemove } from './run'
 
 describe('runLine', () => {
   it('начинает команду с cd в каталог от корня репозитория', () => {
@@ -9,6 +9,20 @@ describe('runLine', () => {
     expect(runLine('messenger', "scripts/overload.sh 50; docker inspect -f '{{.Id}}' x")).toBe(
       "cd messenger && scripts/overload.sh 50; docker inspect -f '{{.Id}}' x",
     )
+  })
+})
+
+describe('рабочее дерево тега', () => {
+  it('команда с тегом идёт из того же dir в дереве рядом с репозиторием', () => {
+    expect(runLine('messenger', 'go run ./cmd/messenger', 'm01-l07')).toBe('cd ../sd-m01-l07/messenger && go run ./cmd/messenger')
+  })
+  it('без тега каталог — dir в самом репозитории', () => {
+    expect(runDir('labs')).toBe('labs')
+    expect(runDir('labs', 'm02-l01')).toBe('../sd-m02-l01/labs')
+  })
+  it('дерево создаётся и убирается одной командой из корня', () => {
+    expect(worktreeAdd('m01-5-l10')).toBe('git worktree add ../sd-m01-5-l10 m01-5-l10')
+    expect(worktreeRemove('m01-5-l10')).toBe('git worktree remove --force ../sd-m01-5-l10')
   })
 })
 

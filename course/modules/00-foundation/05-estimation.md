@@ -149,7 +149,7 @@ RPS: средний 231, пиковый 463
 трафик в пик: 93 КБ/с
 ```
 
-<Run dir="labs/estimation" cmd="go run main.go" before="положите программу выше в `labs/estimation/main.go`" />
+<Run dir="labs/estimation" cmd="go run main.go" before="создайте каталог и положите программу выше в `main.go` (потом удалите каталог)" />
 
 ## <Part kind="theory" /> Четыре множителя, о которых забывают
 

@@ -261,7 +261,7 @@ $ curl -s -X POST localhost:8080/v1/users -H 'Content-Type: application/json' -d
 {"status":400,"code":"invalid_input","invalid_params":[{"name":"password","reason":"от 15 до 128 символов"}]}
 ```
 
-<Run dir="messenger" cmd="curl -s -X POST localhost:8080/v1/users -H 'Content-Type: application/json' -d '{&quot;username&quot;:&quot;alice&quot;,&quot;display_name&quot;:&quot;Алиса&quot;,&quot;password&quot;:&quot;четырнадцать14&quot;}' | jq -c '{status, code, invalid_params}'" before="`git checkout m01-l13`, сервер в соседнем терминале — `go run ./cmd/messenger`; id из ответов сохраняйте в `ALICE`" />
+<Run dir="messenger" tag="m01-l13" cmd="curl -s -X POST localhost:8080/v1/users -H 'Content-Type: application/json' -d '{&quot;username&quot;:&quot;alice&quot;,&quot;display_name&quot;:&quot;Алиса&quot;,&quot;password&quot;:&quot;четырнадцать14&quot;}' | jq -c '{status, code, invalid_params}'" before="сервер в соседнем терминале — `go run ./cmd/messenger`; id из ответов сохраняйте в `ALICE`" />
 
 Отказ называет поле и правило. А вот парольная фраза — пробелы, кириллица, ни одной заглавной:
 

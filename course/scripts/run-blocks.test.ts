@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commandBlocksWithoutRun, type ComposeMounts, machinesWithoutRun, type RunTag, runRefs, scanRunBlocks } from './run-blocks'
+import { applyIllustrative, commandBlocksWithoutRun, type ComposeMounts, machinesWithoutRun, type RunTag, runRefs, scanRunBlocks } from './run-blocks'
 
 const noMounts: ComposeMounts = { mounts: () => new Map() }
 const lab2aMounts: ComposeMounts = {
@@ -60,9 +60,17 @@ describe('commandBlocksWithoutRun', () => {
     const md = ['## Сессия', ...block('curl a'), '<Run dir="messenger" cmd="curl a" />', ...block('curl b'), ...block('curl c')]
     expect(uncovered(md)).toEqual([])
   })
-  it('<Run> в подразделе покрывает блок раздела выше, но не соседний раздел', () => {
-    const md = ['## Первый', ...block('a'), '### Деталь', '<Run dir="labs" cmd="a" />', '## Второй', ...block('b')]
-    expect(uncovered(md)).toEqual(['9 b'])
+  it('<Run> подраздела не покрывает блок раздела выше', () => {
+    const md = ['## Первый', ...block('a'), '### Деталь', '<Run dir="labs" cmd="a" />']
+    expect(uncovered(md)).toEqual(['2 a'])
+  })
+  it('<Run> над блоком не покрывает его: он о чём-то другом', () => {
+    const md = ['## Раздел', '<Run dir="labs" cmd="x" />', ...block('a')]
+    expect(uncovered(md)).toEqual(['3 a'])
+  })
+  it('блок с отступом в пункте списка — тоже команда', () => {
+    const md = ['## Раздел', '1. Шаг:', '', '   ```text', '   $ gh attestation verify x', '   ```']
+    expect(uncovered(md)).toEqual(['4 gh attestation verify x'])
   })
   it('<Run> соседнего подраздела того же уровня не засчитывается', () => {
     const md = ['## Раздел', '### А', ...block('a'), '### Б', '<Run dir="labs" cmd="b" />']
@@ -72,8 +80,41 @@ describe('commandBlocksWithoutRun', () => {
     expect(uncovered(['```text', 'вывод', '$ поздно', '```', '```go', 'package main', '```'])).toEqual([])
   })
   it('«# комментарий» внутри блока — не заголовок раздела', () => {
-    const md = ['## Раздел', '<Run dir="labs" cmd="a" />', '```text', '# не заголовок', '```', ...block('a')]
+    const md = ['## Раздел', ...block('a'), '```text', '# не заголовок', '```', '<Run dir="labs" cmd="a" />']
     expect(uncovered(md)).toEqual([])
+  })
+})
+
+describe('applyIllustrative', () => {
+  const at = (file: string, line: number, command: string) => ({ file, block: { line, command } })
+  const entry = { file: 'a.md', command: 'gh x', reason: 'нужен GHCR' }
+  it('блок из списка — не ошибка, остальные — ошибки', () => {
+    const r = applyIllustrative([at('a.md', 3, 'gh x'), at('a.md', 9, 'go test')], [entry])
+    expect(r.problems).toEqual([at('a.md', 9, 'go test')])
+    expect(r.stale).toEqual([])
+  })
+  it('запись, которой не соответствует ни один блок, — устаревшая', () => {
+    expect(applyIllustrative([], [entry]).stale).toEqual([entry])
+  })
+  it('совпадение только по файлу и команде вместе', () => {
+    expect(applyIllustrative([at('b.md', 3, 'gh x')], [entry]).problems).toHaveLength(1)
+  })
+})
+
+describe('проверка тега <Run>', () => {
+  it.each([
+    ['<Run dir="messenger" tag="m01-l07" cmd="curl x" />', null],
+    ['<Run dir="messenger" tag="m01 l07" cmd="curl x" />', 'tag="m01 l07": это не имя тега'],
+    ['<Run dir="labs" cmd="cd 1-5/alloc &amp;&amp; go build ./escape" />', 'cd в cmd: каталог задаётся в dir'],
+  ])('%s', (tag, message) => {
+    const scan = scanRunBlocks(tag)
+    expect(scan.problems[0]?.message ?? null).toBe(message)
+  })
+  it('тег попадает в разобранный <Run>', () => {
+    expect(scanRunBlocks('<Run dir="messenger" tag="m01-l07" cmd="curl x" />').runs[0]?.tag).toBe('m01-l07')
+  })
+  it('cd внутри sh -c контейнера — не смена каталога команды', () => {
+    expect(scanRunBlocks(`<Run dir="labs/1c" cmd="docker compose run --rm lab sh -c 'cd /mnt &amp;&amp; ls'" />`).problems).toEqual([])
   })
 })
 
@@ -116,14 +157,21 @@ describe('runRefs', () => {
   it('слова с подстановками оболочки пропускаются', () => {
     expect(paths(run('cat ./$(id)/x "$PWD/y" ./z*', { dir: 'messenger' }))).toEqual(['dir messenger'])
   })
-  it('программа, которую before велит положить в labs/, не требует пакета', () => {
-    const r = run('go run ./threads', { before: 'положите программу выше в `labs/threads/main.go`' })
+  it('программа, которую before велит положить, не требует пакета; путь — от dir', () => {
+    const r = run('go run ./threads', { before: 'положите программу выше в `threads/main.go`' })
     expect(paths(r)).toEqual(['dir labs'])
   })
-  it('каталог запуска, который создаёт before, не проверяется, а его родитель — да', () => {
-    const r = run('go build -o demo . && ./demo', { dir: 'labs/demo', before: 'положите программу в `labs/demo/main.go`' })
+  it('каталог запуска, который создаёт before, не проверяется', () => {
+    const r = run('go build -o demo . && ./demo', { dir: 'labs/demo', before: 'создайте каталог и положите программу в `main.go`' })
     expect(paths(r)).toEqual([])
-    expect(paths(run('go run ./x', { before: 'положите в `labs/x/main.go`' }))).toContain('dir labs')
+  })
+  it('путь в before без «положите … в» должен существовать', () => {
+    const r = run('go run ./nonexistent', { before: 'смотрите `x/README.md`' })
+    expect(paths(r)).toEqual(['dir labs', 'file labs/x/README.md', 'package labs/nonexistent'])
+  })
+  it('git show ревизия:путь — путь от корня в этой ревизии', () => {
+    const r = run('go tool pprof cpu.pprof', { dir: 'messenger', before: 'рецепт — `git show main:labs/1-5/results/profile/profile-load.txt`' })
+    expect(runRefs(r, noMounts).map((ref) => `${ref.rev ?? '-'} ${ref.path}`)).toEqual(['- messenger', 'main labs/1-5/results/profile/profile-load.txt'])
   })
   it('файлы из before проверяются от каталога запуска', () => {
     const r = run('go tool pprof cpu.pprof', { dir: 'messenger', before: 'как в `../labs/1-5/results/profile/profile-load.txt`' })

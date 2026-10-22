@@ -315,7 +315,7 @@ created by main.main in goroutine 1
 exit status 2
 ```
 
-<Run dir="labs" cmd="go run ./rlock" before="положите программу выше в `labs/rlock/main.go`" />
+<Run dir="labs" cmd="go run ./rlock" before="положите программу выше в `rlock/main.go` (потом удалите каталог)" />
 
 машина та же, go1.27.2; пути к программе сокращены.
 
@@ -909,7 +909,7 @@ $ go vet ./copylock
 copylock/main.go:14:9: Inc passes lock by value: exp/copylock.Counter contains sync.Mutex
 ```
 
-<Run dir="labs" cmd="go vet ./copylock" before="положите фрагмент выше в `labs/copylock/main.go` (с `package main` и любым `main`)" />
+<Run dir="labs" cmd="go vet ./copylock" before="положите фрагмент выше в `copylock/main.go` (с `package main` и любым `main`); потом удалите каталог — `go vet ./...` лабы на нём упадёт" />
 
 машина та же, go1.27.2. Фрагмент не проходит `go vet` — в этом и смысл. Лечение — указатель-получатель `func (c *Counter) Inc` и передача `*Counter`. `vet` знает о мьютексе по методам `Lock`/`Unlock`. Поэтому `sync.WaitGroup`, `Cond`, `Pool`, `Map` и атомарные типы содержат поле `noCopy` — пустую структуру с такими методами, — и копирование ловится и для них.
 
@@ -928,7 +928,7 @@ $ go vet ./wgadd
 wgadd/main.go:12:10: WaitGroup.Add called from inside new goroutine
 ```
 
-<Run dir="labs" cmd="go vet ./wgadd" before="положите в `labs/wgadd/main.go` программу с `wg.Add(1)` внутри горутины" />
+<Run dir="labs" cmd="go vet ./wgadd" before="положите в `wgadd/main.go` программу с `wg.Add(1)` внутри горутины; потом удалите каталог — `go vet ./...` лабы на нём упадёт" />
 
 машина та же, go1.27.2. Лечение — `wg.Go(f)`. Или, в старом коде, `wg.Add(1)` строкой выше `go`.
 

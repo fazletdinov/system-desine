@@ -1,9 +1,30 @@
 // Логика строки «Запустить самому» отдельно от Vue: её проверяют тесты без DOM.
 
-// Каталог — от корня репозитория, поэтому строка начинается с cd: её можно вставить
-// в терминал, открытый в корне, и она сработает без правок.
-export function runLine(dir: string, cmd: string): string {
-  return `cd ${dir} && ${cmd}`
+// Состояние урока по тегу живёт в отдельном рабочем дереве рядом с репозиторием, а не
+// через git checkout: иначе вместе с кодом откатился бы и сам курс, открытый из этой копии.
+export function worktreePath(tag: string): string {
+  return `../sd-${tag}`
+}
+
+export function worktreeAdd(tag: string): string {
+  return `git worktree add ${worktreePath(tag)} ${tag}`
+}
+
+// --force: после прогона в дереве остаются ключ, профили и бинари, а само дерево одноразовое.
+export function worktreeRemove(tag: string): string {
+  return `git worktree remove --force ${worktreePath(tag)}`
+}
+
+// Каталог, из которого выполняются и подготовка, и команда: dir в репозитории
+// или тот же dir в рабочем дереве тега.
+export function runDir(dir: string, tag?: string): string {
+  return tag === undefined ? dir : `${worktreePath(tag)}/${dir}`
+}
+
+// Строка начинается с cd от корня репозитория: её можно вставить в терминал,
+// открытый в корне, и она сработает без правок.
+export function runLine(dir: string, cmd: string, tag?: string): string {
+  return `cd ${runDir(dir, tag)} && ${cmd}`
 }
 
 export interface InlinePart {

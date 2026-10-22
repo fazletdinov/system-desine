@@ -35,7 +35,7 @@ oom
 die
 ```
 
-<Run dir="messenger" cmd="scripts/overload.sh 50; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' messenger-messenger-1" needs="docker" before="`MESSENGER_HASH_CONCURRENCY=256 MESSENGER_HASH_QUEUE=0 docker compose up -d`" />
+<Run dir="messenger" tag="m01-5-l06" cmd="scripts/overload.sh 50; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' messenger-messenger-1" needs="docker" before="ключ — `go run ./cmd/keygen -out jwt.pem && chmod 0444 jwt.pem` (один раз; chmod — для Docker Engine без Desktop, урок 1.17); `MESSENGER_HASH_CONCURRENCY=256 MESSENGER_HASH_QUEUE=0 docker compose up -d`" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, Docker Engine 29.9.1, Compose v5.5.1, go1.27.2 в образе. Вывод `docker compose up -d` здесь и ниже опущен. Контейнер — из `compose.yaml` урока 1.17: `mem_limit: 256m`, `cpus: 1`, `GOMEMLIMIT=230MiB`. Ключ подписи для опыта — одноразовый, с правами `0444`: на Docker Engine иначе процесс 65532 его не прочитает (урок 1.17).
 
@@ -202,7 +202,7 @@ created by main.main in goroutine 1
 код выхода: 2
 ```
 
-<Run dir="labs/panicdemo" cmd="go build -o panicdemo . &amp;&amp; ./panicdemo; echo &quot;код выхода: $?&quot;" before="положите программу выше в `labs/panicdemo/main.go`" />
+<Run dir="labs/panicdemo" cmd="go build -o panicdemo . &amp;&amp; ./panicdemo; echo &quot;код выхода: $?&quot;" before="создайте каталог и положите программу выше в `main.go` (потом удалите каталог)" />
 
 машина та же, go1.27.2; путь к файлу сокращён.
 
@@ -507,7 +507,7 @@ $ cat /sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' messenger
 90791936
 ```
 
-<Run dir="messenger" cmd="docker stats --no-stream messenger-messenger-1; scripts/overload.sh 50; docker stats --no-stream messenger-messenger-1; cat /sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' messenger-messenger-1).scope/memory.peak" needs="docker" before="`MESSENGER_IDEMPOTENCY_SWEEP_EVERY=5s MESSENGER_HASH_CONCURRENCY=2 MESSENGER_HASH_QUEUE=4 docker compose up -d`" />
+<Run dir="messenger" tag="m01-5-l06" cmd="docker stats --no-stream messenger-messenger-1; scripts/overload.sh 50; docker stats --no-stream messenger-messenger-1; cat /sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' messenger-messenger-1).scope/memory.peak" needs="docker" before="`MESSENGER_IDEMPOTENCY_SWEEP_EVERY=5s MESSENGER_HASH_CONCURRENCY=2 MESSENGER_HASH_QUEUE=4 docker compose up -d`" />
 
 машина та же, Docker Engine 29.9.1. `memory.peak` — пик памяти cgroup контейнера с момента старта. На Docker Engine с cgroup v2 и драйвером systemd файл лежит по этому пути, у Docker Desktop путь внутри его виртуальной машины.
 
@@ -536,7 +536,7 @@ $ docker compose down
 | 50 | 0 | 0 / 0 | 0 / 0 | 50 / 50 | 256 / 256 МиБ | OOM-kill оба раза |
 | 256 | 0 | 5 / 2 | 0 / 0 | 45 / 48 | 256 / 256 МиБ | OOM-kill оба раза |
 
-<Run dir="messenger" cmd="scripts/overload.sh 50; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' messenger-messenger-1" needs="docker" before="для каждой строки таблицы `MESSENGER_HASH_CONCURRENCY=<N> MESSENGER_HASH_QUEUE=<Q> docker compose up -d`, после замера — `docker compose down`" />
+<Run dir="messenger" tag="m01-5-l06" cmd="scripts/overload.sh 50; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' messenger-messenger-1" needs="docker" before="для каждой строки таблицы `MESSENGER_HASH_CONCURRENCY=<N> MESSENGER_HASH_QUEUE=<Q> docker compose up -d`, после замера — `docker compose down`" />
 
 машина та же. Через «/» — два прогона одной настройки. Это отдельная серия, поэтому числа для N = 2 и N = 256 немного отличаются от прогонов выше.
 
@@ -630,7 +630,7 @@ pid 1 жду сигнал
 первый сигнал, дренаж 20 с
 ```
 
-<Run dir="labs/stopdemo" cmd="docker run -d --name stopdemo -v &quot;$PWD/stopdemo:/stopdemo:ro&quot; --entrypoint /stopdemo messenger:local &amp;&amp; docker kill -s TERM stopdemo; sleep 1; docker kill -s TERM stopdemo; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}}' stopdemo; docker logs stopdemo" needs="docker" before="положите программу выше в `labs/stopdemo/main.go`, соберите `CGO_ENABLED=0 go build -o stopdemo .`; нужен образ `messenger:local` (`docker compose build` в `messenger/`)" />
+<Run dir="labs/stopdemo" cmd="docker run -d --name stopdemo -v &quot;$PWD/stopdemo:/stopdemo:ro&quot; --entrypoint /stopdemo messenger:local &amp;&amp; docker kill -s TERM stopdemo; sleep 1; docker kill -s TERM stopdemo; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}}' stopdemo; docker logs stopdemo" needs="docker" before="создайте каталог, положите программу выше в `main.go` и соберите `CGO_ENABLED=0 go build -o stopdemo .`; нужен образ `messenger:local` — `docker build -t messenger:local ../../messenger` (каталог потом удалите)" />
 
 машина та же, go1.27.2, Docker Engine 29.9.1. Образ `messenger:local` взят только ради distroless-окружения, бинарник подставлен через `--entrypoint`; идентификатор контейнера, который печатает `docker run -d`, опущен.
 
@@ -655,7 +655,7 @@ messenger-1  | {"time":"2026-10-19T14:29:03.756776051Z","level":"INFO","msg":"о
 messenger-1  | {"time":"2026-10-19T14:29:04.787629184Z","level":"ERROR","msg":"второй сигнал: выхожу немедленно"}
 ```
 
-<Run dir="messenger" cmd="docker kill -s TERM messenger-messenger-1; sleep 1; docker kill -s TERM messenger-messenger-1; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' messenger-messenger-1; docker compose logs" needs="docker" before="`docker compose up -d`" />
+<Run dir="messenger" tag="m01-5-l06" cmd="docker kill -s TERM messenger-messenger-1; sleep 1; docker kill -s TERM messenger-messenger-1; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' messenger-messenger-1; docker compose logs" needs="docker" before="`docker compose up -d`" />
 
 машина та же, вывод `docker compose up -d` опущен. Между началом дренажа и выходом — 1,03 с вместо пяти. Код 1, причина в журнале.
 
@@ -760,7 +760,7 @@ messenger-1  | {"time":"2026-10-19T14:27:07.120536249Z","level":"INFO","msg":"с
 messenger-1  | {"time":"2026-10-19T14:27:07.120696517Z","level":"INFO","msg":"фоновые компоненты остановлены"}
 ```
 
-<Run dir="messenger" cmd="time docker compose stop; docker inspect -f '{{.State.ExitCode}}' messenger-messenger-1; docker compose logs | tail -3" needs="docker" before="стенд из опыта с N = 2 выше, после `scripts/overload.sh 50`" />
+<Run dir="messenger" tag="m01-5-l06" cmd="time docker compose stop; docker inspect -f '{{.State.ExitCode}}' messenger-messenger-1; docker compose logs | tail -3" needs="docker" before="стенд из опыта с N = 2 выше, после `scripts/overload.sh 50`" />
 
 машина та же; это контейнер из опыта с N = 2, после `overload.sh`. 5,23 с — это `DRAIN_DELAY` плюс мгновенный `Shutdown`, как в уроке 1.17. Между «сервер остановлен» и «фоновые компоненты остановлены» — 0,16 мс: очистка вышла сразу по отмене. Порядок строк — тот самый порядок стадий: сначала HTTP, потом фон. Код выхода 0.
 

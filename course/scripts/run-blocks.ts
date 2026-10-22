@@ -8,6 +8,7 @@ export interface RunTag {
   cmd: string
   needs?: string
   before?: string
+  tag?: string
 }
 
 export interface RunScan {
@@ -34,7 +35,8 @@ const HEADING = /^(#{1,6})\s/
 const COMMAND_LINE = /^\$ (.*)$/
 const RUN_TAG = /^<Run((?:\s+[a-z]+="[^"]*")*)\s*\/>$/
 const ATTR = /([a-z]+)="([^"]*)"/g
-const KNOWN_ATTRS = new Set(['dir', 'cmd', 'needs', 'before'])
+const KNOWN_ATTRS = new Set(['dir', 'cmd', 'needs', 'before', 'tag'])
+const TAG_NAME = /^[A-Za-z0-9][\w.-]*$/
 const NEEDS = new Set(['docker'])
 
 // Vue раскодирует сущности в атрибутах; разбираем так же, иначе проверили бы не ту команду.
@@ -51,18 +53,29 @@ function parseTag(text: string, line: number): RunTag | string {
     if (!KNOWN_ATTRS.has(name)) return `неизвестный атрибут ${name}`
     attrs[name] = decodeEntities(value)
   }
-  const { dir, cmd, needs, before } = attrs
+  const { dir, cmd, needs, before, tag } = attrs
   if (dir === undefined || dir === '') return 'нет dir'
   if (cmd === undefined || cmd === '') return 'нет cmd'
   if (dir.startsWith('/') || dir.split('/').includes('..')) return `dir «${dir}» должен идти от корня репозитория`
   if (needs !== undefined && !NEEDS.has(needs)) return `needs="${needs}": допустимо только docker`
-  return { line, dir, cmd, ...(needs === undefined ? {} : { needs }), ...(before === undefined ? {} : { before }) }
+  if (tag !== undefined && !TAG_NAME.test(tag)) return `tag="${tag}": это не имя тега`
+  // cd внутри cmd сдвинул бы базу путей, и строка перестала бы совпадать с dir из подписи.
+  if (changesDirectory(cmd)) return 'cd в cmd: каталог задаётся в dir'
+  return {
+    line,
+    dir,
+    cmd,
+    ...(needs === undefined ? {} : { needs }),
+    ...(before === undefined ? {} : { before }),
+    ...(tag === undefined ? {} : { tag }),
+  }
 }
 
 export function scanRunBlocks(markdown: string): RunScan {
   const scan: RunScan = { runs: [], machines: [], commandBlocks: [], headings: [], problems: [] }
   let open: string | null = null
   let openedAt = -1
+  let openedIndent = 0
   markdown.split('\n').forEach((raw, i) => {
     const line = raw.trim()
     const fence = FENCE.exec(line)?.[1]
@@ -70,11 +83,13 @@ export function scanRunBlocks(markdown: string): RunScan {
       if (open === null) {
         open = fence
         openedAt = i
+        openedIndent = raw.length - raw.trimStart().length
       } else if (fence[0] === open[0] && fence.length >= open.length && line === fence) open = null
       return
     }
     if (open !== null) {
-      const command = i === openedAt + 1 ? COMMAND_LINE.exec(raw)?.[1] : undefined
+      // Ограда в пункте списка идёт с отступом; первая строка блока — с тем же отступом.
+      const command = i === openedAt + 1 ? COMMAND_LINE.exec(raw.slice(openedIndent))?.[1] : undefined
       if (command !== undefined) scan.commandBlocks.push({ line: openedAt + 1, command })
       return
     }
@@ -99,16 +114,44 @@ export function machinesWithoutRun(scan: RunScan): number[] {
   })
 }
 
-// Раздел блока — от ближайшего заголовка над ним до следующего заголовка того же или
-// более высокого уровня (подразделы входят). Сессия из нескольких блоков делит один <Run>.
+// Раздел блока — от ближайшего заголовка над ним до следующего заголовка любого уровня:
+// <Run> подраздела или соседнего раздела блок не покрывает. Сессия из нескольких блоков
+// раздела делит один <Run>, и стоит он после первого блока сессии, а не над ней.
 export function commandBlocksWithoutRun(scan: RunScan): CommandBlock[] {
   return scan.commandBlocks.filter((block) => {
-    const heading = [...scan.headings].reverse().find((h) => h.line < block.line)
-    const start = heading?.line ?? 0
-    const level = heading?.level ?? 0
-    const end = scan.headings.find((h) => h.line > block.line && h.level <= level)?.line ?? Number.POSITIVE_INFINITY
-    return !scan.runs.some((r) => r.line > start && r.line < end)
+    const start = [...scan.headings].reverse().find((h) => h.line < block.line)?.line ?? 0
+    const end = scan.headings.find((h) => h.line > block.line)?.line ?? Number.POSITIVE_INFINITY
+    const first = scan.commandBlocks.find((b) => b.line > start && b.line < end) ?? block
+    return !scan.runs.some((r) => r.line > first.line && r.line < end)
   })
+}
+
+export interface IllustrativeBlock {
+  file: string
+  // Первая строка блока без «$ »: номер строки сдвигается при любой правке выше.
+  command: string
+  reason: string
+}
+
+export interface UncoveredBlock {
+  file: string
+  block: CommandBlock
+}
+
+// Делит непокрытые блоки на ошибки и разрешённые списком; запись списка, которой
+// ничего не соответствует, — тоже ошибка: блок убрали или переписали, а причина осталась.
+export function applyIllustrative(
+  uncovered: UncoveredBlock[],
+  list: IllustrativeBlock[],
+): { problems: UncoveredBlock[]; stale: IllustrativeBlock[] } {
+  const used = new Set<IllustrativeBlock>()
+  const problems = uncovered.filter(({ file, block }) => {
+    const entry = list.find((e) => e.file === file && e.command === block.command)
+    if (entry === undefined) return true
+    used.add(entry)
+    return false
+  })
+  return { problems, stale: list.filter((e) => !used.has(e)) }
 }
 
 // region shell
@@ -212,6 +255,12 @@ function splitCommands(tokens: Token[]): SimpleCommand[] {
   commands.push(current)
   return commands.filter((c) => c.words.length > 0 || c.outputs.length > 0)
 }
+function changesDirectory(cmd: string): boolean {
+  return splitCommands(tokenize(cmd)).some((c) => {
+    const words = c.words.filter((w) => !ENV_ASSIGN.test(w.text))
+    return words[0]?.text === 'cd' || words[0]?.text === 'pushd'
+  })
+}
 // endregion shell
 
 export type RefKind = 'dir' | 'package' | 'file'
@@ -222,6 +271,8 @@ export interface PathRef {
   path: string
   // Что в команде на него указало — для сообщения об ошибке.
   via: string
+  // Ревизия, в которой путь должен быть: git show main:… смотрит не в рабочее дерево.
+  rev?: string
 }
 
 export interface ComposeMounts {
@@ -234,6 +285,7 @@ const SHELL_KEYWORDS = new Set(['do', 'done', 'then', 'fi', 'time', 'exec'])
 const GO_PACKAGE_COMMANDS = new Set(['run', 'test', 'build', 'vet', 'install', 'generate'])
 const LOCAL_PATH = /^(\.\.?\/|scripts\/)/
 const PRODUCED_FLAG = /^-(?:o|\w*profile)=(.+)$/
+const GIT_OBJECT = /^([\w./-]+):([^:\s]+)$/
 
 interface Context {
   dir: string
@@ -243,6 +295,7 @@ interface Context {
   mounts: ComposeMounts
 }
 
+// Единственная база путей — dir: и подготовка, и команда выполняются из него.
 const inRepo = (ctx: Context, p: string): string => posix.normalize(posix.join(ctx.dir, p)).replace(/\/$/, '')
 
 function goPackages(ctx: Context, args: Word[], sub: string): void {
@@ -289,6 +342,14 @@ function analyzeCommand(ctx: Context, c: SimpleCommand): void {
     const m = PRODUCED_FLAG.exec(w.text)
     if (m !== null && !w.dynamic) ctx.produced.add(inRepo(ctx, m[1] ?? ''))
   }
+  if (head.text === 'git' && rest[0]?.text === 'show') {
+    // git show <ревизия>:<путь> — путь от корня репозитория в этой ревизии, не от dir.
+    for (const w of rest.slice(1)) {
+      const m = GIT_OBJECT.exec(w.text)
+      if (m !== null && !w.dynamic) ctx.refs.push({ kind: 'file', path: m[2] ?? '', via: w.text, rev: m[1] ?? '' })
+    }
+    return
+  }
   if (head.text === 'go' && GO_PACKAGE_COMMANDS.has(rest[0]?.text ?? '')) {
     goPackages(ctx, rest.slice(1), rest[0]?.text ?? '')
     return
@@ -326,24 +387,42 @@ function analyze(ctx: Context, cmd: string): void {
 }
 
 const BEFORE_CODE = /`([^`]+)`/g
+// «положите программу выше в `x/main.go`», «сохраните … в `nosignal.go`»: путь создаёт читатель.
+const PLACE_MARKER = /(?:положите|сохраните)(?:\s[^`;]*)?\sв\s*$/
+// Путь — одно слово с «/», не абсолютное: абсолютные пути в before — о контейнере или хосте.
+const PATH_LIKE = /^[^\s/][^\s]*\/[^\s]*$/
 
-// Путь «подготовлен», если его создаёт сама команда (-o, >, cp) или before велит его
-// создать: программу из урока кладут в labs/<имя>/main.go, и проверке она недоступна.
-// В before путь пишется от корня репозитория; готовым считается он сам и его каталог.
-function preparedByBefore(run: RunTag): Set<string> {
-  const paths = new Set<string>()
-  for (const m of (run.before ?? '').matchAll(BEFORE_CODE)) {
-    const text = m[1] ?? ''
-    if (/\s/.test(text) || !text.includes('/')) continue
-    const path = posix.normalize(text)
-    paths.add(path)
-    paths.add(posix.dirname(path))
-  }
-  return paths
+interface BeforePaths {
+  // Пути, которые велит создать подготовка: они сами и их каталоги.
+  placed: Set<string>
+  // Прочие пути в обратных кавычках: на них подготовка ссылается, они должны существовать.
+  referenced: PathRef[]
 }
 
-function prepared(path: string, produced: Set<string>, byBefore: Set<string>): boolean {
-  if (byBefore.has(path)) return true
+// Пути в before — от dir, как и в cmd (inRepo). Готовым путь считается, только если
+// перед ним стоит «положите … в» / «сохраните … в» или его создаёт код подготовки (-o, >, cp).
+function beforePaths(ctx: Context, run: RunTag): BeforePaths {
+  const result: BeforePaths = { placed: new Set(), referenced: [] }
+  const before = run.before ?? ''
+  let last = 0
+  for (const m of before.matchAll(BEFORE_CODE)) {
+    const text = m[1] ?? ''
+    const lead = before.slice(last, m.index)
+    last = (m.index ?? 0) + m[0].length
+    if (/\s/.test(text) || text.startsWith('/')) continue
+    if (PLACE_MARKER.test(lead)) {
+      const path = inRepo(ctx, text)
+      result.placed.add(path)
+      result.placed.add(posix.dirname(path))
+    } else if (PATH_LIKE.test(text) && !text.includes('?')) {
+      result.referenced.push({ kind: 'file', path: inRepo(ctx, text), via: `before: ${text}` })
+    }
+  }
+  return result
+}
+
+function prepared(path: string, produced: Set<string>, placed: Set<string>): boolean {
+  if (placed.has(path)) return true
   for (const p of produced) if (path === p || path.startsWith(`${p}/`)) return true
   return false
 }
@@ -352,15 +431,17 @@ function prepared(path: string, produced: Set<string>, byBefore: Set<string>): b
 // Подготовленные (см. prepared) отброшены.
 export function runRefs(run: RunTag, mounts: ComposeMounts): PathRef[] {
   const ctx: Context = { dir: run.dir, compose: null, produced: new Set(), refs: [], mounts }
-  for (const m of (run.before ?? '').matchAll(BEFORE_CODE)) analyze(ctx, m[1] ?? '')
+  const paths = beforePaths(ctx, run)
+  for (const m of (run.before ?? '').matchAll(BEFORE_CODE)) {
+    if (!PATH_LIKE.test(m[1] ?? '')) analyze(ctx, m[1] ?? '')
+  }
   ctx.compose = null
   analyze(ctx, run.cmd)
-  const refs: PathRef[] = [{ kind: 'dir', path: run.dir, via: `dir="${run.dir}"` }, ...ctx.refs]
-  const byBefore = preparedByBefore(run)
+  const refs: PathRef[] = [{ kind: 'dir', path: run.dir, via: `dir="${run.dir}"` }, ...paths.referenced, ...ctx.refs]
   const seen = new Set<string>()
   return refs.filter((r) => {
     const key = `${r.kind}:${r.path}`
-    if (seen.has(key) || prepared(r.path, ctx.produced, byBefore)) return false
+    if (seen.has(key) || prepared(r.path, ctx.produced, paths.placed)) return false
     seen.add(key)
     return true
   })

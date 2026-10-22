@@ -269,7 +269,7 @@ $ go run main.go
 параллельно:     99.99%, простой за 30 дней: 4m19s
 ```
 
-<Run dir="labs/availability" cmd="go run main.go" before="положите программу выше в `labs/availability/main.go`" />
+<Run dir="labs/availability" cmd="go run main.go" before="создайте каталог и положите программу выше в `main.go` (потом удалите каталог)" />
 
 ## <Part kind="theory" /> SLI, SLO, SLA и бюджет ошибок
 

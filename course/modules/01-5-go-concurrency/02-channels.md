@@ -306,7 +306,7 @@ make(chan int, 1)      128 байт на канал
 make(chan int, 100)    1024 байт на канал
 ```
 
-<Run dir="labs" cmd="go run ./chansize" before="положите программу выше в `labs/chansize/main.go`" />
+<Run dir="labs" cmd="go run ./chansize" before="положите программу выше в `chansize/main.go` (потом удалите каталог)" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 

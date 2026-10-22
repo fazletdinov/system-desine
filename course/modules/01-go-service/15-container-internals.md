@@ -182,6 +182,8 @@ Docker обещает почти ту же изоляцию за доли сек
 - **copy-up** — при первой записи в файл из нижнего слоя ядро копирует его **целиком** в `upperdir` и дальше пишет туда. Нижний слой не меняется никогда;
 - **whiteout** — удалить файл из нижнего слоя нельзя (слой только для чтения), поэтому в `upperdir` создаётся «белая метка»: символьное устройство с номером `0, 0` под тем же именем. Видя его, OverlayFS делает вид, что файла нет.
 
+Корень контейнера лабы сам лежит на OverlayFS, а `upperdir` на ней ядро не принимает, поэтому опыт ставим в tmpfs: сначала `mount -t tmpfs tmpfs /mnt && cd /mnt`.
+
 Проверим руками в окружении лабы (там есть права на `mount`):
 
 ```text
@@ -206,7 +208,7 @@ config
 old
 ```
 
-<Run dir="labs/1c" cmd="docker compose run --rm lab sh -c 'mount -t tmpfs tmpfs /mnt &amp;&amp; cd /mnt &amp;&amp; mkdir lower upper work merged; echo &quot;из образа&quot; > lower/config; echo &quot;старое&quot; > lower/old; mount -t overlay overlay -o lowerdir=lower,upperdir=upper,workdir=work merged; ls merged; ls upper'" needs="docker" before="образ лабы: `docker compose build`; опыт — в tmpfs: корень контейнера сам на OverlayFS, а `upperdir` на нём ядро не принимает; остальные команды блока — в той же оболочке" />
+<Run dir="labs/1c" cmd="docker compose run --rm lab sh -c 'mount -t tmpfs tmpfs /mnt &amp;&amp; cd /mnt &amp;&amp; mkdir lower upper work merged; echo &quot;из образа&quot; &gt; lower/config; echo &quot;старое&quot; &gt; lower/old; mount -t overlay overlay -o lowerdir=lower,upperdir=upper,workdir=work merged; ls merged; ls upper; echo &quot;правка&quot; &gt;&gt; merged/config; rm merged/old; ls merged; ls -l upper; cat lower/config; cat upper/config; ls lower'" needs="docker" before="образ лабы: `docker compose build`" />
 
 До записи `upper` пуст: всё читается снизу. Дописали строку в `config` — ядро скопировало файл наверх целиком (там обе строки), нижний слой остался как был. Удалили `old` — наверху появилось устройство `c--------- 0, 0`, а в `lower` файл на месте. Именно поэтому удаление файла в позднем слое Dockerfile **не уменьшает** образ: байты остались в нижнем слое, сверху лишь метка. И поэтому copy-up большого файла (например, базы данных внутри образа) при первой записи — дорогая операция: копируется весь файл, даже если меняется один байт.
 
@@ -635,7 +637,7 @@ $ docker inspect -f '{{.State.Pid}}' probe
 1287
 ```
 
-<Run dir="labs/1c" cmd="docker inspect -f '{{.State.Pid}}' probe" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (из `labs/1c`, образ — `docker compose build`)" />
+<Run dir="labs/1c" cmd="docker inspect -f '{{.State.Pid}}' probe" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (образ — `docker compose build`)" />
 
 ### Namespaces
 
@@ -652,7 +654,7 @@ $ lsns -p 1287
 4026532803 time        1  1287 root sleep 3600
 ```
 
-<Run dir="labs/1c" cmd="sudo lsns -p $(docker inspect -f '{{.State.Pid}}' probe)" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (из `labs/1c`, образ — `docker compose build`); на Linux без Docker Desktop команды хоста — под `sudo`" />
+<Run dir="labs/1c" cmd="sudo lsns -p $(docker inspect -f '{{.State.Pid}}' probe)" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (образ — `docker compose build`); на Linux без Docker Desktop команды хоста — под `sudo`" />
 
 `lsns` перечисляет namespaces процесса. Колонка `PID` — самый младший процесс в этом namespace, `NPROCS` — сколько в нём процессов. Семь namespaces принадлежат одному `sleep`: это новые, созданные для контейнера. Восьмой, `user`, — общий с `/initd` (PID 1 VM) и ещё 191 процессом: начальный user namespace. Docker его не создаёт, как и говорит таблица.
 
@@ -709,7 +711,7 @@ $ cat /proc/1333/cgroup
 0::/docker/aa6fdfd80184903b7eaf9414ae69ade672da0b6f8599c2ec28633174d5860955
 ```
 
-<Run dir="labs/1c" cmd="cat /proc/$(docker inspect -f '{{.State.Pid}}' probe)/cgroup" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (из `labs/1c`, образ — `docker compose build`)" />
+<Run dir="labs/1c" cmd="cat /proc/$(docker inspect -f '{{.State.Pid}}' probe)/cgroup" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (образ — `docker compose build`)" />
 
 Строка `0::путь` — формат cgroup v2: одна иерархия, номер 0. Группа контейнера — `/docker/<id контейнера>` (так раскладывает драйвер `cgroupfs`; с драйвером `systemd` путь был бы вида `system.slice/docker-<id>.scope`). 1333 — PID второго контейнера, `probe-mem`. Читаем лимиты обоих:
 
@@ -814,7 +816,7 @@ $ docker inspect -f '{{json .GraphDriver}}' probe
 null
 ```
 
-<Run dir="labs/1c" cmd="docker inspect -f '{{json .GraphDriver}}' probe" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (из `labs/1c`, образ — `docker compose build`)" />
+<Run dir="labs/1c" cmd="docker inspect -f '{{json .GraphDriver}}' probe" needs="docker" before="`docker run -d --name probe lab1c:local sleep 3600` и `docker run -d --name probe-mem --memory 64m lab1c:local sleep 3600` (образ — `docker compose build`)" />
 
 `null` — не ошибка. Docker Desktop (и новые установки Docker Engine с версии 29) хранит образы в **containerd image store**: слои раскладывает не графовый драйвер Docker, а снапшоттер (snapshotter) `overlayfs` самого containerd. `docker info` говорит об этом так:
 

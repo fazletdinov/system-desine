@@ -167,7 +167,7 @@ $ go run ./threadscgo
 после: VmSize: 15826088 kB, VmRSS: 24336 kB, Threads: 1014
 ```
 
-<Run dir="labs" cmd="go run ./threads &amp;&amp; go run ./threadscgo" before="положите программу выше в `labs/threads/main.go`, а её копию со строкой `import _ &quot;runtime/cgo&quot;` — в `labs/threadscgo/main.go`" />
+<Run dir="labs" cmd="go run ./threads &amp;&amp; go run ./threadscgo" before="положите программу выше в `threads/main.go`, а её копию со строкой `import _ &quot;runtime/cgo&quot;` — положите в `threadscgo/main.go` (потом удалите оба каталога)" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2, glibc 2.39.
 
@@ -543,7 +543,7 @@ $ go run ./metrics
 /sched/threads/total:threads             10
 ```
 
-<Run dir="labs" cmd="go run ./metrics" before="положите программу выше в `labs/metrics/main.go`" />
+<Run dir="labs" cmd="go run ./metrics" before="положите программу выше в `metrics/main.go` (потом удалите каталог)" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 

@@ -124,7 +124,7 @@ main.waitAtomicFlag STEXT size=61 …
 	0x017c 00380 (type.go:22)	XCHGL	CX, (DX)
 ```
 
-<Run dir="labs" cmd="go build -tags labdemo -gcflags=-S ./1-5/race/flagloop" />
+<Run dir="labs" cmd="go build -tags labdemo -gcflags=-S -o /dev/null ./1-5/race/flagloop" />
 
 машина та же, go1.27.2.
 
@@ -228,7 +228,7 @@ $ go run ./storebuf
 atomic.Int64:  r1 == 0 и r2 == 0 в 0 раундах из 1000000
 ```
 
-<Run dir="labs" cmd="go run ./storebuf" before="положите программу выше в `labs/storebuf/main.go`" />
+<Run dir="labs" cmd="go run ./storebuf" before="положите программу выше в `storebuf/main.go` (потом удалите каталог)" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 
