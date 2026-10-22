@@ -8,9 +8,16 @@ export interface ShotMark {
   y: number
   w?: number
   h?: number
+  // Где поставить номер относительно рамки, если автоматический выбор закрывает
+  // нужный текст: в плотной таблице соседние строки лучше не трогать, и номер
+  // уходит выше или ниже — в пустую область.
+  at?: MarkSide
   // Пояснение под снимком. Текст в `обратных кавычках` выводится как код.
   text: string
 }
+
+export const MARK_SIDES = ['right', 'left', 'above', 'below'] as const
+export type MarkSide = (typeof MARK_SIDES)[number]
 
 export interface MarkLayout {
   n: number
@@ -41,6 +48,8 @@ export function markProblems(marks: readonly ShotMark[]): string[] {
     if (!inRange(m.x) || !inRange(m.y)) problems.push(`пометка ${m.n}: (x, y) вне снимка`)
     if ((m.w === undefined) !== (m.h === undefined)) problems.push(`пометка ${m.n}: у рамки нужны и w, и h`)
     if (m.w !== undefined && m.h !== undefined && (!(m.w > 0 && m.h > 0) || !inRange(m.x + m.w) || !inRange(m.y + m.h))) problems.push(`пометка ${m.n}: рамка выходит за снимок`)
+    if (m.at !== undefined && m.w === undefined) problems.push(`пометка ${m.n}: сторона номера (at) задаётся только у рамки`)
+    if (m.at !== undefined && !MARK_SIDES.includes(m.at)) problems.push(`пометка ${m.n}: неизвестная сторона номера «${m.at}»`)
     if (m.text.trim() === '') problems.push(`пометка ${m.n}: нет пояснения`)
     if (m.text.split('`').length % 2 === 0) problems.push(`пометка ${m.n}: непарная обратная кавычка`)
   }
@@ -53,6 +62,7 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v
 // Рамка чуть шире заданной области, чтобы линия не легла на текст. Номер ставим
 // снаружи рамки, по центру её высоты: справа, если там есть место, иначе слева,
 // иначе — на левом верхнем углу. Так кружок не закрывает то, на что указывает.
+// Поле at задаёт сторону явно: above и below ставят номер по центру ширины рамки.
 export function layoutMarks(marks: readonly ShotMark[], width: number, height: number): MarkLayout[] {
   const r = width * MARK_RADIUS_SHARE
   const pad = r * 0.15
@@ -67,12 +77,30 @@ export function layoutMarks(marks: readonly ShotMark[], width: number, height: n
       const x1 = Math.min(x + (m.w / 100) * width + pad, width)
       const y1 = Math.min(y + (m.h / 100) * height + pad, height)
       const rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
-      const right = rect.x + rect.w + r * 1.2
-      const left = rect.x - r * 1.2
-      const mid = rect.y + rect.h / 2
-      const [cx, cy] = right + r <= width ? [right, mid] : left - r >= 0 ? [left, mid] : [rect.x, rect.y]
+      const [cx, cy] = markCenter(rect, m.at, r, width)
       return { n: m.n, cx: clamp(cx, r, width - r), cy: clamp(cy, r, height - r), rect }
     })
+}
+
+function markCenter(rect: { x: number; y: number; w: number; h: number }, at: MarkSide | undefined, r: number, width: number): [number, number] {
+  const gap = r * 1.2
+  const right = rect.x + rect.w + gap
+  const left = rect.x - gap
+  const mid = rect.y + rect.h / 2
+  const center = rect.x + rect.w / 2
+  switch (at) {
+    case 'right':
+      return [right, mid]
+    case 'left':
+      return [left, mid]
+    case 'above':
+      return [center, rect.y - gap]
+    case 'below':
+      return [center, rect.y + rect.h + gap]
+  }
+  if (right + r <= width) return [right, mid]
+  if (left - r >= 0) return [left, mid]
+  return [rect.x, rect.y]
 }
 
 // Код в пояснении — в обратных кавычках, как в Markdown урока.

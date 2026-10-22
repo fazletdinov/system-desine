@@ -32,7 +32,7 @@ const noteId = (n: number): string => `${id}-note-${n}`
 <template>
   <VizFrame ref="frame" :label="`Снимок: ${caption}`">
     <figure class="shot">
-      <div class="shot-canvas" title="Открыть на весь экран" @click="frame?.toggle()">
+      <div class="shot-canvas" title="Открыть / закрыть на весь экран" @click="frame?.toggle()">
         <img :src="url" :alt="alt" :width="width" :height="height" loading="lazy" decoding="async" />
         <svg class="shot-marks" :viewBox="`0 0 ${width} ${height}`">
           <g
@@ -59,6 +59,7 @@ const noteId = (n: number): string => `${id}-note-${n}`
       <figcaption class="shot-caption">
         {{ caption }}
         <span class="shot-version">{{ version }}</span>
+        <span class="shot-hint">Щёлкните по снимку, чтобы увеличить</span>
       </figcaption>
       <ol class="shot-notes">
         <li
@@ -103,6 +104,7 @@ const noteId = (n: number): string => `${id}-note-${n}`
 .shot-mark.is-active .shot-dot { stroke-width: 5px; }
 .shot-caption { margin-top: 8px; color: var(--vp-c-text-2); font-size: 14px; text-align: center; }
 .shot-version { display: block; color: var(--vp-c-text-3); font-size: 12px; }
+.shot-hint { display: block; color: var(--vp-c-text-3); font-size: 12px; }
 .shot-notes { margin: 12px 0 0; padding: 0; list-style: none; }
 .shot-notes li { display: flex; gap: 10px; align-items: baseline; margin: 6px 0; padding: 2px 6px; border-radius: 6px; }
 .shot-notes li.is-active { background: var(--course-accent-soft); }
@@ -119,16 +121,16 @@ const noteId = (n: number): string => `${id}-note-${n}`
   font-weight: 700;
   line-height: 1;
 }
-</style>
 
-<style>
-/* На весь экран (класс ставит VizFrame): снимок по высоте окна, пояснения — колонкой справа.
-   Отдельный блок без scoped: :global() в scoped-стилях Vue теряет вторую часть селектора. */
-.viz-frame.is-fullscreen .shot { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); gap: 8px 20px; align-items: start; margin: 0; }
+/* На весь экран (класс ставит VizFrame): снимок по высоте окна, пояснения — узкой колонкой справа,
+   чтобы картинке досталось больше ширины. Scoped-атрибут получает только последний класс селектора,
+   поэтому .viz-frame снаружи компонента совпадает. */
+.viz-frame.is-fullscreen .shot { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 8px 20px; align-items: start; margin: 0; }
 .viz-frame.is-fullscreen .shot-canvas { grid-row: span 2; cursor: zoom-out; }
 .viz-frame.is-fullscreen .shot-canvas img { max-height: calc(100vh - 90px); width: auto; }
 /* VizFrame ограничивает высоту любого svg в полноэкранном режиме; слой пометок обязан совпадать с картинкой. */
 .viz-frame.is-fullscreen .shot-marks { max-height: none; }
 .viz-frame.is-fullscreen .shot-caption { margin-top: 0; text-align: left; }
+.viz-frame.is-fullscreen .shot-hint { display: none; }
 .viz-frame.is-fullscreen .shot-notes { margin-top: 0; }
 </style>

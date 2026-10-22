@@ -41,16 +41,21 @@ HTTP/3 внутри сети стенда 0b: до интернета UDP 443 у
 сервером служит Caddy, а клиентом — `curl` из образа лабы, который пишет ключи по `SSLKEYLOGFILE`:
 
 ```bash
-docker compose -f labs/0b/compose.yaml up -d
+alias lab='docker compose -f labs/0b/compose.yaml'   # как в labs/0b/README.md
+lab up -d
 printf 'h3.messenger.example {\n\ttls internal\n\trespond "hello over HTTP/3"\n}\n' > /tmp/Caddyfile
 docker run -d --name h3-shot --network lab0b_labnet --ip 172.28.0.30 -v /tmp/Caddyfile:/etc/caddy/Caddyfile:ro \
   caddy:2.10.2@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb
 lab exec -d client tcpdump --immediate-mode -i eth0 -w /captures/quic-h3.pcap udp port 443
+sleep 1   # tcpdump запускается в фоне: без паузы начало обмена может не попасть в запись
 lab exec -e SSLKEYLOGFILE=/captures/quic-h3.keys client curl --http3-only -k -sS -i \
   --resolve h3.messenger.example:443:172.28.0.30 https://h3.messenger.example/
 lab exec client pkill tcpdump
-docker rm -f h3-shot && docker compose -f labs/0b/compose.yaml down
+docker rm -f h3-shot && lab down
 ```
+
+Новая запись даст другие connection ID и порты, а число пакетов может измениться. Пометки
+урока 0b.8 привязаны к строкам списка: после переснятия сверить номера пакетов 5, 8 и 16 с пометками.
 
 Файл ключей — секрет: с ним расшифровывается вся запись. В git он не попадает (`labs/0b/captures/*.keys`).
 

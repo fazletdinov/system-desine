@@ -67,6 +67,8 @@ describe('markProblems', () => {
     ['рамка без высоты', [{ n: 1, x: 1, y: 1, w: 30, text: 'а' }]],
     ['пустое пояснение', [{ n: 1, x: 1, y: 1, text: ' ' }]],
     ['непарная кавычка', [{ n: 1, x: 1, y: 1, text: 'поле `seq' }]],
+    ['сторона номера без рамки', [{ n: 1, x: 1, y: 1, at: 'below', text: 'а' }]],
+    ['неизвестная сторона номера', [{ n: 1, x: 1, y: 1, w: 5, h: 5, at: 'top', text: 'а' }]],
   ] as [string, ShotMark[]][])('%s', (_, marks) => {
     expect(markProblems(marks)).toHaveLength(1)
   })
@@ -83,6 +85,23 @@ describe('layoutMarks', () => {
   it('у правого края номер встаёт слева от рамки', () => {
     const [m] = layoutMarks([{ n: 1, x: 90, y: 50, w: 9, h: 2, text: 'а' }], 1000, 500)
     expect(m?.cx).toBe(897.75 - 18)
+  })
+})
+
+describe('layoutMarks: сторона номера задана явно', () => {
+  // Рамка как у первой пометки MARKS: x 97,75…402,25, y 97,75…152,25; зазор до центра кружка — 18.
+  it.each([
+    ['right', 420.25, 125],
+    ['left', 79.75, 125],
+    ['above', 250, 79.75],
+    ['below', 250, 170.25],
+  ] as const)('%s', (at, cx, cy) => {
+    const [m] = layoutMarks([{ n: 1, x: 10, y: 20, w: 30, h: 10, at, text: 'а' }], 1000, 500)
+    expect([m?.cx, m?.cy]).toEqual([cx, cy])
+  })
+  it('явная сторона важнее автоматической: у правого края номер всё равно справа, но в пределах снимка', () => {
+    const [m] = layoutMarks([{ n: 1, x: 90, y: 50, w: 9, h: 2, at: 'right', text: 'а' }], 1000, 500)
+    expect(m?.cx).toBe(1000 - 15)
   })
 })
 
