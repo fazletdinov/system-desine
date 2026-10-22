@@ -203,7 +203,6 @@ const pageViews = computed(() => model.value.pages.map(pageView))
     <text class="lvl" x="14" :y="scene.rows.root - 12">корень</text>
     <text class="lvl" x="14" :y="scene.rows.inner - 10">внутренние страницы</text>
     <text class="lvl" x="14" :y="scene.rows.leaf - 10">листья — индексные записи</text>
-    <text class="lvl" x="14" :y="scene.rows.heap - 10">таблица chat.members (heap) — строки в порядке вставки</text>
     <text class="lvl" :x="scene.width - 14" :y="scene.rows.root - 12" text-anchor="end">индекс members_user_id_idx</text>
 
     <path v-for="e in edges" :key="e.key" class="edge" :class="{ on: e.on }" :d="e.d" />
@@ -268,12 +267,14 @@ const pageViews = computed(() => model.value.pages.map(pageView))
     <g class="tids">
       <path v-for="t in tidPaths" :key="t.key" class="tid" :class="{ sel: t.selected }" :d="t.d" :marker-end="`url(#${tidMarker})`" />
     </g>
+    <!-- Подпись heap — после стрелок TID: дуги идут сквозь неё, ореол фона держит текст читаемым -->
+    <text class="lvl" x="14" :y="scene.rows.heap - 10">таблица chat.members (heap) — строки в порядке вставки</text>
   </svg>
 </template>
 
 <style scoped>
 .bt { width: 100%; height: auto; display: block; color: var(--viz-text); }
-.lvl { font: 650 14px var(--vp-font-family-base, system-ui); letter-spacing: 0.6px; text-transform: uppercase; fill: var(--viz-muted); }
+.lvl { font: 650 14px var(--vp-font-family-base, system-ui); letter-spacing: 0.6px; text-transform: uppercase; fill: var(--viz-muted); paint-order: stroke; stroke: var(--vp-c-bg-soft); stroke-width: 5px; stroke-linejoin: round; }
 .box { fill: var(--viz-node-bg); stroke: var(--viz-edge); stroke-width: 1.5; }
 /* Заливку не тонируем: на любом оттенке muted-текст заголовка падает ниже 4,5:1 в светлой теме. Куча отличается рамкой. */
 .box.heap { stroke: color-mix(in srgb, var(--viz-service) 55%, var(--viz-edge)); }
