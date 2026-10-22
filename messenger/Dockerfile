@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # region runtime
 # distroless static: CA-сертификаты, tzdata, /etc/passwd с пользователем nonroot (65532)
 # — и больше ничего: ни shell, ни пакетного менеджера (ADR-0007).
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:d62067879de890a1def9da0e7766b7d20810a5e5555cef8506b752437d7a3e88
 LABEL org.opencontainers.image.title="messenger" \
       org.opencontainers.image.description="Мессенджер курса «System Design на практике»: монолит v0"
 COPY --from=build /out/messenger /messenger

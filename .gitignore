@@ -8,3 +8,4 @@ labs/0b/captures/*.pcap
 labs/0b/captures/*.pcapng
 labs/0b/captures/*.pem
 labs/0b/captures/*.log
+labs/0b/captures/*.keys
