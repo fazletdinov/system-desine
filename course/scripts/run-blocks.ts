@@ -14,12 +14,24 @@ export interface RunScan {
   runs: RunTag[]
   // Строки абзацев «машина: …» / «машина та же…» — признак настоящего прогона.
   machines: number[]
+  // Блоки кода, первая строка которых — «$ команда»: каждому нужен <Run> в его разделе.
+  commandBlocks: CommandBlock[]
+  headings: { line: number; level: number }[]
   problems: { line: number; message: string }[]
+}
+
+export interface CommandBlock {
+  // Строка открывающей ограды.
+  line: number
+  // Первая строка блока без «$ ».
+  command: string
 }
 
 const FENCE = /^(`{3,}|~{3,})/
 const MACHINE = /^машина/
 const RUN_START = /^<Run\b/
+const HEADING = /^(#{1,6})\s/
+const COMMAND_LINE = /^\$ (.*)$/
 const RUN_TAG = /^<Run((?:\s+[a-z]+="[^"]*")*)\s*\/>$/
 const ATTR = /([a-z]+)="([^"]*)"/g
 const KNOWN_ATTRS = new Set(['dir', 'cmd', 'needs', 'before'])
@@ -48,17 +60,26 @@ function parseTag(text: string, line: number): RunTag | string {
 }
 
 export function scanRunBlocks(markdown: string): RunScan {
-  const scan: RunScan = { runs: [], machines: [], problems: [] }
+  const scan: RunScan = { runs: [], machines: [], commandBlocks: [], headings: [], problems: [] }
   let open: string | null = null
+  let openedAt = -1
   markdown.split('\n').forEach((raw, i) => {
     const line = raw.trim()
     const fence = FENCE.exec(line)?.[1]
     if (fence !== undefined) {
-      if (open === null) open = fence
-      else if (fence[0] === open[0] && fence.length >= open.length && line === fence) open = null
+      if (open === null) {
+        open = fence
+        openedAt = i
+      } else if (fence[0] === open[0] && fence.length >= open.length && line === fence) open = null
       return
     }
-    if (open !== null) return
+    if (open !== null) {
+      const command = i === openedAt + 1 ? COMMAND_LINE.exec(raw)?.[1] : undefined
+      if (command !== undefined) scan.commandBlocks.push({ line: openedAt + 1, command })
+      return
+    }
+    const heading = HEADING.exec(raw)?.[1]
+    if (heading !== undefined) scan.headings.push({ line: i + 1, level: heading.length })
     if (MACHINE.test(line)) scan.machines.push(i + 1)
     if (!RUN_START.test(line)) return
     const tag = parseTag(line, i + 1)
@@ -75,6 +96,18 @@ export function machinesWithoutRun(scan: RunScan): number[] {
     const covered = scan.runs.some((r) => r.line > prev && r.line < m)
     prev = m
     return !covered
+  })
+}
+
+// Раздел блока — от ближайшего заголовка над ним до следующего заголовка того же или
+// более высокого уровня (подразделы входят). Сессия из нескольких блоков делит один <Run>.
+export function commandBlocksWithoutRun(scan: RunScan): CommandBlock[] {
+  return scan.commandBlocks.filter((block) => {
+    const heading = [...scan.headings].reverse().find((h) => h.line < block.line)
+    const start = heading?.line ?? 0
+    const level = heading?.level ?? 0
+    const end = scan.headings.find((h) => h.line > block.line && h.level <= level)?.line ?? Number.POSITIVE_INFINITY
+    return !scan.runs.some((r) => r.line > start && r.line < end)
   })
 }
 
@@ -198,7 +231,7 @@ export interface ComposeMounts {
 
 const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/
 const SHELL_KEYWORDS = new Set(['do', 'done', 'then', 'fi', 'time', 'exec'])
-const GO_PACKAGE_COMMANDS = new Set(['run', 'test', 'build', 'vet', 'install'])
+const GO_PACKAGE_COMMANDS = new Set(['run', 'test', 'build', 'vet', 'install', 'generate'])
 const LOCAL_PATH = /^(\.\.?\/|scripts\/)/
 const PRODUCED_FLAG = /^-(?:o|\w*profile)=(.+)$/
 

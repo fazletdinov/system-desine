@@ -48,6 +48,8 @@ default via 172.28.0.1 dev eth0
 172.28.0.0/24 dev eth0 proto kernel scope link src 172.28.0.20
 ```
 
+<Run dir="labs/0b" cmd="docker compose exec client ip route &amp;&amp; docker compose exec client ip route get 172.28.0.10 &amp;&amp; docker compose exec client ip route get 1.1.1.1" needs="docker" before="стенд лабы: `docker compose up -d --build`" />
+
 Читается так. Вторая строка: «вся сеть `172.28.0.0/24` доступна напрямую через интерфейс `eth0`» (`scope link` — соседи в том же сегменте). Первая строка: «всё остальное отправлять **шлюзу** `172.28.0.1`» — маршрутизатору, который знает, что делать дальше. Если подходят несколько строк, побеждает самая конкретная, с самой длинной маской (longest prefix match), а `default` — это маска `/0`, подходящая всем. Спросить ядро напрямую, какой маршрут оно выберет, можно командой `ip route get`:
 
 ```
@@ -79,6 +81,8 @@ State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess
 LISTEN 0      4096               *:8443             *:*    users:(("h2server",pid=13,fd=6))
 LISTEN 0      4096               *:8080             *:*    users:(("h2server",pid=13,fd=7))
 ```
+
+<Run dir="labs/0b" cmd="docker compose exec server ss -tlnp" needs="docker" before="стенд лабы: `docker compose up -d --build`, сервер: `docker compose exec -d server h2server -addr :8443 -http-addr :8080 -names api.messenger.example,server -ca-out /captures/ca.pem`" />
 
 `*:8080` значит «порт 8080 на всех адресах машины», `fd=7` — номер дескриптора в процессе `h2server`. (Мы убрали две строки: `127.0.0.11` — встроенный DNS самого Docker, и порт 7000 — эхо-сервер `tcpecho`, запущенный для урока 0b.2.)
 

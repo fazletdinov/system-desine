@@ -219,6 +219,8 @@ $ curl -s "localhost:8080/v1/chats/$CHAT/messages?limit=5" -H "X-User-ID: $BOB" 
 {"seqs":[12,11,10,9,8],"next_cursor":"eyJ2IjoxLCJrIjoibWVzc2FnZXMiLCJwIjp7ImNoYXQiOiIwMWExM2EwYi02MTYxLTc5MWEtODcyZi1mYTk1OTRjZGNiNTQiLCJzZXEiOjh9fQ"}
 ```
 
+<Run dir="messenger" cmd="for i in $(seq 1 12); do curl -s -X POST &quot;localhost:8080/v1/chats/$CHAT/messages&quot; -H &quot;X-User-ID: $ALICE&quot; -H 'Content-Type: application/json' -d &quot;{\&quot;text\&quot;:\&quot;сообщение $i\&quot;}&quot; > /dev/null; done" before="`git checkout m01-l11`, сервер в соседнем терминале — `go run ./cmd/messenger`; зарегистрируйте Алису, Боба, Кэрол и Дэйва, создайте личный чат; id из ответов сохраняйте в `ALICE`, `BOB`, `CHAT`; нужен `jq`" />
+
 Первая страница — пять самых новых. Заглянем в курсор (так делать можно для любопытства, но не в коде клиента). `basenc` ждёт `=` в конце, поэтому допишем их:
 
 ```text

@@ -449,6 +449,8 @@ $ git diff --stat m01-5-l11 m02-l09 -- 'messenger/internal/*/domain/*'
  2 files changed, 22 insertions(+), 1 deletion(-)
 ```
 
+<Run dir="." cmd="git diff --stat m01-5-l11 m02-l09 -- 'messenger/internal/*/domain/*'" />
+
 Не ноль, и честно сказать, почему.
 
 - **`message.go`, +19 строк** — `MessageSnapshot` и `RestoreMessage`. У чата снимок и восстановление были с урока 1.4 (`ChatSnapshot`, `RestoreChat`), у сообщения — нет: хранилище в памяти держало готовые `domain.Message` и ни разу не собирало их из полей. Адаптер базы читает строку таблицы, и собрать из неё `Message` с неэкспортируемыми полями снаружи пакета `domain` нельзя. Пришлось добавить конструктор — по образцу `RestoreChat`, без тегов `db:"…"`: как раскладывать поля по столбцам, решает адаптер.

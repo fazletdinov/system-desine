@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type ComposeMounts, machinesWithoutRun, type RunTag, runRefs, scanRunBlocks } from './run-blocks'
+import { commandBlocksWithoutRun, type ComposeMounts, machinesWithoutRun, type RunTag, runRefs, scanRunBlocks } from './run-blocks'
 
 const noMounts: ComposeMounts = { mounts: () => new Map() }
 const lab2aMounts: ComposeMounts = {
@@ -46,6 +46,34 @@ describe('machinesWithoutRun', () => {
   })
   it('<Run> после абзаца не засчитывается предыдущему прогону', () => {
     expect(machinesWithoutRun(scanRunBlocks('машина: 1\n<Run dir="labs" cmd="a" />'))).toEqual([1])
+  })
+})
+
+describe('commandBlocksWithoutRun', () => {
+  const block = (cmd: string) => ['```text', `$ ${cmd}`, 'вывод', '```']
+  const uncovered = (lines: string[]) => commandBlocksWithoutRun(scanRunBlocks(lines.join('\n'))).map((b) => `${b.line} ${b.command}`)
+
+  it('блок «$ …» без <Run> в разделе — непокрыт, с номером строки ограды', () => {
+    expect(uncovered(['## Раздел', '', ...block('go test ./...')])).toEqual(['3 go test ./...'])
+  })
+  it('сессия из нескольких блоков в разделе делит один <Run>', () => {
+    const md = ['## Сессия', ...block('curl a'), '<Run dir="messenger" cmd="curl a" />', ...block('curl b'), ...block('curl c')]
+    expect(uncovered(md)).toEqual([])
+  })
+  it('<Run> в подразделе покрывает блок раздела выше, но не соседний раздел', () => {
+    const md = ['## Первый', ...block('a'), '### Деталь', '<Run dir="labs" cmd="a" />', '## Второй', ...block('b')]
+    expect(uncovered(md)).toEqual(['9 b'])
+  })
+  it('<Run> соседнего подраздела того же уровня не засчитывается', () => {
+    const md = ['## Раздел', '### А', ...block('a'), '### Б', '<Run dir="labs" cmd="b" />']
+    expect(uncovered(md)).toEqual(['3 a'])
+  })
+  it('блок без «$ » в первой строке и «$ » не в первой строке — не команда', () => {
+    expect(uncovered(['```text', 'вывод', '$ поздно', '```', '```go', 'package main', '```'])).toEqual([])
+  })
+  it('«# комментарий» внутри блока — не заголовок раздела', () => {
+    const md = ['## Раздел', '<Run dir="labs" cmd="a" />', '```text', '# не заголовок', '```', ...block('a')]
+    expect(uncovered(md)).toEqual([])
   })
 })
 
@@ -104,5 +132,11 @@ describe('runRefs', () => {
   it('цель cp и файлы профилей из флагов go test — порождены командой', () => {
     const cmd = "go test -bench=Route -cpuprofile=cpu.pprof ./1-5/pgo/ && cp ./cpu.pprof ./1-5/pgo/default.pgo && cat ./cpu.pprof"
     expect(paths(run(cmd))).toEqual(['dir labs', 'package labs/1-5/pgo'])
+  })
+  it('go generate проверяет шаблон пакетов как каталог', () => {
+    expect(paths(run('go generate ./internal/...', { dir: 'messenger' }))).toEqual(['dir messenger', 'dir messenger/internal'])
+  })
+  it('docker build -f: путь к Dockerfile проверяется от каталога', () => {
+    expect(paths(run('docker build -t x -f ../course/a.Dockerfile .', { dir: 'messenger' }))).toEqual(['dir messenger', 'file course/a.Dockerfile'])
   })
 })

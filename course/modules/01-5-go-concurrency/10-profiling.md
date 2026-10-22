@@ -252,6 +252,8 @@ Showing top 40 nodes out of 191
 ...
 ```
 
+<Run dir="messenger" cmd="go tool pprof -top cpu.pprof &amp;&amp; go tool pprof -top -cum cpu.pprof" needs="docker" before="снимите `cpu.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
+
 Столбцы:
 
 - **`flat`** — выборки, где функция была **на вершине** стека: время, потраченное в её собственном коде;

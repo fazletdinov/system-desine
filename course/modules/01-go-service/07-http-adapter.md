@@ -380,6 +380,8 @@ $ curl -s -X POST localhost:8080/users -H 'Content-Type: application/json' -d '{
 {"error":{"code":"username_taken","message":"имя пользователя занято"}}
 ```
 
+<Run dir="messenger" cmd="curl -s -X POST localhost:8080/users -H 'Content-Type: application/json' -d '{&quot;username&quot;:&quot;alice&quot;,&quot;display_name&quot;:&quot;Алиса&quot;}'" before="`git checkout m01-l07`, сервер в соседнем терминале — `go run ./cmd/messenger`; id из ответов сохраняйте в `ALICE`, `BOB`, `EVE`, `CHAT`; остальные запросы — в блоках ниже" />
+
 Id — <T id="uuidv7">UUIDv7</T>: первые 12 шестнадцатеричных цифр — время в миллисекундах, поэтому id, выданные подряд, идут по возрастанию (модуль 2a объяснит, почему это важно для <T id="index">индекса</T>). Повторное имя — 409 с `code` `username_taken`.
 
 Алиса создаёт личный чат с Бобом — дважды. Ключ `-w` дописывает в конец статус ответа:

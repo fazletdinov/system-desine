@@ -288,6 +288,8 @@ Content-Length: 386
 {"type":"https://messenger.example/problems/invalid_input","title":"Некорректные данные","status":400,"detail":"пустое сообщение","instance":"/v1/chats/01a139de-b75e-7a7a-b9fd-9078ca89952e/messages","code":"invalid_input","request_id":"01a139de-b762-7bf3-b834-3cfb5e4f1212","invalid_params":[{"name":"text","reason":"пустое сообщение"}]}
 ```
 
+<Run dir="messenger" cmd="curl -si -X POST &quot;localhost:8080/v1/chats/$CHAT/messages&quot; -H &quot;X-User-ID: $ALICE&quot; -H 'Content-Type: application/json' -d '{&quot;text&quot;:&quot;&quot;}'" before="`git checkout m01-l10`, сервер в соседнем терминале — `go run ./cmd/messenger`; зарегистрируйте Алису, Боба и Кэрол, создайте личный чат; id из ответов сохраняйте в `ALICE`, `BOB`, `CAROL`, `CHAT`" />
+
 `request_id` в теле совпадает с заголовком `X-Request-Id`. И с журналом доступа сервера:
 
 ```text

@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, posix, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
-import { type ComposeMounts, machinesWithoutRun, type PathRef, runRefs, scanRunBlocks } from './run-blocks.ts'
+import { commandBlocksWithoutRun, type ComposeMounts, machinesWithoutRun, type PathRef, runRefs, scanRunBlocks } from './run-blocks.ts'
 
 const COURSE_DIR = fileURLToPath(new URL('..', import.meta.url))
 const REPO_DIR = join(COURSE_DIR, '..')
@@ -40,6 +40,19 @@ const repoMounts: ComposeMounts = {
   },
 }
 
+// Блоки «$ …», которые из репозитория не воспроизвести, — без <Run>, каждый с причиной.
+// Ключ — файл урока и первая строка блока без «$ »: номер строки сдвигается при любой правке выше.
+const ILLUSTRATIVE_BLOCKS: { file: string; command: string; reason: string }[] = [
+  {
+    file: 'modules/01-go-service/17-service-in-container.md',
+    command: 'docker run --rm --privileged --pid=host busybox:1.37@sha256:bdf5… \\',
+    reason: 'конфиг dockerd внутри виртуальной машины Docker Desktop; на Docker Engine в Linux такого файла нет',
+  },
+]
+
+const isIllustrative = (file: string, command: string): boolean =>
+  ILLUSTRATIVE_BLOCKS.some((b) => b.file === file && b.command === command)
+
 function missing(ref: PathRef): string | null {
   const abs = join(REPO_DIR, ref.path)
   if (!existsSync(abs)) return 'нет такого пути'
@@ -60,6 +73,10 @@ export function checkRunBlocks(): number {
     const scan = scanRunBlocks(readFileSync(file, 'utf8'))
     for (const p of scan.problems) problems.push(`${where}:${p.line}: ${p.message}`)
     for (const line of machinesWithoutRun(scan)) problems.push(`${where}:${line}: у прогона нет <Run> перед абзацем «машина…»`)
+    for (const block of commandBlocksWithoutRun(scan)) {
+      if (isIllustrative(where, block.command)) continue
+      problems.push(`${where}:${block.line}: у блока «$ ${block.command}» нет <Run> в его разделе (или причины в ILLUSTRATIVE_BLOCKS)`)
+    }
     for (const run of scan.runs) {
       total++
       for (const ref of runRefs(run, repoMounts)) {
