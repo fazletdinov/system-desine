@@ -185,6 +185,26 @@ const plural = (n: number, one: string, few: string, many: string): string => {
   return d === 1 ? one : d >= 2 && d <= 4 ? few : many
 }
 
+// «[[id|текст]]» → сегменты-термины. Термин из seen уже подчёркивали — он остаётся обычным текстом.
+// Вынесено из Tracer, чтобы объяснения элементов разбирали разметку тем же кодом.
+export function markedCaption(src: string, seen: Set<string>): Caption {
+  const out: CaptionSegment[] = []
+  let from = 0
+  for (const m of src.matchAll(MARKER)) {
+    const [whole, id, text] = [m[0], need(m[1], 'id термина'), need(m[2], 'текст термина')]
+    if (m.index > from) out.push({ text: src.slice(from, m.index) })
+    if (seen.has(id)) out.push({ text })
+    else {
+      seen.add(id)
+      out.push(term(text, id))
+    }
+    from = m.index + whole.length
+  }
+  if (from < src.length) out.push({ text: src.slice(from) })
+  stripTerms(src)
+  return out.length === 1 && out[0]?.termId === undefined ? need(out[0], 'сегмента').text : out
+}
+
 function leafById(m: BtModel, id: string): LeafNode {
   const n = need(m.nodes[id], `узла ${id}`)
   if (!isLeaf(n)) throw new Error(`btree: узел ${id} не лист`)
@@ -232,21 +252,7 @@ class Tracer {
 
   // «[[id|текст]]» — термин глоссария; повторное вхождение в сценарии остаётся обычным текстом.
   private caption(src: string): Caption {
-    const out: CaptionSegment[] = []
-    let from = 0
-    for (const m of src.matchAll(MARKER)) {
-      const [whole, id, text] = [m[0], need(m[1], 'id термина'), need(m[2], 'текст термина')]
-      if (m.index > from) out.push({ text: src.slice(from, m.index) })
-      if (this.seen.has(id)) out.push({ text })
-      else {
-        this.seen.add(id)
-        out.push(term(text, id))
-      }
-      from = m.index + whole.length
-    }
-    if (from < src.length) out.push({ text: src.slice(from) })
-    stripTerms(src)
-    return out.length === 1 && out[0]?.termId === undefined ? need(out[0], 'сегмента').text : out
+    return markedCaption(src, this.seen)
   }
 
   step(info: StepInfo, edit?: Edit): void {
