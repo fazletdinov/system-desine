@@ -64,6 +64,8 @@ SELECT count(*) AS rows_about_bob FROM messages_flat WHERE author_id = 101;
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/anomalies.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04, ядро Linux 7.0, Docker 29.9.1, PostgreSQL 18.6; полный вывод — `labs/2a/results/anomalies.txt`.
 
 Строк о bob — <N>0</N>. Вместе с сообщением исчезла единственная запись о том, что пользователь 101 существует и зовётся bob. Удаляли сообщение, а потеряли человека.
@@ -87,6 +89,8 @@ SELECT id, name FROM users ORDER BY id;
  102 | carol
 (3 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/anomalies.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Каждая правка — <N>одна строка</N>, и bob на месте, хотя его сообщения больше нет.
 
@@ -184,6 +188,8 @@ SELECT id, name FROM users ORDER BY id;
 (3 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/anomalies.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. «Одна большая таблица» никуда не делась: она стала **запросом**, а не хранилищем. Нормализация не запрещает показывать данные вместе, она запрещает хранить один факт в нескольких местах.
 
 ### НФБК: каждая зависимость — от надключа
@@ -210,6 +216,8 @@ HAVING count(DISTINCT topic) > 1;
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/anomalies.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Правило «дежурный ведёт одну тему» нарушено, и ни одно ограничение таблицы этого не заметило: `PRIMARY KEY (client_id, topic)` и `UNIQUE (client_id, agent)` оба соблюдены.
 
 Разложим до НФБК: `agents (agent, topic)` с ключом `agent` и `client_agents (client_id, agent)`. Теперь тема дежурного — одна строка, и противоречие из шага 7 записать нельзя. Но посмотрите, что стало с другим правилом:
@@ -227,6 +235,8 @@ HAVING count(*) > 1;
          1 | оплата | {dan,fay}
 (1 row)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/anomalies.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. У клиента 1 по оплате два дежурных, и база вставила это без единой ошибки. Правило `(client_id, topic) → agent` раньше держал `PRIMARY KEY (client_id, topic)`. После разбиения `topic` и `client_id` живут в разных таблицах, и ограничение `UNIQUE` на них не повесить: оно действует внутри одной таблицы.
 

@@ -220,6 +220,8 @@ PASS
 ok  	messenger/internal/auth/adapters/argon2id	1.184s
 ```
 
+<Run dir="messenger" cmd="go test -run '^$' -bench BenchmarkHashOWASP -benchmem ./internal/auth/adapters/argon2id/" />
+
 17 мс и 19 927 488 байт (≈ 19 МиБ — ровно параметр `m`) на один хеш. Теперь вернёмся к перебору из начала урока. Все пароли из восьми строчных букв на одном ядре этой машины: 2,1·10¹¹ × 17 мс ≈ <N>113 лет</N> вместо 10 секунд на видеокарте с SHA-256. Это не значит, что такой пароль стал хорошим — атакующий возьмёт много машин и начнёт со словаря, — но порядок цены изменился на восемь с лишним порядков.
 
 ### Мост в контекст user
@@ -258,6 +260,8 @@ ok  	messenger/internal/auth/adapters/argon2id	1.184s
 $ curl -s -X POST localhost:8080/v1/users -H 'Content-Type: application/json' -d '{"username":"alice","display_name":"Алиса","password":"четырнадцать14"}' | jq -c '{status, code, invalid_params}'
 {"status":400,"code":"invalid_input","invalid_params":[{"name":"password","reason":"от 15 до 128 символов"}]}
 ```
+
+<Run dir="messenger" tag="m01-l13" cmd="curl -s -X POST localhost:8080/v1/users -H 'Content-Type: application/json' -d '{&quot;username&quot;:&quot;alice&quot;,&quot;display_name&quot;:&quot;Алиса&quot;,&quot;password&quot;:&quot;четырнадцать14&quot;}' | jq -c '{status, code, invalid_params}'" before="сервер в соседнем терминале — `go run ./cmd/messenger`; id из ответов сохраняйте в `ALICE`" />
 
 Отказ называет поле и правило. А вот парольная фраза — пробелы, кириллица, ни одной заглавной:
 

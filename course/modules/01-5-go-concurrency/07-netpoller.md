@@ -39,6 +39,8 @@ $ ./netpoll dial -addr 127.0.0.1:9000 -n 100000 -src 8
 держу соединения до SIGTERM
 ```
 
+<Run dir="labs" cmd="./netpoll serve -addr 127.0.0.1:9000 -mode bufio -n 100000" before="`go build -o netpoll ./1-5/netpoll`; после старта в соседнем терминале — `./netpoll dial -addr 127.0.0.1:9000 -n 100000 -src 8`" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04, ядро Linux 7.0, go1.27.2. Обе программы работают на одной машине, `dial` — в соседнем терминале. Шапка `dial` (версия Go и `GOMAXPROCS`) опущена, на её месте `...`. Текущая версия лабы печатает после «стеков для GC» ещё строку «начальный стек» — она понадобится нам в разделе о стеке.
 
 Процесс вырос на <N>5,6 КиБ</N> на соединение. Это втрое меньше нижней границы оценки 0.6. Сто тысяч горутин, а потоков ОС — единицы. Ядро под буферы сокетов не взяло почти ничего: 256 страниц на двести тысяч сокетов. Значит, 0.6 ошибся? Не совсем, и в этом уроке мы разберёмся почему. Вопросов несколько:
@@ -280,6 +282,8 @@ $ cat st.txt
 2003029 <... epoll_pwait resumed>[], 128, 1999, NULL, 0) = 0
 ```
 
+<Run dir="labs" cmd="strace -f -o st.txt -e trace=epoll_ctl,epoll_pwait,epoll_wait,accept4 ./netpoll serve -addr 127.0.0.1:9100 -mode bufio -n 3 &amp;&amp; cat st.txt" before="`go build -o netpoll ./1-5/netpoll`; во втором терминале — `./netpoll dial -addr 127.0.0.1:9100 -n 2 -src 1` и из bash `exec 3<>/dev/tcp/127.0.0.1/9100; printf 'привет\n' >&amp;3; read line <&amp;3`" />
+
 машина та же. Это выдержка: строки `SIGURG` (сигналы асинхронного вытеснения, урок 1.5.1) и часть повторных опросов опущены, на месте пропусков — `…`. Числа в начале строк — номера потоков ОС, то есть разных M.
 
 Читаем сверху вниз:
@@ -322,6 +326,8 @@ $ cat st2.txt
 2005530 close(8)                        = 0
 ```
 
+<Run dir="labs" cmd="strace -f -o st2.txt -e trace=epoll_ctl,epoll_pwait,epoll_wait,accept4,openat,read,close ./netpoll serve -addr 127.0.0.1:9100 -mode bufio -n 3 &amp;&amp; cat st2.txt" before="`go build -o netpoll ./1-5/netpoll`; во втором терминале — `./netpoll dial -addr 127.0.0.1:9100 -n 2 -src 1` и из bash `exec 3<>/dev/tcp/127.0.0.1/9100; printf 'привет\n' >&amp;3; read line <&amp;3`" />
+
 машина та же; выдержка, пропуски отмечены `…`. Полные трассы обоих прогонов — `labs/1-5/results/netpoll-strace.txt` и `labs/1-5/results/netpoll-strace-read.txt`, команды — в разделе «Что появилось в лабе».
 
 Жизнь соединения 8 (это `bash`) целиком:
@@ -355,6 +361,8 @@ $ cat st2.txt
 | `bufio`, 100 000 | 5,6 КиБ | 4,0 КиБ | 4,8 КиБ |
 | `lazy`, 10 000 | 3,7 КиБ | 2,0 КиБ | 0,9 КиБ |
 | `lazy`, 100 000 | 3,6 КиБ | 2,0 КиБ | 0,9 КиБ |
+
+<Run dir="labs" cmd="./netpoll serve -addr 127.0.0.1:9000 -mode lazy -n 10000" before="`go build -o netpoll ./1-5/netpoll`; во втором терминале — `./netpoll dial -addr 127.0.0.1:9000 -n 10000 -src 8`; для других строк таблицы меняйте `-mode` и `-n`" />
 
 машина та же; полные выводы всех четырёх прогонов — `labs/1-5/results/netpoll-{bufio,lazy}-{10000,100000}.txt`. Цена соединения от 10⁴ до 10⁵ почти не меняется: она линейна, и десяти тысяч хватает, чтобы её измерить. В режиме `lazy` процесс со 100 000 соединений занял 361 020 КиБ (около 353 МиБ) против 568 284 КиБ (около 555 МиБ) у `bufio`.
 
@@ -393,6 +401,8 @@ $ ./netpoll serve -addr 127.0.0.1:9213 -mode lazy -n 10000
 начальный стек:   до       2048 Б,   после       2048 Б (/gc/stack/starting-size:bytes)
 ```
 
+<Run dir="labs" cmd="GODEBUG=adaptivestackstart=0 ./netpoll serve -addr 127.0.0.1:9212 -mode bufio -n 10000" before="`go build -o netpoll ./1-5/netpoll`; во втором терминале — `./netpoll dial -addr 127.0.0.1:9212 -n 10000 -src 8`; два других запуска блока — без `GODEBUG` и с `-mode lazy`" />
+
 машина та же; клиент — `dial -n 10000 -src 8`, остальные строки вывода опущены (`...`), полные выводы — `labs/1-5/results/netpoll-stack-start.txt`. Без адаптивного старта все горутины начинали с 2 КиБ, и стеки всё равно вышли по 4 КиБ: каждая выросла копированием. Значит, 4 КиБ задаёт глубина цепочки `bufio`, а не эвристика. С адаптивным стартом после замера начальный размер — 4096 Б: сборки, которые шли во время приёма (куча выросла с 0,3 до 47 МиБ), увидели выросшие стеки, и горутины, созданные после них, скорее всего стартовали сразу с 4 КиБ, без копирования. Сколько горутин выросло, а сколько стартовало с 4 КиБ, мы не мерили, но памяти это не меняет: итог одинаков, 40 800 против 40 768 КиБ. В режиме `lazy` начальный размер остался 2048 Б в обоих вариантах.
 
 Заметьте: цена стека определяется не тем, сколько горутине нужно в среднем, а тем, перешагнула ли самая глубокая точка её цепочки порог. Пара лишних кадров в обработчике может удвоить стек у ста тысяч горутин. Как устроены рост, сжатие и адаптивный старт — урок 1.5.8.
@@ -420,6 +430,8 @@ DW_AT_byte_size   : 48
 DW_AT_name        : bufio.Reader
 DW_AT_byte_size   : 88
 ```
+
+<Run dir="labs" cmd="readelf -z --debug-dump=info netpoll | grep -A1 -E 'DW_AT_name *: (runtime\.g|runtime\.pollDesc|net\.netFD|net\.TCPAddr|bufio\.Reader)$' | grep -B1 byte_size | grep -v '^--' | sed -E 's/^ *<[0-9a-f]+> +//'" before="`go build -o netpoll ./1-5/netpoll`" />
 
 машина та же, linux/amd64. Аллокатор кладёт объект в ближайший <T id="size-class">класс размеров</T> (size class) не меньше его (урок 1.5.8): 456 байт → класс 480, 88 → 96.
 
@@ -469,6 +481,8 @@ Slab:            1956596 kB
 SReclaimable:    1348568 kB
 SUnreclaim:       608028 kB
 ```
+
+<Run dir="labs" cmd="grep -E &quot;^(Slab|SReclaimable|SUnreclaim):&quot; /proc/meminfo" before="`go build -o netpoll ./1-5/netpoll`; снимите строки до запуска, после `./netpoll serve -addr 127.0.0.1:9000 -mode lazy -n 100000` и `./netpoll dial -addr 127.0.0.1:9000 -n 100000 -src 8` и после их остановки" />
 
 машина та же. `Slab` вырос на 990 028 КиБ на 200 000 сокетов — около 4,95 КиБ на сокет. Повторный прогон дал 920 992 КиБ, 4,6 КиБ на сокет. После закрытия память вернулась почти к исходной: неточно, потому что ядро возвращает освободившиеся слэбы не сразу, а машина живёт своей жизнью. Будем считать, что серверная сторона одного соединения стоит ядру около <N>5 КиБ</N>. Это допущение: мы делим поровну между двумя концами, а не мерим их по отдельности.
 
@@ -525,6 +539,8 @@ $ strace -f -e trace=socket,setsockopt,bind,connect ./netpoll dial -addr 127.0.0
 [pid 2007997] setsockopt(5, SOL_TCP, TCP_KEEPINTVL, [15], 4) = 0
 [pid 2007997] setsockopt(5, SOL_TCP, TCP_KEEPCNT, [9], 4) = 0
 ```
+
+<Run dir="labs" cmd="strace -f -e trace=socket,setsockopt,bind,connect ./netpoll dial -addr 127.0.0.1:9101 -n 1 -src 1" before="`go build -o netpoll ./1-5/netpoll`; сервер в соседнем терминале — `./netpoll serve -addr 127.0.0.1:9101 -n 1`" />
 
 машина та же; строки `attached`/`detached` и вывод программы опущены. `bind` с портом 0 до `connect` — без `IP_BIND_ADDRESS_NO_PORT`. `connect` на неблокирующем сокете возвращает `EINPROGRESS`: рукопожатие идёт, а горутина `Dial` ждёт готовности к записи в netpoller, как в уроке 0b.1. Заодно видно, что Go включает keepalive по умолчанию: первая проверка через 15 секунд простоя (константы `defaultTCPKeepAliveIdle` и `defaultTCPKeepAliveInterval` в `net/dial.go`). Для молчащих соединений это значит пакет раз в 15 секунд — копейки, но не ноль.
 

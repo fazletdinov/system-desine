@@ -27,6 +27,8 @@ NumCPU: 12
 создание одного потока: 7 мкс
 ```
 
+<Run dir="labs" cmd="go run ./1-5/sched/cost" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 
 Горутина обходится в <N>2052 байт</N> памяти и <N>1052 нс</N> на создание, поток — в <N>7 мкс</N>. Сто тысяч горутин создаются за десятую долю секунды. Но память на поток всего около 15 КиБ, а не мегабайты, о которых пишут в книгах. Так в чём тогда дороговизна потока? Ответим в первом разделе.
@@ -42,6 +44,8 @@ main проснулся через 1674 мс (просил 10 мс)
 цикл работал 1674 мс
 ```
 
+<Run dir="labs" cmd="go run ./1-5/sched/preempt &amp;&amp; GODEBUG=asyncpreemptoff=1 go run ./1-5/sched/preempt" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2. Шапка вывода (версия, `GOMAXPROCS`, `NumCPU`) здесь и дальше опущена.
 
 Одна настройка `GODEBUG` — и `main` ждёт не 10 мс, а 1,7 с: пока цикл не кончится сам. Кто и как снимает горутину с процессора посреди цикла?
@@ -53,6 +57,8 @@ $ go run ./1-5/sched/syscall
 time.Sleep        x8: потоков до 5, во время 5 (+0)
 syscall.Nanosleep x8: потоков до 5, во время 11 (+6)
 ```
+
+<Run dir="labs" cmd="go run ./1-5/sched/syscall" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 
@@ -86,6 +92,8 @@ BenchmarkSwitchOSThreads-4    	  116631	     10361 ns/op
 BenchmarkSwitchOSThreads-8    	  121573	     10135 ns/op
 …
 ```
+
+<Run dir="labs" cmd="go test -run='^$' -bench=. -benchtime=1s -count=5 -cpu=1,4,8 ./1-5/sched/" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2. Показан первый из пяти прогонов каждой строки. Разброс по всем пяти: `SwitchGoroutines` на одном P — 318–333 нс, `SwitchOSThreads` на одном P — 8,2–8,5 мкс.
 
@@ -159,6 +167,8 @@ $ go run ./threadscgo
 после: VmSize: 15826088 kB, VmRSS: 24336 kB, Threads: 1014
 ```
 
+<Run dir="labs" cmd="go run ./threads &amp;&amp; go run ./threadscgo" before="положите программу выше в `threads/main.go`, а её копию со строкой `import _ &quot;runtime/cgo&quot;` — положите в `threadscgo/main.go` (потом удалите оба каталога)" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2, glibc 2.39.
 
 `VmSize` — виртуальная память, то есть сколько адресов процесс зарезервировал. `VmRSS` — сколько физической памяти он на самом деле занимает. Без cgo тысяча потоков добавила 67 МиБ виртуальной памяти, в среднем меньше 70 КиБ на поток. Из них у каждого M есть системный стек `g0` на 16 КиБ и отдельный стек на 32 КиБ для обработчиков сигналов (`mpreinit` в `runtime/os_linux.go`: `mp.gsignal = malg(32 * 1024)`), плюс сама структура `m`. Остальное, по-видимому, — память, которую рантайм заодно зарезервировал под кучу и стеки. С cgo — 13,6 ГиБ, около 14 МиБ на поток. Из них 8 МиБ — стек `pthread`, а остальное, судя по всему, резервы аллокатора C (glibc заводит потокам свои области `malloc`). Физической же памяти в обоих случаях прибавилось почти одинаково: около 19–20 КиБ на поток. Ядро выделяет страницы только при первом касании, а поток, который просто ждёт, касается лишь пары страниц своего стека.
@@ -229,6 +239,8 @@ runq     [256]guintptr
 SCHED 105ms: … runqueue=0 [ 0 0 0 0 0 250 0 0 0 0 0 0 ] …
 SCHED 115ms: … runqueue=87 [ 0 0 0 0 0 128 0 0 0 0 0 0 ] …
 ```
+
+<Run dir="labs" cmd="GODEBUG=schedtrace=10 go run ./1-5/sched/cost" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 
@@ -370,6 +382,8 @@ SCHED 0ms: gomaxprocs=12 idleprocs=11 threads=5 spinningthreads=0 needspinning=0
 …
 ```
 
+<Run dir="labs" cmd="GODEBUG=schedtrace=1000 go run ./1-5/sched/cost" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 
 Строка одна: первая печатается сразу при старте, а вся программа живёт 0,3 с и до второй не доживает. Разберём её по полям:
@@ -409,6 +423,8 @@ SCHED 247ms: gomaxprocs=12 idleprocs=0 threads=788 spinningthreads=0 needspinnin
 создание одного потока: 30 мкс
 ```
 
+<Run dir="labs" cmd="GODEBUG=schedtrace=10 go run ./1-5/sched/cost" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2. На машине шла фоновая нагрузка, поэтому создание потока здесь 30 мкс, а не 7, как в прогоне на спокойной машине в начале урока.
 
 Как это читать:
@@ -445,6 +461,8 @@ SCHED 206ms: gomaxprocs=12 idleprocs=10 threads=10 spinningthreads=0 needspinnin
   G23: status=3() m=7 lockedm=nil
 syscall.Nanosleep x8: потоков до 5, во время 11 (+6)
 ```
+
+<Run dir="labs" cmd="GODEBUG=schedtrace=100,scheddetail=1 go run ./1-5/sched/syscall" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 
@@ -524,6 +542,8 @@ $ go run ./metrics
 /sched/goroutines-created:goroutines     1009
 /sched/threads/total:threads             10
 ```
+
+<Run dir="labs" cmd="go run ./metrics" before="положите программу выше в `metrics/main.go` (потом удалите каталог)" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 

@@ -29,6 +29,8 @@ goroutineleak profile: total 9
 #	0x4e0f04	main.processWorkItems.func1+0x44	…/patterns/leak/main.go:69
 ```
 
+<Run dir="labs" cmd="go run -tags labdemo ./1-5/patterns/leak" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2. Первые три строки вывода (версия Go, `GOMAXPROCS`, `NumCPU`) опущены, путь к файлу сокращён. Три прогона дали один и тот же результат.
 
 Ошибка вернулась, а <N>9 горутин</N> остались висеть на строке 69, `ch <- outcome{v, err}`. Канал небуферизованный, а читать из него после раннего `return` некому. Эти горутины не завершатся никогда, и каждый такой вызов добавляет ещё девять. Две верхние строки — два исправления, их разберём в этом уроке.
@@ -46,6 +48,8 @@ semaphore.Weighted:  время  517 мс, пик горутин  10 (из ни�
 errgroup, отказ:     время  124 мс, пик горутин  10 (из них свои:   8)
 errgroup, отказ:     выполнено задач 48 из 200, Wait вернул "задача 50: отказ"
 ```
+
+<Run dir="labs" cmd="go run ./1-5/patterns/limit" />
 
 машина та же, первые три строки вывода (версия Go, `GOMAXPROCS`, `NumCPU`) опущены. Ещё два прогона: у ограничителей 512–520 мс, у последней строки — те же 124 мс и 48 задач.
 
@@ -116,6 +120,8 @@ panic: deadlock: main bubble goroutine has exited but blocked goroutines remain 
 …
 goroutine 12 [chan send (durable), synctest bubble 1]:
 ```
+
+<Run dir="labs" cmd="go test -count=1 -run TestPipelineStopsWhenConsumerLeaves ./1-5/patterns/pipeline/" before="уберите из `forward` в `1-5/patterns/pipeline/pipeline.go` ветку `ctx.Done()` у записи (потом верните)" />
 
 машина та же, go1.27.2. Мы убрали ветку руками, прогнали тест и вернули код. В репозитории этой версии нет.
 
@@ -262,6 +268,8 @@ BenchmarkLimiterOverhead/errgroup-12                  	 2166590	       585.7 ns/
 …
 BenchmarkLimiterOverhead/weighted-12                  	 2139986	       625.3 ns/op
 ```
+
+<Run dir="labs" cmd="go test -run='^$' -bench=LimiterOverhead -benchtime=1s -count=5 ./1-5/patterns/limit/" />
 
 машина та же, go1.27.2. Показаны медианы пяти прогонов, разброс — 401–603, 214–320, 542–640 и 601–635 нс соответственно.
 
@@ -453,6 +461,8 @@ $ go test -tags labdemo -run '^TestProcessWorkItemsGroup$' ./1-5/patterns/leak/
 ok  	labs/1-5/patterns/leak	0.001s
 ```
 
+<Run dir="labs" cmd="go test -tags labdemo -run '^TestProcessWorkItemsLeaks$' ./1-5/patterns/leak/; go test -tags labdemo -run '^TestProcessWorkItemsFixedOutlivesCall$' ./1-5/patterns/leak/; go test -tags labdemo -run '^TestProcessWorkItemsGroup$' ./1-5/patterns/leak/" />
+
 машина та же, go1.27.2. Строки вывода — без правок, «…» заменяет пропущенные: стек самого теста и ещё восемь горутин в каждом падении. Строка 55 — `time.Sleep(workTime)` в `process`, 68 — вызов `process` в горутине.
 
 Обратите внимание на две вещи. Первая: упал и тест **буферного** исправления, хотя профиль `goroutineleak` утечки в нём не видит. И в обоих падениях горутины стоят не на отправке в канал, а в `time.Sleep`: функция вернулась на первой ошибке, когда остальные задачи ещё работали. Почему это провал? После возврата функции теста виртуальное время пузыря останавливается (документация: «Time stops advancing when the root goroutine of the bubble exits»). Горутина в `time.Sleep` больше не проснётся, и `synctest` считает её заблокированной навсегда. То есть `synctest.Test` проверяет не только «нет вечных утечек», а более строгое свойство: после возврата функции теста ни одна горутина пузыря не ждёт времени или другой горутины. Горутины, которые просто ещё работают (не заблокированы надёжно), `Test` дождётся; а вот спящих или ждущих канал он считает застрявшими навсегда. Вторая: это паника, а не обычный провал теста. Она останавливает весь тестовый бинарник, и тесты после неё в этом прогоне не запустятся.
@@ -569,6 +579,8 @@ $ go test -count=1 -v ./1-5/patterns/pipeline/
 PASS
 ok  	labs/1-5/patterns/pipeline	0.001s
 ```
+
+<Run dir="labs" cmd="go test -count=1 -v ./1-5/patterns/pipeline/" />
 
 машина та же, go1.27.2. В четырёх тестах — 2 с, 1 с и десятки миллисекунд виртуального ожидания, а реального — ни одного: каждый тест занимает меньше 5 мс, весь пакет — 0,001 с. Проверка `elapsed != 2*time.Second` — на **точное** равенство, и она не мигает: 500 прогонов подряд с `-race` и 500 с `GOMAXPROCS=1` прошли без единого сбоя.
 

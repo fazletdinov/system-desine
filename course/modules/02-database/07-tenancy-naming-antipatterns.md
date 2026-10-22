@@ -26,6 +26,8 @@ SELECT string_agg(title, ', ' ORDER BY id) AS next_request_sees FROM chats;
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина: 12th Gen Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04.5, ядро Linux 7.0, Docker 29.9.1, PostgreSQL 18.6 с настройками образа по умолчанию и данными на tmpfs, go1.27.2; полный вывод — `labs/2a/results/tenancy.txt`, шаг 7.
 
 Ни ошибки, ни предупреждения. Сотрудник acme видит чат «globex: зарплаты». Политика сработала ровно так, как написана, а ошибка — в области действия настройки: нужна была настройка на транзакцию (`SET LOCAL` или `set_config(…, true)`), а не на сеанс.
@@ -39,6 +41,8 @@ SELECT string_agg(title, ', ' ORDER BY id) AS next_request_sees FROM chats;
   3 |      30 | В чат, которого не было
 (2 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же; `labs/2a/results/antipatterns.txt`, шаг 8. Такие строки-сироты находят не тесты, а поддержка, когда пользователь спрашивает, откуда в выгрузке сообщения без чата. И исправить это задним числом непросто: внешний ключ на такие данные не встаёт.
 
@@ -104,6 +108,8 @@ DETAIL:  Key is not present in table "chats".
 SQLSTATE 23503
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 5. С внешним ключом только по `chat_id` (если бы `id` чата был уникален глобально) эта вставка прошла бы, и вот почему. Документация PostgreSQL 18 («Row Security Policies»): «Referential integrity checks, such as unique or primary key constraints and foreign key references, always bypass row security to ensure that data integrity is maintained». Проверка внешнего ключа видит **все** строки, включая чужие, поэтому ссылку на чат globex она бы приняла. Составной ключ закрывает эту дыру схемой, а не политикой. Заметьте и строку `DETAIL`: в ней нет значений ключа, хотя в ошибках урока 2.4 они были. PostgreSQL не показывает значения, если на таблице включена RLS и она действует для текущей роли (суперпользователь значения увидит): функция `ri_ReportViolation` в `src/backend/utils/adt/ri_triggers.c` прямо говорит, что делает так, «to avoid leaking data».
 
 ### RLS: условие, которое нельзя забыть
@@ -123,6 +129,8 @@ SELECT id, title FROM chats;
 psql:/lab/tenancy.sql:77: ERROR:  unrecognized configuration parameter "app.tenant_id"
 SQLSTATE 42704
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 3. Это хорошая ошибка: запрос, который не назвал арендатора, падает, а не получает все строки. Такое поведение называют «закрытым при отказе» (fail closed). Мы выбрали его сознательно: `current_setting('app.tenant_id')` без второго аргумента бросает ошибку на неизвестную настройку. С `current_setting('app.tenant_id', true)` вместо ошибки было бы `NULL`, условие `tenant_id = NULL` ложно для всех строк, и запрос молча вернул бы пустой ответ. Это тоже безопасно, но ошибку в логах найти проще, чем «у клиента пропали чаты».
 
@@ -152,6 +160,8 @@ EXPLAIN (COSTS OFF) SELECT id, title FROM chats WHERE id = 10;
 (2 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 4. В запросах нет ни одного `WHERE tenant_id`, а видны только два чата acme. Чат globex по `id` не найти (`0`) и не изменить (`UPDATE 0` — строк для этой транзакции просто нет). План показывает, как это устроено: условие политики подставлено в запрос и стало частью `Index Cond` вместе с нашим `id = 10`. Поэтому ведущий `tenant_id` в первичном ключе и RLS работают вместе: политика не превращает точечный запрос в полный просмотр.
 
 Вставка в чужого арендатора отвергается условием `WITH CHECK` (здесь — тем же `USING`):
@@ -161,6 +171,8 @@ INSERT INTO chats VALUES (2, 22, 'acme подбрасывает чат в globex
 psql:/lab/tenancy.sql:104: ERROR:  new row violates row-level security policy for table "chats"
 SQLSTATE 42501
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 5. Код `42501` — `insufficient_privilege`, тот же код, что у отказа в правах на таблицу.
 
@@ -182,6 +194,8 @@ SQLSTATE 42501
          2 | 21 | globex: зарплаты
 (4 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 2: суперпользователь `lab` (под ним работает лаба) видит все четыре чата, политики для него нет. Шаг 9: владелец таблицы `tenancy_owner` с арендатором acme видит <N>4</N> строки, после `FORCE ROW LEVEL SECURITY` — <N>2</N>, а суперпользователь и с `FORCE` по-прежнему все <N>4</N>.
 
@@ -230,6 +244,8 @@ psql:/lab/tenancy.sql:123: ERROR:  invalid input syntax for type bigint: ""
 SQLSTATE 22P02
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 6. Тонкость: после первого `set_config` сеанс «знает» параметр `app.tenant_id`, и вне транзакции он не исчезает, а становится пустой строкой. Поэтому вторая ошибка уже не `42704`, а `22P02`: пустую строку не привести к `bigint`. Политика по-прежнему закрыта при отказе — но только потому, что тип `tenant_id` — число. Будь `tenant_id` текстом, условие `tenant_id = ''` просто вернуло бы ноль строк. Это работает, но вслепую: закладывайте в политику явное `NULLIF(current_setting('app.tenant_id', true), '')`, если тип столбца пустую строку принимает.
 
 Остаётся передать значение. Первая мысль — `SET LOCAL app.tenant_id = $1` с параметром. Так нельзя:
@@ -241,6 +257,8 @@ LINE 1: SET LOCAL app.tenant_id = $1
                                   ^
 SQLSTATE 42601
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/tenancy.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 8. Метакоманда `psql` `\bind` отправляет запрос расширенным протоколом с параметром — так же, как `pgx`. `SET` — служебная команда, грамматика PostgreSQL не принимает в ней параметров. Склеить значение в текст команды — значит открыть SQL-инъекцию в самом месте, которое отвечает за изоляцию. А `set_config` — обычная функция, и параметр ей передаётся как любому запросу: тот же шаг лабы с `SELECT set_config('app.tenant_id', $1, true)` проходит, и следующий запрос видит <N>2</N> чата acme.
 
@@ -350,6 +368,8 @@ func withTenant(ctx context.Context, pool *pgxpool.Pool, tenantID int64, fn func
 (5 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же; `labs/2a/results/antipatterns.txt`, шаг 9. Схема имён видна сразу: таблица, столбцы через `_` и суффикс по виду ограничения — `pkey`, `key` (уникальность), `fkey`, `check`, `idx`. В PostgreSQL 18 к ним добавился `not_null`: ограничения `NOT NULL` теперь тоже хранятся в каталоге `pg_constraint` со своими именами (release notes 18). А вот где эта схема перестаёт быть надёжной:
 
 - **повтор получает число.** Два `CHECK` по `max_uses` — `max_uses_check` и `max_uses_check1`, два индекса по `expires_at` — `idx` и `idx1`. Какое из них «первое», решает порядок в `CREATE TABLE`: поменяли строки местами — поменялись имена;
@@ -362,6 +382,8 @@ func withTenant(ctx context.Context, pool *pgxpool.Pool, tenantID int64, fn func
  notification_delivery_attempt_subscriber_installation_id_no_key |    63
 (1 row)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 9. От таблицы `notification_delivery_attempts` осталось `notification_delivery_attempt`, от второго столбца `notification_template_code` — `no`. Ровно 63 байта, и прочитать такое имя уже нельзя. Явное имя длиннее 63 байт PostgreSQL тоже обрежет, но предупредит.
 
@@ -396,6 +418,8 @@ psql:/lab/antipatterns.sql:44: ERROR:  invalid input syntax for type date: "вч
 SQLSTATE 22007
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 1. Сортировка «по убыванию» поставила `9` выше `10`: это сравнение строк. «Дату» `'вчера'` база приняла при вставке, а упал на ней запрос, который пытался её прочитать, — через месяц, в отчёте. Опечатку `birth_day` никто не заметил: для EAV это просто ещё один атрибут. Исправление — те атрибуты, которые известны, сделать столбцами:
 
 <<< @/../labs/2a/antipatterns.sql#eav-fix{sql}
@@ -417,6 +441,8 @@ INSERT 0 1
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 2. Внешний ключ знает одну таблицу, поэтому на `target_id` его не объявить, и жалоба на несуществующее сообщение принята. Висячие ссылки приходится искать запросом — своим для каждого типа цели. Исправление — по столбцу-ссылке на каждый тип цели, каждый со своим внешним ключом, и `CHECK` «заполнена ровно одна ссылка»:
 
 <<< @/../labs/2a/antipatterns.sql#polymorphic-fix{sql}
@@ -431,6 +457,8 @@ psql:/lab/antipatterns.sql:102: ERROR:  new row for relation "reports" violates 
 DETAIL:  Failing row contains (2, 100, 10, спам).
 SQLSTATE 23514
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Вариант лабы — не из книги Карвина, а распространённая в PostgreSQL альтернатива («исключающие дуги»: несколько ссылок, из которых заполнена ровно одна). Карвин предлагает два решения: обратить связь (таблицы-пересечения `message_reports`, `chat_reports`) или завести общую таблицу-родителя, на которую ссылаются и жалобы, и все цели. Вариант лабы хорош, пока типов цели немного: каждый новый тип — новый столбец и правка `CHECK`.
 
@@ -454,6 +482,8 @@ SELECT id, title FROM chats_csv WHERE member_ids LIKE '%2%' ORDER BY id;
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 3. «Чаты пользователя 2» нашли и чат «Обед», где состоит только пользователь 12: подстрока `2` есть в `12`. А пользователя 404 не существует, но список принял его без возражений. Обычный индекс по `member_ids` такой поиск подстроки не ускоряет — это полный просмотр таблицы. Массив `bigint[]` вместо строки чинит типы, но не ссылочную целостность и не дубли. Исправление — таблица-связка `members` с двумя внешними ключами, как в схеме мессенджера:
 
 <<< @/../labs/2a/antipatterns.sql#jaywalking-fix{sql}
@@ -474,6 +504,8 @@ SELECT id, title FROM chats_csv WHERE member_ids LIKE '%2%' ORDER BY id;
 (2 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 4. Два уровня самосоединений — два уровня ответов; ответ 4 на третьем уровне потерян, и запрос не сообщил об этом. Нужен третий уровень — пишите третье соединение. Исправление в PostgreSQL — рекурсивный запрос по той же таблице:
 
 <<< @/../labs/2a/antipatterns.sql#naive-tree-fix{sql}
@@ -487,6 +519,8 @@ SELECT id, title FROM chats_csv WHERE member_ids LIKE '%2%' ORDER BY id;
   4 |     3 |     В пятницу некому чинить
 (4 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. `WITH RECURSIVE` начинает с прямых ответов и присоединяет следующий уровень, пока новых строк не останется, — глубина любая. Карвин описывает ещё три модели: перечисление путей (`path = '1/2/3/'`), вложенные множества (номера `left`/`right`) и <T id="closure-table">таблицу замыканий</T> (closure table) — все пары «предок — потомок». Первые две быстро читают ветку, но дороги и хрупки при переносе узлов. Таблица замыканий хороша, когда глубокие ветки читают очень часто, а меняют редко. Для ответов в чате, где дерево неглубокое и растёт вставками, список смежности с рекурсивным запросом — разумный выбор.
 
@@ -504,6 +538,8 @@ LINE 1: INSERT INTO messages_archive SELECT * FROM messages;
 SQLSTATE 42601
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 6. Обычная миграция `ADD COLUMN` сломала архивацию, которая до неё работала. Это лучший случай: ошибка громкая. Худший — когда в двух таблицах те же столбцы, но в другом порядке и с совместимыми типами (`username` и `display_name`, оба `text`): тогда `INSERT … SELECT *` молча переставит значения местами. Второй сюрприз — представление:
 
 <<< @/../labs/2a/antipatterns.sql#select-star-view{sql}
@@ -515,6 +551,8 @@ SQLSTATE 42601
  messages   | id, chat_id, text, edited_at
 (2 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. PostgreSQL разворачивает `*` в список столбцов в момент `CREATE VIEW`, и представление нового столбца не видит — это видно по каталогу в выводе выше. Кто ждал, что «представление — это просто сохранённый запрос», удивится.
 
@@ -537,6 +575,8 @@ SQLSTATE 42601
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 7. Повторный запрос «добавить alice в чат» — и alice в чате дважды: каждая строка уникальна по своему `id`, а пара `(chat_id, user_id)` не защищена ничем. Сколько участников в чате, теперь зависит от того, как считать. Исправление — первичным ключом сделать то, что действительно уникально:
 
 <<< @/../labs/2a/antipatterns.sql#id-required-fix{sql}
@@ -546,6 +586,8 @@ psql:/lab/antipatterns.sql:246: ERROR:  duplicate key value violates unique cons
 DETAIL:  Key (chat_id, user_id)=(10, 1) already exists.
 SQLSTATE 23505
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Так устроены ключи мессенджера: `chat.members` — `PRIMARY KEY (chat_id, user_id)`, `chat.messages` — `(chat_id, seq)`, а `id` сообщения — отдельный `UNIQUE` для внешнего идентификатора (урок 2.5). Если суррогатный `id` всё-таки нужен (на строку ссылаются другие таблицы, а естественный ключ широкий), естественный ключ остаётся рядом как `UNIQUE`. Второй симптом того же антипаттерна — столбец `id` в каждой таблице: в `JOIN` трёх таблиц три столбца `id`, и `USING (id)` соединяет не то, что нужно. Поэтому ссылки в мессенджере называются `chat_id`, `user_id`, а не `chat`, `user`.
 
@@ -562,6 +604,8 @@ SQLSTATE 23505
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 5. `double precision` хранит двоичную дробь, и 0,1 в ней непредставимо, как 1/3 в десятичной записи. Сумма десяти копеек — не рубль, и сравнение на равенство врёт. Исправление — `numeric` (десятичная дробь с точной арифметикой) или целое число минимальных единиц (`bigint` копеек). `float` уместен для измерений, где погрешность — часть данных: координаты, показания датчиков, метрики.
 
 ### 8. Ключ без ограничения
@@ -576,6 +620,8 @@ DETAIL:  Key (chat_id)=(20) is not present in table "chats_nofk".
 SQLSTATE 23503
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 8. `ADD CONSTRAINT … FOREIGN KEY` проверяет все существующие строки и отказывается, пока есть хоть одна сирота. А пока идёт чистка, новые сироты продолжают появляться. Выход — разделить «защитить новые строки» и «проверить старые»:
 
 <<< @/../labs/2a/antipatterns.sql#keyless-not-valid{sql}
@@ -585,6 +631,8 @@ psql:/lab/antipatterns.sql:283: ERROR:  insert or update on table "messages_nofk
 DETAIL:  Key (chat_id)=(40) is not present in table "chats_nofk".
 SQLSTATE 23503
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. С `NOT VALID` ограничение создаётся без проверки старых строк, но каждая новая и изменённая строка уже проверяется: сирота 40 отвергнута. Дальше сирот разбирают (в лабе — удаляют; в жизни сначала выгружают и решают с владельцем данных) и проверяют старые строки:
 

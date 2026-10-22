@@ -18,6 +18,8 @@ $ go run -tags labdemo ./1-5/race/flagloop
 atomic.Bool:   завершилось
 ```
 
+<Run dir="labs" cmd="go run -tags labdemo ./1-5/race/flagloop" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2. Шапка вывода (версия, `GOMAXPROCS`, `NumCPU`) здесь и дальше опущена. Три прогона дали одно и то же.
 
 Работает. Обычный `bool` ничем не хуже атомика. Но запустим ту же программу с детектором гонок:
@@ -46,6 +48,8 @@ Found 1 data race(s)
 exit status 66
 ```
 
+<Run dir="labs" cmd="go run -race -tags labdemo ./1-5/race/flagloop" />
+
 машина та же; три прогона из трёх дали этот отчёт.
 
 Детектор называет это ошибкой и завершает процесс с кодом 66. Хотя результат тот же. Кто прав?
@@ -66,6 +70,8 @@ created by main.main in goroutine 1
 	/home/idel/DevGo/system-desine/labs/1-5/race/iface/main.go:57 +0xeb
 exit status 2
 ```
+
+<Run dir="labs" cmd="go run -tags labdemo ./1-5/race/iface" />
 
 машина та же; программа упала во всех трёх прогонах.
 
@@ -117,6 +123,8 @@ main.waitAtomicFlag STEXT size=61 …
 	0x0089 00137 (main.go:60)	MOVB	$1, main.plainDone(SB)
 	0x017c 00380 (type.go:22)	XCHGL	CX, (DX)
 ```
+
+<Run dir="labs" cmd="go build -tags labdemo -gcflags=-S -o /dev/null ./1-5/race/flagloop" />
 
 машина та же, go1.27.2.
 
@@ -219,6 +227,8 @@ $ go run ./storebuf
 обычные int:   r1 == 0 и r2 == 0 в 21636 раундах из 1000000
 atomic.Int64:  r1 == 0 и r2 == 0 в 0 раундах из 1000000
 ```
+
+<Run dir="labs" cmd="go run ./storebuf" before="положите программу выше в `storebuf/main.go` (потом удалите каталог)" />
 
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2.
 
@@ -616,6 +626,8 @@ $ echo $?
 0
 ```
 
+<Run dir="labs" cmd="GOMAXPROCS=1 go run -race -tags labdemo ./1-5/race/iface; echo $?" />
+
 машина та же, go1.27.2; семь прогонов из семи — ни одного отчёта и код 0, хотя на 12 P та же программа даёт 5 отчётов. Ещё по три прогона с `GORACE=history_size=1` и `history_size=7` — тоже ни одного отчёта. Гонка никуда не делась: сумма 28 миллионов, а не 20 или 40, значит, читатель видел значения обоих писателей вперемешку.
 
 Что здесь установлено, а что — догадка. Установлено (исходник TSan v3, `tsan_rtl_report.cpp`): если стек прошлого обращения не удаётся восстановить из журнала, `ReportRace` выходит молча. Для `iface` мы не мерили, сколько обращений горутина успевает сделать за квант и что именно лежит в журнале к моменту прихода другой горутины. Наиболее вероятное объяснение, согласное с замером ниже: на одном P горутины сменяют друг друга редко, целыми квантами планировщика (урок 1.5.1), и между гоночными обращениями разных горутин проходит слишком много событий, чтобы стек старого обращения ещё был в журнале.
@@ -643,6 +655,8 @@ $ GOMAXPROCS=1 GORACE='atexit_sleep_ms=0 history_size=1' ./history -n 30000 2>&1
 | `history_size=1` | 1 1 1 | 1 1 1 | 1 1 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 |
 | `history_size=3` | 1 1 1 | — | 1 1 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 |
 | `history_size=7` | 1 1 1 | — | 1 1 1 | 1 1 1 | 1 1 1 | 0 0 0 | 0 0 0 |
+
+<Run dir="labs" cmd="GOMAXPROCS=1 GORACE=atexit_sleep_ms=0 ./history -n 20000 2>&amp;1 | grep -c 'WARNING: DATA RACE'" before="`go build -race -tags labdemo -o history ./1-5/race/history`; для клеток таблицы меняйте `-n` и `GORACE=history_size=…`" />
 
 машина та же, go1.27.2; «—» — не мерили. С `GOMAXPROCS=2` и `4` (без `history_size`) при n от 100 000 до 10 000 000 отчёт был в каждом из трёх прогонов; при `GOMAXPROCS=2` и n = 100 000 и 1 000 000 — ещё в 10 из 10. Но в одном из первых, черновых прогонов того же опыта на 2 P при n = 1 000 000 отчёта **не было**. Так что несколько P делают отчёт вероятнее, но не гарантируют его.
 
@@ -713,6 +727,8 @@ created by main.main in goroutine 1
 exit status 2
 ```
 
+<Run dir="labs" cmd="go run -race -tags labdemo ./1-5/race/iface" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Linux 7.0, go1.27.2. Все три прогона под `-race` дали по 5 отчётов и упали той же паникой.
 
 Отчёт всегда состоит из четырёх частей. Разберём третий, «чтение — запись».
@@ -742,6 +758,8 @@ $ GORACE=atexit_sleep_ms=0 /usr/bin/time -f '%e с, макс. RSS %M КиБ' ./m
 $ GORACE=atexit_sleep_ms=0 /usr/bin/time -f '%e с, макс. RSS %M КиБ' ./mem-race.test -test.count=300
 1.67 с, макс. RSS 94916 КиБ
 ```
+
+<Run dir="messenger" cmd="GORACE=atexit_sleep_ms=0 /usr/bin/time -f '%e с, макс. RSS %M КиБ' ./mem.test -test.count=300 &amp;&amp; GORACE=atexit_sleep_ms=0 /usr/bin/time -f '%e с, макс. RSS %M КиБ' ./mem-race.test -test.count=300" before="`go test -c -o mem.test ./internal/chat/adapters/memory/ &amp;&amp; go test -race -c -o mem-race.test ./internal/chat/adapters/memory/`" />
 
 машина та же, go1.27.2; три прогона каждого: 0,44–0,47 с и 12 МиБ против 1,67–1,84 с и 93–95 МиБ.
 

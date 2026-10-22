@@ -325,6 +325,8 @@ $ ls -l jwt.pem
 .rw------- 119 idel 14 Oct 16:54 jwt.pem
 ```
 
+<Run dir="messenger" tag="m01-l14" cmd="go run ./cmd/keygen -out jwt.pem; go run ./cmd/keygen -out jwt.pem; ls -l jwt.pem" before="второй keygen ожидаемо откажет; дальше сервер — `MESSENGER_JWT_KEY_FILE=jwt.pem go run ./cmd/messenger`, запросы — в блоках ниже" />
+
 Без ключа сервер отказывается стартовать и говорит, что делать:
 
 ```text

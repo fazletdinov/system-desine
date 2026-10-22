@@ -199,6 +199,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # check:run проверяет пути <Run tag="…"> и git show <тег>:… в дереве тега: нужны теги.
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: course/.nvmrc
@@ -217,6 +219,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run check:go
       - run: npm run check:refs
+      # Блоки «Запустить самому»: у каждого прогона урока есть команда, её каталог, пакеты и файлы существуют.
+      - run: npm run check:run
       # check:base сам собирает сайт под подпутём /check-base/ (как на Pages) и ищет ссылки мимо базы.
       - run: npm run check:base
 

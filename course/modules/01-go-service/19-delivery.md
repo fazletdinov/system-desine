@@ -318,6 +318,8 @@ $ npm run check:workflows
 
 ```
 
+<Run dir="course" cmd="npm run check:workflows &amp;&amp; npm run check:base" />
+
 Без замечаний: `actionlint` проверил все три workflow, включая выражения и права. Теперь сборка курса под подпутём:
 
 ```text
@@ -368,6 +370,8 @@ $ docker buildx build --progress=plain --no-cache --platform linux/amd64,linux/a
 #20 naming to docker.io/library/messenger:multi done
 … 15.652 total
 ```
+
+<Run dir="messenger" cmd="docker buildx build --progress=plain --no-cache --platform linux/amd64,linux/arm64 -t messenger:multi ." needs="docker" before="сборщик buildx с хранилищем containerd и эмуляцией arm64 (QEMU)" />
 
 Читайте метки шагов. Шаги 1–5 стадии `build` выполнились **один раз** и с меткой `linux/amd64`: у обеих целевых платформ стадия идёт на `$BUILDPLATFORM`, то есть на одной и той же `amd64`. BuildKit видит одинаковые шаги и не повторяет их. Расходятся платформы только на `go build`: метка `linux/amd64->arm64` означает «выполняется на amd64, результат для arm64». Два компилятора отработали параллельно, оба примерно за 8,7 с. Вся сборка заняла <N>15,7 с</N>. В конце — два манифеста, два манифеста аттестаций (provenance `mode=min`, который BuildKit добавляет и локально) и индекс.
 
@@ -446,6 +450,8 @@ $ jq . blobs/sha256/234fc2e8659a41962781b11d190759aff74197553f8796251d4d268678f2
   ]
 }
 ```
+
+<Run dir="messenger" cmd="docker buildx build --platform linux/amd64,linux/arm64 --sbom=true --provenance=mode=max --build-arg VERSION=sha-b2917f9 --output type=oci,dest=messenger-oci.tar,tar=true ." needs="docker" before="дальше — `mkdir oci &amp;&amp; tar -xf messenger-oci.tar -C oci &amp;&amp; cd oci` и `jq` по блобам; их хеши у вас будут свои" />
 
 (`platform` сжат в одну строку для читаемости, значения не менялись.) Четыре записи — ровно та схема, что на диаграмме выше. Аннотация `vnd.docker.reference.digest` связывает манифест аттестаций с образом, который он описывает. Внутри манифеста аттестаций `amd64` два слоя типа `application/vnd.in-toto+json`:
 

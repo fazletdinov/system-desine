@@ -27,6 +27,8 @@ LOCATION:  _bt_check_unique, nbtinsert.c:666
 SQLSTATE 23505
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина: 12th Gen Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04.5, ядро Linux 7.0, Docker 29.9.1, PostgreSQL 18.6 с настройками образа по умолчанию и данными на tmpfs, go1.27.2; полный вывод — `labs/2a/results/constraints.txt`.
 
 В этом выводе всё, что нужно программе. Код `23505` говорит, **что** случилось: нарушена уникальность. Имя `users_username_key` говорит, **какое** правило нарушено. А `LOCATION` — функция `_bt_check_unique` в файле B-дерева — подсказывает, **где** живёт проверка: внутри уникального индекса. Это главный механизм урока, мы к нему вернёмся.
@@ -105,6 +107,8 @@ DETAIL:  Failing row contains (3, null).
 SQLSTATE 23502
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Код `23502` — `not_null_violation`. В схеме мессенджера `NOT NULL` стоит у каждого столбца, кроме двух: `title` и `direct_key` в `chat.chats`, и у каждого из них `NULL` значит «у этого вида чата этого атрибута нет». Начиная с PostgreSQL 18 `NOT NULL` хранится в каталоге `pg_constraint` как обычное ограничение со своим именем (release notes 18, раздел «Constraints»: «Store column NOT NULL specifications in pg_constraint»). Его можно назвать при создании и, как другие ограничения, добавить к существующей таблице с `NOT VALID`.
 
 ### CHECK
@@ -117,6 +121,8 @@ psql:/lab/constraints.sql:54: ERROR:  new row for relation "users" violates chec
 DETAIL:  Failing row contains (4, Alice!).
 SQLSTATE 23514
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Код `23514` — `check_violation`, и в ошибке есть имя ограничения. Это то преимущество перед `varchar(n)`, которое урок 2.3 показал на ошибке `22001` без имени.
 
@@ -213,6 +219,8 @@ INSERT INTO emails (address) VALUES ('alice@example.com');
 INSERT 0 1
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Пока первая строка жива, второй адрес отвергнут. После «мягкого удаления» (`deleted_at`, урок 2.6) строка выпала из условия `WHERE deleted_at IS NULL`, и тот же адрес можно занять снова.
 
 Это не ограничение в строгом смысле, а уникальный индекс: `UNIQUE (…) WHERE …` в `CREATE TABLE` не пишется. Отсюда три следствия.
@@ -237,6 +245,8 @@ psql:/lab/constraints.sql:79: ERROR:  update or delete on table "users" violates
 DETAIL:  Key (id)=(2) is still referenced from table "members".
 SQLSTATE 23503
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Оба нарушения — код `23503`, `foreign_key_violation`. Первое: участник несуществующего чата. Второе: удаление пользователя, на которого ещё ссылается участие в чате.
 
@@ -284,6 +294,8 @@ EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
 (7 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Само удаление строки чата — сотые доли миллисекунды в обоих случаях: строку нашёл первичный ключ. Всё время уходит в строку `Trigger for constraint big_messages_chat_id_fkey` — проверку детей. Без индекса она читает весь миллион сообщений: <N>22,441 мс</N>. С индексом — <N>0,160 мс</N>, <N>примерно в 140 раз</N> быстрее. Абсолютные миллисекунды зависят от машины, поэтому `scenario.sh` проверяет только соотношение: без индекса дольше больше чем в 10 раз. И это на таблице, целиком лежащей в памяти на tmpfs, и на **одном** удаляемом чате. Удаление тысячи чатов одной командой без индекса — тысяча полных просмотров. А `EXPLAIN` без `ANALYZE` эту цену не покажет вовсе: триггеры выполняются только при настоящем выполнении.
 
 В схеме мессенджера у каждого внешнего ключа ссылающийся столбец проиндексирован, и не всегда отдельным индексом:
@@ -327,6 +339,8 @@ SELECT chat_id, count(*) AS members FROM members GROUP BY chat_id ORDER BY chat_
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Команда сообщила `DELETE 1`, а удалено три строки: чат и два его участника. Отчёт команды каскадных строк не считает.
 
 Мессенджер выбирает действие для каждого ключа отдельно:
@@ -368,6 +382,8 @@ DETAIL:  Key (chat_id, user_id, during)=(2, 1, ["2026-10-20 11:00:00+00","2026-1
 SQLSTATE 23P01
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Ограничение читается так: «нет двух строк, у которых `chat_id` равны, **и** `user_id` равны, **и** `during` пересекаются (`&&`)». Второй участник в то же время — можно: `user_id` разные. Период 12:00–14:00 встык к 10:00–12:00 — тоже можно: `tstzrange` в записи `[a, b)` — полуоткрытый интервал, он включает начало и не включает конец, поэтому 12:00 принадлежит только второму периоду. А 11:00–11:30 внутри 10:00–12:00 — ошибка `23P01`, `exclusion_violation`.
 
 Три технические детали. Ограничению нужен индекс, который понимает оператор `&&`. B-дерево умеет только «равно», «меньше» и «больше», поэтому здесь <T id="gist">GiST</T> (generalized search tree) — дерево, в узлах которого лежат обобщения ключей (например, охватывающий диапазон), и поиск спускается только в ветви, которые могут пересечься с искомым (`USING gist`). Сравнение обычных `bigint` через `=` в GiST даёт расширение `btree_gist` из contrib; лаба создаёт его в начале скрипта. И в PostgreSQL 18 появилась короткая запись для самого частого случая (release notes 18, раздел «Constraints»: «Allow the specification of non-overlapping PRIMARY KEY, UNIQUE, and foreign key constraints». Там же сказано, что для первичного ключа и `UNIQUE` это записывается словами `WITHOUT OVERLAPS`, а для внешних ключей — `PERIOD`): `UNIQUE (chat_id, user_id, during WITHOUT OVERLAPS)`. Под капотом это то же исключающее ограничение: лаба (шаг 15) вставляет те же 10:00–12:00 и 11:00–11:30 в таблицу `mutes_wo` с `UNIQUE … WITHOUT OVERLAPS` и получает «violates exclusion constraint "mutes_wo_key"» с тем же кодом `23P01`.
@@ -389,6 +405,8 @@ DETAIL:  Key (chat_id, "position")=(2, 2) already exists.
 SQLSTATE 23505
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Команда как целое правило не нарушает: после неё позиции 2 и 3. Но база обновляет строки по одной, и после первой строки две позиции 2 существуют одновременно. Проверка «после каждой строки» видит это промежуточное состояние.
 
 ### DEFERRABLE
@@ -407,6 +425,8 @@ ALTER TABLE
 UPDATE pins SET position = position + 1 WHERE chat_id = 2;
 UPDATE 2
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Тот же `UPDATE` проходит: уникальность проверена после команды, а не посреди неё.
 
@@ -435,6 +455,8 @@ DETAIL:  Key (chat_id)=(4) is not present in table "chats".
 SQLSTATE 23503
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. В первой транзакции участник вставлен раньше чата, и к `COMMIT` всё согласовано. Во второй чат так и не появился, и ошибка пришла не на `INSERT`, а на `COMMIT`: транзакция откатилась целиком.
 
 ### Что можно отложить
@@ -453,6 +475,8 @@ LINE 1: ...DD CONSTRAINT chats_title_not_null NOT NULL title DEFERRABLE...
                                                              ^
 SQLSTATE 0A000
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Код `0A000` — `feature_not_supported`. Логика понятна: `CHECK` и `NOT NULL` — правила одной строки, и у одной строки не бывает «промежуточного состояния посреди транзакции», которое станет верным позже. Если строка неверна, её нужно записать верной, а не ждать `COMMIT`.
 
@@ -558,6 +582,8 @@ SELECT username FROM users WHERE username = 'alice';
  alice
 (1 row)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Тот же `SELECT` в оборванной транзакции — ошибка `25P02`, после `ROLLBACK` — обычный ответ.
 

@@ -358,6 +358,8 @@ Content-Length: 90
 {"error":{"code":"invalid_input","message":"неверный формат","field":"id"}}
 ```
 
+<Run dir="messenger" tag="m01-l09" cmd="curl -si localhost:8080/v1/chats/42/messages -H &quot;X-User-ID: $ALICE&quot;" before="сервер в соседнем терминале — `go run ./cmd/messenger`; id из ответов сохраняйте в `ALICE`" />
+
 ```text
 $ curl -s "localhost:8080/v1/chats/0199e1a2-0000-7000-8000-000000000001/messages?limit=abc" -H "X-User-ID: $ALICE"
 {"error":{"code":"invalid_input","message":"неверный формат","field":"limit"}}
@@ -439,6 +441,8 @@ $ go generate ./... && go build ./...
 # messenger/internal/chat/adapters/httpapi
 internal/chat/adapters/httpapi/handler.go:113:17: req.Text undefined (type gen.SendMessageRequest has no field or method Text)
 ```
+
+<Run dir="messenger" tag="m01-l09" cmd="go generate ./... &amp;&amp; go build ./..." before="в `api/openapi.yaml` переименуйте у `SendMessageRequest` поле `text` в `body` (потом верните); второй опыт — `go test ./internal/chat/adapters/httpapi/`" />
 
 Генератор переписал структуру — теперь в ней `Body string`, — и обработчик, который читает `req.Text`, перестал собираться. Изменение контракта, о котором забыли в коде, не доходит даже до тестов. Так же ведёт себя переименование `operationId` — попробуем `sendMessage` → `postMessage`:
 

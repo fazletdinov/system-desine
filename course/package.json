@@ -14,6 +14,7 @@
     "check:labs": "node scripts/check-labs.ts",
     "check:messenger": "node scripts/check-messenger.ts",
     "check:refs": "node scripts/check-refs.ts",
+    "check:run": "node scripts/check-run.ts",
     "check:workflows": "cd .. && go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
   },
   "devDependencies": {

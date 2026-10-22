@@ -7,3 +7,11 @@
 .migrate-demo-*
 # Секреты compose: пароль базы и строка подключения (README, раздел «В Docker»).
 /secrets/
+# Что оставляют прогоны «▶ Запустить самому» из уроков: сборки для сравнения, профили, трассы, OCI-архив.
+/m-notrim
+/m-full
+/m-sw
+*.pprof
+*.trace
+/messenger-oci.tar
+/oci/

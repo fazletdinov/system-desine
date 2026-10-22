@@ -1,0 +1,15 @@
+# Что оставляют прогоны «▶ Запустить самому» из каталога labs: бинари, вывод бенчмарков, профили.
+/gctrace
+/limiter
+/netpoll
+/history
+/alloc-bench.txt
+/alloc-bench-sprintf.txt
+/classic.txt
+/greentea.txt
+/off.txt
+/pgo.txt
+/st.txt
+/st2.txt
+/cpu.pprof
+/mutex.out

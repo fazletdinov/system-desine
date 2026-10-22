@@ -31,6 +31,8 @@ PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2), go1.27.2; пачка COPY: 10000 ст�
   uuidv7      14.9                  156                       7        143   695838
 ```
 
+<Run dir="labs" cmd="go run ./2a/keys -n 1000000" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина: 12th Gen Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04.5, ядро Linux 7.0, Docker 29.9.1, PostgreSQL 18.6 с настройками образа по умолчанию и данными на tmpfs, go1.27.2; три прогона — `labs/2a/results/keys-n1000000-{1,2,3}.txt`.
 
 Данные одни и те же, а цена разная. Индекс первичного ключа на UUIDv4 занимает от <N>38 288 до 38 856 КиБ</N> в трёх прогонах — в 1,74–1,77 раза больше, чем на `bigint` (21 960 КиБ, во всех трёх одинаково). UUIDv7 посередине: 30 824 КиБ. Загрузка с UUIDv4 идёт в 2,6 раза дольше, чем с `bigint`. Но самое интересное — во второй таблице. Сто тысяч строк в заполненный индекс после контрольной точки записали в журнал 9,0 МиБ с `bigint`, 14,9 МиБ с UUIDv7 и <N>43,1–43,3 МиБ</N> с UUIDv4: почти втрое больше, чем UUIDv7. И у UUIDv4 в этом журнале от 4 788 до 4 859 «полных образов страниц» против семи у двух других ключей.
@@ -52,6 +54,8 @@ SELECT at_naive::timestamptz = at_tz AS same_moment FROM events;
  f
 (1 row)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Одна и та же строка таблицы — «тот же момент» для одной сессии и «другой момент» для второй. Ни ошибки, ни предупреждения. Почему так и как этого не допустить — в разделе о типах.
 
@@ -190,6 +194,8 @@ SELECT uuid_extract_version(gen_random_uuid()) AS v4_version,
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. UUID взят из примера документации PostgreSQL 18; из UUIDv4 время не извлекается — `NULL`.
 
 RFC 9562 в разделе «Security Considerations» называет это прямо: «Timestamps embedded in the UUID do pose a very small attack surface», а метка времени вместе со счётчиком «does signal the order of creation for a given UUID». Там же два правила, которые стоит знать наизусть: UUID не следует считать трудными для угадывания («Implementations SHOULD NOT assume that UUIDs are hard to guess»), и их нельзя использовать как права доступа («MUST NOT be used as security capabilities»). Ссылка «по секретному id» на приватный ресурс — это ошибка с любой версией UUID.
@@ -257,6 +263,8 @@ SELECT at_naive, at_tz FROM events;
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. `timestamptz` в обеих сессиях показывает один и тот же момент, просто на разных часах. `timestamp` показывает `12:00` всем, и что это за 12:00, каждая сессия решает сама: та, что в UTC, считает его 12:00 UTC (верно), а та, что в Москве, — 12:00 по Москве, то есть 09:00 UTC. Отсюда `t` и `f` в разделе «Проблема». В жизни «сессии в разных поясах» — это два сервера с разной настройкой, отчёт аналитика и `psql` дежурного, и ошибка проявляется как «сообщения в ленте на три часа не в том порядке» через полгода после запуска.
 
 Мессенджер хранит моменты: когда зарегистрирован пользователь, когда отправлено сообщение, когда истекает ключ идемпотентности. В Go им соответствует `time.Time` — тоже момент, а не показания часов. Поэтому все такие столбцы — `timestamptz`. `timestamp` уместен для настоящих «показаний часов», которые не привязаны к моменту: «будильник в 09:00 по местному времени пользователя каждый день». Его хранят как `time` или `timestamp` плюс отдельный столбец с именем пояса (`Europe/Moscow`, а не `+03`: смещение у пояса меняется при переходе на летнее время и по решению правительства).
@@ -281,6 +289,8 @@ DETAIL:  Failing row contains (слишком длинно).
 SQLSTATE 23514
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Обе строки отвергнуты, но по-разному. У `varchar` — ошибка **типа** `22001 string_data_right_truncation`, без имени ограничения: адаптеру остаётся гадать по тексту, какой столбец виноват. У `CHECK` — `23514 check_violation` и имя `titles_text_title_length`, по которому адаптер переводит ошибку в доменную (урок 2.4 построит на этом весь перевод ошибок). И ещё: `CHECK` выражает любое правило, а не только длину. У `username` это и длина, и алфавит: `CHECK (username ~ '^[a-z0-9_]+$' AND length(username) BETWEEN 3 AND 32)`.
 
 Откуда берётся число в ограничении? Не из привычки. `varchar(255)` — наследие MySQL, где до версии 5.0.3 длина `VARCHAR` не могла превышать 255, а длина префикса, который хранит длину строки (1 или 2 байта), зависела от того, укладывается ли максимум столбца в 255 байт. В PostgreSQL число 255 ничего не значит. Длина — это бизнес-правило, и у мессенджера оно уже записано константами домена: `UsernameMaxLen = 32`, `DisplayNameMaxLen = 64`, `TitleMaxLen = 128`, `TextMaxLen = 4096`. `CHECK` повторяет их в базе. Обратите внимание: и `char_length` в PostgreSQL, и `utf8.RuneCountInString` в домене считают **символы**, а не байты, так что «64 символа» значит одно и то же по обе стороны. Как держать константу домена и `CHECK` согласованными — урок 2.4.
@@ -294,6 +304,8 @@ SQLSTATE 23514
 -------------+---------------+--------------------+--------------------
  f           | t             | 0.9999999999999999 |                1.0
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Десять раз по 10 копеек во `float` — не рубль. Документация PostgreSQL 18: «If you require exact storage and calculations (such as for monetary amounts), use the numeric type instead». `numeric(12, 2)` хранит десятичное число точно. Второй промышленный вариант — `bigint` в минимальных единицах валюты (копейках, центах): так деньги передают в API многие платёжные системы. Он быстрее и компактнее, но требует знать число знаков у каждой валюты. Тип `money` не подходит: вики PostgreSQL замечает, что он «doesn't store a currency with the value», а берёт её из настройки `lc_monetary` базы. Валюта, если их больше одной, хранится отдельным столбцом рядом с суммой.
 
@@ -323,6 +335,8 @@ psql:/lab/types.sql:68: ERROR:  new row for relation "chats_check" violates chec
 DETAIL:  Failing row contains (channel).
 SQLSTATE 23514
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же.
 
@@ -378,6 +392,8 @@ DETAIL:  Key (username)=(alice) already exists.
 SQLSTATE 23505
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Удобно, но сама документация `citext` в PostgreSQL 18 открывается советом: «Consider using nondeterministic collations… instead of this module. They can be used for case-insensitive comparisons, accent-insensitive comparisons, and other combinations, and they handle more Unicode special cases correctly». В разделе ограничений сказано, что `citext` медленнее `text` (каждое сравнение копирует и приводит строки) и что его приведение регистра зависит от `LC_CTYPE` базы.
 
 ### Способ 3: недетерминированная ICU-коллация
@@ -407,6 +423,8 @@ SELECT username FROM users_ci WHERE username LIKE 'ali%';
 (1 row)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Столбец хранит `Alice`, `UNIQUE` и `=` работают без учёта регистра, и запросам не нужно помнить про `lower()`. `LIKE` с такой коллацией работает **только с PostgreSQL 18**. Release notes 18, раздел «Utility Commands»: «Allow LIKE with nondeterministic collations» и «Allow text position search functions with nondeterministic collations… These used to generate an error». Раньше этот запрос падал.
 
 Но ограничения остались, и одно из них бьёт прямо по нашей схеме:
@@ -428,6 +446,8 @@ psql:/lab/types.sql:129: ERROR:  foreign key constraint "mentions_username_fkey"
 DETAIL:  Key columns "username" of the referencing table and "username" of the referenced table have incompatible collations: "default" and "case_insensitive".  If either collation is nondeterministic, then both collations have to be the same.
 SQLSTATE 42P21
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Три урока:
 
@@ -456,6 +476,8 @@ psql:/lab/types.sql:148: ERROR:  duplicate key value violates unique constraint 
 DETAIL:  Key (casefold(username COLLATE pg_unicode_fast))=(strasse) already exists.
 SQLSTATE 23505
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/types.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. С коллацией базы (`libc`) `casefold` ведёт себя как `lower`, а со встроенной `pg_unicode_fast` приводит `Straße` к `strasse`. Уникальный индекс по такому выражению — более точная замена способа 1. Его цена та же, что у `lower()`: запросы должны писать то же выражение.
 

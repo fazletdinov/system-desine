@@ -226,6 +226,8 @@ Content-Length: 282
 {"author_id":"01a13a42-a091-7b49-a3b7-2ae25585079f","chat_id":"01a13a42-a0a6-7a37-83b1-bb18ea25c81c","client_message_id":"c66c8f09-dcc4-4bb7-ad21-7297aca0b278","id":"01a13a42-a0b0-7d15-9b19-3446d8325668","sent_at":"2026-10-14T11:53:27.472858562Z","seq":1,"text":"я в метро"}
 ```
 
+<Run dir="messenger" tag="m01-l12" cmd="CMID=$(uuidgen -r | tr A-F a-f); curl -si -X POST &quot;localhost:8080/v1/chats/$CHAT/messages&quot; -H &quot;X-User-ID: $ALICE&quot; -H 'Content-Type: application/json' -d &quot;{\&quot;client_message_id\&quot;:\&quot;$CMID\&quot;,\&quot;text\&quot;:\&quot;я в метро\&quot;}&quot;" before="сервер в соседнем терминале — `go run ./cmd/messenger`; зарегистрируйте Алису, Боба и Кэрол, создайте личный чат; id из ответов сохраняйте в `ALICE`, `BOB`, `CAROL`, `CHAT`" />
+
 Представим, что этот ответ потерялся. Пока Алиса в тоннеле, Боб успевает ответить — версия чата меняется:
 
 ```text
