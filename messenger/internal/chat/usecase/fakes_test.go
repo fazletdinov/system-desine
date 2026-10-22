@@ -92,9 +92,14 @@ type failingAppender struct {
 	mu      sync.Mutex
 	ids     []domain.MessageID
 	clients []domain.ClientMessageID
+	// callsOutsideTx — вызовы без транзакции recordingTx в ctx.
+	callsOutsideTx atomic.Int32
 }
 
-func (f *failingAppender) AppendMessage(_ context.Context, _ *domain.Chat, msg domain.Message, _ int64) error {
+func (f *failingAppender) AppendMessage(ctx context.Context, _ *domain.Chat, msg domain.Message, _ int64) error {
+	if !inTx(ctx) {
+		f.callsOutsideTx.Add(1)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ids = append(f.ids, msg.ID())
@@ -111,4 +116,48 @@ type deafFinder struct{ usecase.ChatFinder }
 
 func (d deafFinder) FindChat(_ context.Context, id domain.ChatID) (*domain.Chat, error) {
 	return d.ChatFinder.FindChat(context.Background(), id)
+}
+
+// recordingTx — Transactor, который ничего не откатывает, а запоминает: сколько раз
+// его звали и что вернул последний fn. Метка в ctx позволяет фейкам хранилищ понять,
+// вызваны ли они внутри WithinTx, — так же, как Postgres-адаптер найдёт в ctx транзакцию.
+type recordingTx struct {
+	calls atomic.Int32
+	mu    sync.Mutex
+	err   error
+}
+
+type inTxKey struct{}
+
+func inTx(ctx context.Context) bool { return ctx.Value(inTxKey{}) != nil }
+
+func (r *recordingTx) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	r.calls.Add(1)
+	err := fn(context.WithValue(ctx, inTxKey{}, true))
+	r.mu.Lock()
+	r.err = err
+	r.mu.Unlock()
+	return err
+}
+
+func (r *recordingTx) lastErr() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.err
+}
+
+// txAwareFinder считает чтения сохранённого сообщения и те из них, что пришлись
+// на транзакцию recordingTx.
+type txAwareFinder struct {
+	usecase.MessageByClientIDFinder
+	calls     atomic.Int32
+	callsInTx atomic.Int32
+}
+
+func (f *txAwareFinder) FindMessageByClientID(ctx context.Context, chatID domain.ChatID, author domain.UserID, clientID domain.ClientMessageID) (domain.Message, error) {
+	f.calls.Add(1)
+	if inTx(ctx) {
+		f.callsInTx.Add(1)
+	}
+	return f.MessageByClientIDFinder.FindMessageByClientID(ctx, chatID, author, clientID)
 }

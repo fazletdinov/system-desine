@@ -60,7 +60,9 @@ if (unformatted !== '') {
 }
 const generated = checkGenerated()
 run('go', ['vet', './...'])
+// Файлы с тегом migratedemo (демонстрация упавшей миграции, урок 2.8) обычный vet не видит.
+run('go', ['vet', '-tags', 'migratedemo', './cmd/...'])
 run('golangci-lint', ['run', './...'], 300_000)
 run('go', ['test', '-race', './...'], 600_000)
 const refs = checkSnippetRefs()
-console.log(`Мессенджер: gofmt, go generate (файлов: ${generated}), go vet, golangci-lint, go test -race и регионы <<< — без ошибок (ссылок: ${refs}).`)
+console.log(`Мессенджер: gofmt, go generate (файлов: ${generated}), go vet (и с тегом migratedemo), golangci-lint, go test -race и регионы <<< — без ошибок (ссылок: ${refs}).`)

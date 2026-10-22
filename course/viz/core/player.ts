@@ -1,3 +1,5 @@
+import type { KeyModifiers } from './radio-keys'
+
 export const SPEEDS = [0.5, 1, 2] as const
 export type Speed = (typeof SPEEDS)[number]
 
@@ -84,7 +86,10 @@ const KEY_ACTIONS: Record<string, PlayerAction> = {
 
 const OWN_KEYS_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
 
-export function keyToAction(key: string, target: { tagName: string } | null): PlayerAction | null {
+// С Alt/Ctrl/Meta клавиши принадлежат браузеру и системе (Alt+← — «назад», Ctrl+Home — начало
+// страницы): плеер их не перехватывает, как и радиогруппы (radio-keys.ts).
+export function keyToAction(key: string, target: { tagName: string } | null, modifiers: KeyModifiers = {}): PlayerAction | null {
+  if (modifiers.altKey || modifiers.ctrlKey || modifiers.metaKey) return null
   const action = KEY_ACTIONS[key]
   if (action === undefined) return null
   const tag = target?.tagName.toUpperCase() ?? ''

@@ -1,8 +1,10 @@
 # region dependabot
 version: 2
 updates:
+  # course/scripts/go-harness — версии внешних пакетов Go-фрагментов уроков (pgx): они
+  # должны идти за мессенджером, иначе урок покажет код под старую версию драйвера.
   - package-ecosystem: gomod
-    directories: ["/messenger", "/labs"]
+    directories: ["/messenger", "/labs", "/course/scripts/go-harness"]
     schedule:
       interval: weekly
     # Не брать версии моложе двух недель: у свежего релиза ещё не нашли регрессии и
@@ -48,4 +50,17 @@ updates:
     ignore:
       - dependency-name: golang
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+  # Образ Postgres закреплён по digest в compose-файлах (мессенджер и лаба 2a; тот же
+  # digest — в platform/pgtest.Image, его сверяет тест): экосистема docker читает только
+  # Dockerfile, compose-файлы — отдельная docker-compose. Major-версию Postgres бот не
+  # предлагает: переход 18 → 19 — это pg_upgrade данных, а не замена строки.
+  - package-ecosystem: docker-compose
+    directories: ["/messenger", "/labs/2a"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
 # endregion dependabot

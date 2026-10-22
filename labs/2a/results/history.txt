@@ -1,0 +1,316 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+# из labs/: docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&1'
+
+=== 1. Схема: пользователи с deleted_at, их сессии и сообщения, журнал аудита ===
+CREATE TABLE users (
+    id           bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    username     text        NOT NULL CONSTRAINT users_username_key UNIQUE,
+    display_name text        NOT NULL,
+    -- NULL — пользователь жив; время — когда его «удалили».
+    deleted_at   timestamptz
+);
+CREATE TABLE
+CREATE TABLE sessions (
+    token   text   PRIMARY KEY,
+    user_id bigint NOT NULL REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE TABLE
+CREATE TABLE messages (
+    id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    author_id bigint NOT NULL REFERENCES users (id),
+    text      text   NOT NULL
+);
+CREATE TABLE
+CREATE TABLE users_audit (
+    id         bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id    bigint      NOT NULL,
+    op         text        NOT NULL CHECK (op IN ('INSERT', 'UPDATE', 'DELETE')),
+    -- Кто из пользователей приложения: приложение кладёт его в настройку сеанса app.actor.
+    -- Ручной SQL её не задаёт — тогда здесь NULL, и остаётся только роль базы (db_role).
+    actor      text,
+    db_role    text        NOT NULL DEFAULT current_user,
+    changed_at timestamptz NOT NULL DEFAULT now(),
+    old_row    jsonb,
+    new_row    jsonb
+);
+CREATE TABLE
+CREATE FUNCTION users_audit_row() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO users_audit (user_id, op, actor, old_row, new_row)
+    VALUES (coalesce(NEW.id, OLD.id), TG_OP,
+            -- true: настройки нет — NULL, а не ошибка.
+            current_setting('app.actor', true),
+            CASE WHEN TG_OP <> 'INSERT' THEN to_jsonb(OLD) END,
+            CASE WHEN TG_OP <> 'DELETE' THEN to_jsonb(NEW) END);
+    RETURN NULL; -- AFTER-триггеру результат не нужен
+END;
+$$;
+CREATE FUNCTION
+CREATE TRIGGER users_audit AFTER INSERT OR UPDATE OR DELETE ON users
+FOR EACH ROW EXECUTE FUNCTION users_audit_row();
+CREATE TRIGGER
+
+=== 2. Мягкое удаление при обычном UNIQUE: имя удалённого занято навсегда ===
+INSERT INTO users (username, display_name) VALUES ('alice', 'Алиса'), ('bob', 'Боб');
+INSERT 0 2
+INSERT INTO sessions VALUES ('tok-alice', 1);
+INSERT 0 1
+INSERT INTO messages (author_id, text) VALUES (1, 'привет'), (2, 'привет, Алиса');
+INSERT 0 2
+UPDATE users SET deleted_at = now() WHERE username = 'alice';
+UPDATE 1
+SELECT token, user_id FROM sessions;
+   token   | user_id 
+-----------+---------
+ tok-alice |       1
+(1 row)
+
+INSERT INTO users (username, display_name) VALUES ('alice', 'Другая Алиса');
+psql:/lab/history.sql:82: ERROR:  duplicate key value violates unique constraint "users_username_key"
+DETAIL:  Key (username)=(alice) already exists.
+SQLSTATE 23505
+
+=== 3. Частичный уникальный индекс: уникальны только живые ===
+ALTER TABLE users DROP CONSTRAINT users_username_key;
+ALTER TABLE
+CREATE UNIQUE INDEX users_username_active_key ON users (username) WHERE deleted_at IS NULL;
+CREATE INDEX
+INSERT INTO users (username, display_name) VALUES ('alice', 'Другая Алиса');
+INSERT 0 1
+INSERT INTO users (username, display_name) VALUES ('alice', 'Третья Алиса');
+psql:/lab/history.sql:94: ERROR:  duplicate key value violates unique constraint "users_username_active_key"
+DETAIL:  Key (username)=(alice) already exists.
+SQLSTATE 23505
+
+=== 4. Запрос, забывший про deleted_at, и внешний ключ, который о нём не знает ===
+SELECT id, username, display_name, deleted_at IS NOT NULL AS deleted
+FROM users WHERE username = 'alice' ORDER BY id;
+ id | username | display_name | deleted 
+----+----------+--------------+---------
+  1 | alice    | Алиса        | t
+  4 | alice    | Другая Алиса | f
+(2 rows)
+
+INSERT INTO messages (author_id, text) VALUES (1, 'пишу после удаления');
+INSERT 0 1
+CREATE VIEW active_users AS
+SELECT id, username, display_name FROM users WHERE deleted_at IS NULL;
+CREATE VIEW
+SELECT id, username, display_name FROM active_users WHERE username = 'alice';
+ id | username | display_name 
+----+----------+--------------
+  4 | alice    | Другая Алиса
+(1 row)
+
+INSERT INTO users (username, display_name, deleted_at)
+SELECT 'user' || g, 'Пользователь ' || g, CASE WHEN g % 10 = 0 THEN now() END
+FROM generate_series(1, 100000) AS g;
+INSERT 0 100000
+VACUUM ANALYZE users;
+VACUUM
+EXPLAIN (COSTS OFF) SELECT id FROM users WHERE username = 'user42';
+              QUERY PLAN               
+---------------------------------------
+ Seq Scan on users
+   Filter: (username = 'user42'::text)
+(2 rows)
+
+EXPLAIN (COSTS OFF) SELECT id FROM users WHERE username = 'user42' AND deleted_at IS NULL;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Index Scan using users_username_active_key on users
+   Index Cond: (username = 'user42'::text)
+(2 rows)
+
+EXPLAIN (COSTS OFF) SELECT id FROM active_users WHERE username = 'user42';
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Index Scan using users_username_active_key on users
+   Index Cond: (username = 'user42'::text)
+(2 rows)
+
+
+=== 5. Перенос в архив: строка уходит, а дети остаются ===
+CREATE TABLE users_archive (
+    id           bigint      PRIMARY KEY,
+    username     text        NOT NULL,
+    display_name text        NOT NULL,
+    archived_at  timestamptz NOT NULL
+);
+CREATE TABLE
+WITH moved AS (
+    DELETE FROM users WHERE username = 'bob' RETURNING id, username, display_name
+)
+INSERT INTO users_archive SELECT id, username, display_name, now() FROM moved;
+psql:/lab/history.sql:145: ERROR:  update or delete on table "users" violates foreign key constraint "messages_author_id_fkey" on table "messages"
+DETAIL:  Key (id)=(2) is still referenced from table "messages".
+SQLSTATE 23503
+WITH moved AS (
+    DELETE FROM users WHERE username = 'user7' RETURNING id, username, display_name
+)
+INSERT INTO users_archive SELECT id, username, display_name, now() FROM moved;
+INSERT 0 1
+SELECT username FROM users_archive;
+ username 
+----------
+ user7
+(1 row)
+
+
+=== 6. Журнал аудита: кто изменил строку ===
+BEGIN;
+BEGIN
+SET LOCAL app.actor = 'user:2';
+SET
+UPDATE users SET display_name = 'Боб Б.' WHERE username = 'bob';
+UPDATE 1
+COMMIT;
+COMMIT
+UPDATE users SET display_name = 'Боб' WHERE username = 'bob';
+UPDATE 1
+SELECT op, actor, db_role, old_row ->> 'display_name' AS old_name, new_row ->> 'display_name' AS new_name
+FROM users_audit WHERE user_id = 2 ORDER BY id;
+   op   | actor  | db_role | old_name | new_name 
+--------+--------+---------+----------+----------
+ INSERT |        | lab     |          | Боб
+ UPDATE | user:2 | lab     | Боб      | Боб Б.
+ UPDATE |        | lab     | Боб Б.   | Боб
+(3 rows)
+
+
+=== 7. Право на удаление: alice просит стереть её данные ===
+SELECT username, display_name, deleted_at IS NOT NULL AS deleted FROM users WHERE id = 1;
+ username | display_name | deleted 
+----------+--------------+---------
+ alice    | Алиса        | t
+(1 row)
+
+DELETE FROM users WHERE id = 1;
+psql:/lab/history.sql:178: ERROR:  update or delete on table "users" violates foreign key constraint "messages_author_id_fkey" on table "messages"
+DETAIL:  Key (id)=(1) is still referenced from table "messages".
+SQLSTATE 23503
+BEGIN;
+BEGIN
+UPDATE users
+SET username = 'deleted_' || id, display_name = 'Удалённый пользователь'
+WHERE id = 1;
+UPDATE 1
+DELETE FROM sessions WHERE user_id = 1;
+DELETE 1
+COMMIT;
+COMMIT
+SELECT u.username, m.text
+FROM messages m JOIN users u ON u.id = m.author_id
+WHERE m.author_id = 1 ORDER BY m.id;
+ username  |        text         
+-----------+---------------------
+ deleted_1 | привет
+ deleted_1 | пишу после удаления
+(2 rows)
+
+SELECT op, old_row ->> 'username' AS old_name, new_row ->> 'username' AS new_name
+FROM users_audit WHERE user_id = 1 ORDER BY id;
+   op   | old_name | new_name  
+--------+----------+-----------
+ INSERT |          | alice
+ UPDATE | alice    | alice
+ UPDATE | alice    | deleted_1
+(3 rows)
+
+UPDATE users_audit
+SET old_row = old_row - ARRAY['username', 'display_name'],
+    new_row = new_row - ARRAY['username', 'display_name']
+WHERE user_id = 1;
+UPDATE 3
+SELECT count(*) AS audit_rows_with_name FROM users_audit
+WHERE user_id = 1 AND (old_row ? 'username' OR new_row ? 'username');
+ audit_rows_with_name 
+----------------------
+                    0
+(1 row)
+
+
+=== 8. Цена триггера: 100 000 обновлений с журналом и без ===
+CREATE TABLE plain (LIKE users INCLUDING ALL);
+CREATE TABLE
+CREATE TABLE audited (LIKE users INCLUDING ALL);
+CREATE TABLE
+INSERT INTO plain (username, display_name) SELECT 'u' || g, 'Имя ' || g FROM generate_series(1, 100000) AS g;
+INSERT 0 100000
+INSERT INTO audited (username, display_name) SELECT 'u' || g, 'Имя ' || g FROM generate_series(1, 100000) AS g;
+INSERT 0 100000
+VACUUM ANALYZE plain, audited;
+VACUUM
+CREATE TRIGGER audited_audit AFTER INSERT OR UPDATE OR DELETE ON audited
+FOR EACH ROW EXECUTE FUNCTION users_audit_row();
+CREATE TRIGGER
+CREATE TEMP TABLE wal_marks (mark text PRIMARY KEY, lsn pg_lsn NOT NULL);
+CREATE TABLE
+CREATE TEMP TABLE audit_before AS
+SELECT count(*) AS n, pg_table_size('users_audit') AS bytes FROM users_audit;
+SELECT 1
+CHECKPOINT;
+CHECKPOINT
+INSERT INTO wal_marks VALUES ('plain_start', pg_current_wal_lsn());
+INSERT 0 1
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+UPDATE plain SET display_name = display_name || '!';
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Update on plain (actual rows=0.00 loops=1)
+   Buffers: shared hit=1055336 dirtied=2522 written=1032
+   ->  Seq Scan on plain (actual rows=100000.00 loops=1)
+         Buffers: shared hit=735
+ Planning:
+   Buffers: shared hit=19 dirtied=1
+ Planning Time: 0.052 ms
+ Execution Time: 448.069 ms
+(8 rows)
+
+INSERT INTO wal_marks VALUES ('plain_end', pg_current_wal_lsn());
+INSERT 0 1
+CHECKPOINT;
+CHECKPOINT
+INSERT INTO wal_marks VALUES ('audited_start', pg_current_wal_lsn());
+INSERT 0 1
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+UPDATE audited SET display_name = display_name || '!';
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Update on audited (actual rows=0.00 loops=1)
+   Buffers: shared hit=1155336 dirtied=2522 written=1032
+   ->  Seq Scan on audited (actual rows=100000.00 loops=1)
+         Buffers: shared hit=735
+ Planning:
+   Buffers: shared hit=21
+ Planning Time: 0.069 ms
+ Trigger audited_audit: calls=100000
+ Execution Time: 1478.265 ms
+(9 rows)
+
+INSERT INTO wal_marks VALUES ('audited_end', pg_current_wal_lsn());
+INSERT 0 1
+SELECT t.tbl,
+       pg_size_pretty(pg_wal_lsn_diff(e.lsn, b.lsn)) AS wal,
+       pg_wal_lsn_diff(e.lsn, b.lsn)                 AS wal_bytes
+FROM (VALUES ('plain'), ('audited')) AS t (tbl)
+JOIN wal_marks b ON b.mark = t.tbl || '_start'
+JOIN wal_marks e ON e.mark = t.tbl || '_end'
+ORDER BY wal_bytes;
+   tbl   |  wal  | wal_bytes 
+---------+-------+-----------
+ plain   | 39 MB |  40420704
+ audited | 73 MB |  76980928
+(2 rows)
+
+SELECT pg_size_pretty(pg_table_size('plain'))   AS plain_size,
+       pg_size_pretty(pg_table_size('audited')) AS audited_size,
+       (SELECT count(*) FROM users_audit) - b.n  AS new_audit_rows,
+       pg_size_pretty(pg_table_size('users_audit') - b.bytes) AS audit_growth
+FROM audit_before b;
+ plain_size | audited_size | new_audit_rows | audit_growth 
+------------+--------------+----------------+--------------
+ 12 MB      | 12 MB        |         100000 | 26 MB
+(1 row)
+

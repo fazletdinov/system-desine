@@ -22,6 +22,11 @@ type CreateChatResult struct {
 	Created bool // false — личный чат для этой пары уже был
 }
 
+// CreateChat не берёт Transactor: запись чата с участниками — один вызов порта, и
+// атомарность нескольких запросов внутри него — дело адаптера. Обернуть сценарий в
+// транзакцию use case'а было бы и вредно: в гонке за личный чат CreateChat получает
+// ErrDirectChatExists (в Postgres — нарушение уникальности, которое обрывает транзакцию),
+// и следующий за ним FindDirectChat в той же транзакции уже не выполнился бы.
 type CreateChat struct {
 	chats  ChatCreator
 	direct DirectChatFinder

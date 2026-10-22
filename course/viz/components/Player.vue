@@ -32,7 +32,7 @@ watch(
 onBeforeUnmount(() => clearTimeout(timer))
 
 function onKey(event: KeyboardEvent): void {
-  const action = keyToAction(event.key, event.target instanceof HTMLElement ? event.target : null)
+  const action = keyToAction(event.key, event.target instanceof HTMLElement ? event.target : null, event)
   if (action === null) return
   event.preventDefault()
   dispatch(action)

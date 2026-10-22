@@ -3,6 +3,7 @@ import { onMounted, ref, useId, watch } from 'vue'
 import { useData } from 'vitepress'
 import VizFrame from '../viz/components/VizFrame.vue'
 import { mermaidThemeVariables, withPaletteClasses } from '../viz/core/mermaid-palette'
+import { diagramMinWidth } from '../viz/core/diagram-scale'
 
 const props = defineProps<{ code: string; title?: string }>()
 const { isDark } = useData()
@@ -23,6 +24,10 @@ async function render(): Promise<void> {
     const { svg } = await mermaid.render(id, withPaletteClasses(decodeURIComponent(props.code), theme))
     if (seq !== renderSeq || !host.value) return
     host.value.innerHTML = svg
+    const el = host.value.querySelector('svg')
+    // min-width сильнее max-width: 100 %, поэтому схема шире колонки уходит в прокрутку.
+    const minWidth = el ? diagramMinWidth(el.viewBox.baseVal?.width ?? 0) : null
+    if (el && minWidth !== null) el.style.minWidth = `${minWidth}px`
   } catch (e) {
     document.getElementById(id)?.remove()
     document.getElementById(`d${id}`)?.remove()
@@ -47,8 +52,10 @@ watch([isDark, () => props.code], render)
 <style scoped>
 .mermaid-diagram { margin: 20px 0; }
 /* Место под схему резервируется заранее, чтобы страница не прыгала после загрузки mermaid. */
-.mermaid-host { min-height: 120px; display: flex; justify-content: center; overflow-x: auto; }
-.mermaid-host :deep(svg) { max-width: 100%; height: auto; }
+.mermaid-host { min-height: 120px; display: flex; overflow-x: auto; }
+/* Центрирование полями, а не justify-content: center — при переполнении flex-центр уводит левый
+   край схемы за начало прокрутки, и до него не добраться; auto-поля в этом случае обнуляются. */
+.mermaid-host :deep(svg) { max-width: 100%; height: auto; margin-inline: auto; }
 /* Mermaid кладёт текст узлов в <p> и считает высоту по своему line-height (1.5), измеряя вне .vp-doc.
    Стиль VitePress для .vp-doc p (line-height 28px) растягивал текст, и последняя строка вылезала за рамку. */
 .mermaid-host :deep(svg p) { margin: 0; line-height: inherit; }

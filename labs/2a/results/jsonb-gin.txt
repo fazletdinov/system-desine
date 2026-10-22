@@ -1,0 +1,108 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+# из labs/: docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/jsonb/gin.sql 2>&1'
+
+=== 1. 100 000 пользователей: одни и те же настройки столбцами и в JSONB ===
+CREATE TABLE settings_columns (
+    user_id         bigint  PRIMARY KEY,
+    theme           text    NOT NULL,
+    notify_mentions boolean NOT NULL,
+    language        text    NOT NULL,
+    beta            text[]  NOT NULL
+);
+CREATE TABLE
+INSERT INTO settings_columns
+SELECT g,
+       (ARRAY['light', 'dark', 'system'])[1 + floor(random() * 3)::int],
+       random() < 0.8,
+       (ARRAY['ru', 'en', 'de', 'kk'])[1 + floor(random() * 4)::int],
+       CASE WHEN random() < 0.01 THEN ARRAY['new_composer'] ELSE ARRAY[]::text[] END
+FROM generate_series(1, 100000) AS g;
+INSERT 0 100000
+CREATE TABLE settings_jsonb AS
+SELECT user_id,
+       jsonb_build_object(
+           'theme', theme,
+           'notify', jsonb_build_object('mentions', notify_mentions),
+           'language', language,
+           'beta', to_jsonb(beta)) AS settings
+FROM settings_columns;
+SELECT 100000
+ALTER TABLE settings_jsonb ADD PRIMARY KEY (user_id);
+ALTER TABLE
+VACUUM ANALYZE settings_columns, settings_jsonb;
+VACUUM
+
+=== 2. Цена хранения: JSONB хранит имена ключей в каждой строке ===
+SELECT 'columns' AS layout,
+       pg_size_pretty(pg_table_size('settings_columns')) AS table_size,
+       round(avg(pg_column_size(c.*)))                   AS avg_row_bytes
+FROM settings_columns c
+UNION ALL
+SELECT 'jsonb',
+       pg_size_pretty(pg_table_size('settings_jsonb')),
+       round(avg(pg_column_size(j.*)))
+FROM settings_jsonb j;
+ layout  | table_size | avg_row_bytes 
+---------+------------+---------------
+ columns | 5960 kB    |            55
+ jsonb   | 13 MB      |           126
+(2 rows)
+
+
+=== 3. Поиск по содержимому без индекса — полный просмотр ===
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM settings_jsonb WHERE settings @> '{"beta": ["new_composer"]}';
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Aggregate
+   ->  Seq Scan on settings_jsonb
+         Filter: (settings @> '{"beta": ["new_composer"]}'::jsonb)
+(3 rows)
+
+
+=== 4. GIN по JSONB: два класса операторов ===
+CREATE INDEX settings_gin ON settings_jsonb USING gin (settings);
+CREATE INDEX
+CREATE INDEX settings_gin_path ON settings_jsonb USING gin (settings jsonb_path_ops);
+CREATE INDEX
+ANALYZE settings_jsonb;
+ANALYZE
+SELECT indexrelid::regclass AS index, pg_size_pretty(pg_relation_size(indexrelid)) AS size
+FROM pg_index
+WHERE indrelid = 'settings_jsonb'::regclass
+ORDER BY indexrelid::regclass::text;
+        index        |  size   
+---------------------+---------
+ settings_gin        | 1048 kB
+ settings_gin_path   | 448 kB
+ settings_jsonb_pkey | 2208 kB
+(3 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM settings_jsonb WHERE settings @> '{"beta": ["new_composer"]}';
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on settings_jsonb
+         Recheck Cond: (settings @> '{"beta": ["new_composer"]}'::jsonb)
+         ->  Bitmap Index Scan on settings_gin_path
+               Index Cond: (settings @> '{"beta": ["new_composer"]}'::jsonb)
+(5 rows)
+
+SELECT count(*) AS beta_users FROM settings_jsonb WHERE settings @> '{"beta": ["new_composer"]}';
+ beta_users 
+------------
+        924
+(1 row)
+
+
+=== 5. ->> с «=» — не то, что умеет GIN ===
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM settings_jsonb WHERE settings ->> 'language' = 'kk';
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Aggregate
+   ->  Seq Scan on settings_jsonb
+         Filter: ((settings ->> 'language'::text) = 'kk'::text)
+(3 rows)
+

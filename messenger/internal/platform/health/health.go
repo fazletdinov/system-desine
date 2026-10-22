@@ -20,10 +20,16 @@ const (
 )
 
 // Checker — зависимость, без которой экземпляр не может обслуживать запросы
-// (в модуле 2a — Postgres). Check обязан уважать ctx.
+// (Postgres). Check обязан уважать ctx.
 type Checker interface {
 	Check(ctx context.Context) error
 }
+
+// CheckerFunc — функция как Checker (как http.HandlerFunc): composition root собирает
+// проверку из замыкания над пулом, и health не знает, что проверяет.
+type CheckerFunc func(ctx context.Context) error
+
+func (f CheckerFunc) Check(ctx context.Context) error { return f(ctx) }
 
 // Check — проверка с именем: имя попадает в ответ /readyz, причина — только в журнал.
 type Check struct {

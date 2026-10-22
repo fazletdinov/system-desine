@@ -1,0 +1,364 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+# из labs/: docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/antipatterns.sql 2>&1'
+CREATE TABLE users (id bigint PRIMARY KEY, username text NOT NULL UNIQUE);
+CREATE TABLE
+INSERT INTO users VALUES (1, 'alice'), (2, 'bob'), (12, 'mallory');
+INSERT 0 3
+
+=== 1. EAV: «гибкий» профиль без типов и ограничений ===
+CREATE TABLE user_attrs (
+    user_id bigint NOT NULL REFERENCES users (id),
+    attr    text   NOT NULL,
+    value   text,
+    PRIMARY KEY (user_id, attr)
+);
+CREATE TABLE
+INSERT INTO user_attrs VALUES
+    (1, 'birthday',     '1990-05-17'),
+    (1, 'max_upload',   '9'),
+    (2, 'birthday',     'вчера'),
+    (2, 'max_upload',   '10'),
+    (12, 'birth_day',   '1985-01-01');
+INSERT 0 5
+SELECT user_id, value AS max_upload
+FROM user_attrs
+WHERE attr = 'max_upload'
+ORDER BY value DESC;
+ user_id | max_upload 
+---------+------------
+       1 | 9
+       2 | 10
+(2 rows)
+
+SELECT u.username, b.value::date AS birthday
+FROM users u
+LEFT JOIN user_attrs b ON b.user_id = u.id AND b.attr = 'birthday';
+psql:/lab/antipatterns.sql:44: ERROR:  invalid input syntax for type date: "вчера"
+SQLSTATE 22007
+CREATE TABLE profiles (
+    user_id    bigint PRIMARY KEY REFERENCES users (id),
+    birthday   date,
+    max_upload int CHECK (max_upload > 0)
+);
+CREATE TABLE
+INSERT INTO profiles VALUES (2, 'вчера', 10);
+psql:/lab/antipatterns.sql:56: ERROR:  invalid input syntax for type date: "вчера"
+LINE 1: INSERT INTO profiles VALUES (2, 'вчера', 10);
+                                        ^
+SQLSTATE 22007
+
+=== 2. Полиморфная связь: одна ссылка «то ли на сообщение, то ли на чат» ===
+CREATE TABLE chats    (id bigint PRIMARY KEY, title text NOT NULL);
+CREATE TABLE
+CREATE TABLE messages (id bigint PRIMARY KEY, chat_id bigint NOT NULL REFERENCES chats (id), text text NOT NULL);
+CREATE TABLE
+INSERT INTO chats    VALUES (10, 'Бэкенд');
+INSERT 0 1
+INSERT INTO messages VALUES (100, 10, 'Привет');
+INSERT 0 1
+CREATE TABLE reports_poly (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    target_type text   NOT NULL CHECK (target_type IN ('message', 'chat')),
+    target_id   bigint NOT NULL,
+    reason      text   NOT NULL
+);
+CREATE TABLE
+INSERT INTO reports_poly (target_type, target_id, reason) VALUES ('message', 999, 'спам');
+INSERT 0 1
+SELECT r.id, r.target_type, r.target_id
+FROM reports_poly r
+WHERE r.target_type = 'message'
+  AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = r.target_id);
+ id | target_type | target_id 
+----+-------------+-----------
+  1 | message     |       999
+(1 row)
+
+CREATE TABLE reports (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    message_id bigint REFERENCES messages (id),
+    chat_id    bigint REFERENCES chats (id),
+    reason     text   NOT NULL,
+    CONSTRAINT reports_one_target CHECK (num_nonnulls(message_id, chat_id) = 1)
+);
+CREATE TABLE
+INSERT INTO reports (message_id, reason) VALUES (999, 'спам');
+psql:/lab/antipatterns.sql:98: ERROR:  insert or update on table "reports" violates foreign key constraint "reports_message_id_fkey"
+DETAIL:  Key (message_id)=(999) is not present in table "messages".
+SQLSTATE 23503
+INSERT INTO reports (message_id, chat_id, reason) VALUES (100, 10, 'спам');
+psql:/lab/antipatterns.sql:102: ERROR:  new row for relation "reports" violates check constraint "reports_one_target"
+DETAIL:  Failing row contains (2, 100, 10, спам).
+SQLSTATE 23514
+
+=== 3. Список через запятую: участники чата в одной строке ===
+CREATE TABLE chats_csv (
+    id         bigint PRIMARY KEY,
+    title      text   NOT NULL,
+    member_ids text   NOT NULL
+);
+CREATE TABLE
+INSERT INTO chats_csv VALUES
+    (10, 'Бэкенд', '1,2'),
+    (20, 'Обед',   '12'),
+    (30, 'Архив',  '1,404');
+INSERT 0 3
+SELECT id, title FROM chats_csv WHERE member_ids LIKE '%2%' ORDER BY id;
+ id | title  
+----+--------
+ 10 | Бэкенд
+ 20 | Обед
+(2 rows)
+
+SELECT c.id, m.member_id
+FROM chats_csv c, unnest(string_to_array(c.member_ids, ',')::bigint[]) AS m (member_id)
+WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = m.member_id);
+ id | member_id 
+----+-----------
+ 30 |       404
+(1 row)
+
+CREATE TABLE members (
+    chat_id bigint NOT NULL REFERENCES chats_csv (id),
+    user_id bigint NOT NULL REFERENCES users (id),
+    PRIMARY KEY (chat_id, user_id)
+);
+CREATE TABLE
+INSERT INTO members VALUES (10, 1), (10, 2), (20, 12), (30, 1);
+INSERT 0 4
+SELECT chat_id FROM members WHERE user_id = 2;
+ chat_id 
+---------
+      10
+(1 row)
+
+INSERT INTO members VALUES (30, 404);
+psql:/lab/antipatterns.sql:139: ERROR:  insert or update on table "members" violates foreign key constraint "members_user_id_fkey"
+DETAIL:  Key (user_id)=(404) is not present in table "users".
+SQLSTATE 23503
+
+=== 4. Наивное дерево: ответы на сообщения через самосоединения ===
+CREATE TABLE replies (
+    id        bigint PRIMARY KEY,
+    parent_id bigint REFERENCES replies (id),
+    text      text   NOT NULL
+);
+CREATE TABLE
+INSERT INTO replies VALUES
+    (1, NULL, 'Релиз в пятницу?'),
+    (2, 1,    'Лучше в четверг'),
+    (3, 2,    'Почему?'),
+    (4, 3,    'В пятницу некому чинить'),
+    (5, 1,    'Согласен');
+INSERT 0 5
+SELECT r1.id AS level1, r2.id AS level2
+FROM replies r1
+LEFT JOIN replies r2 ON r2.parent_id = r1.id
+WHERE r1.parent_id = 1
+ORDER BY 1, 2;
+ level1 | level2 
+--------+--------
+      2 |      3
+      5 |       
+(2 rows)
+
+WITH RECURSIVE thread AS (
+    SELECT id, parent_id, text, 1 AS depth
+    FROM replies
+    WHERE parent_id = 1
+    UNION ALL
+    SELECT r.id, r.parent_id, r.text, t.depth + 1
+    FROM replies r
+    JOIN thread t ON r.parent_id = t.id
+)
+SELECT id, depth, repeat('  ', depth - 1) || text AS text
+FROM thread
+ORDER BY depth, id;
+ id | depth |            text             
+----+-------+-----------------------------
+  2 |     1 | Лучше в четверг
+  5 |     1 | Согласен
+  3 |     2 |   Почему?
+  4 |     3 |     В пятницу некому чинить
+(4 rows)
+
+
+=== 5. Деньги во float ===
+SELECT 0.1::float8 + 0.2::float8 = 0.3::float8 AS float_equal,
+       0.1::numeric + 0.2::numeric = 0.3::numeric AS numeric_equal,
+       sum(0.1::float8) AS float_sum_of_ten,
+       sum(0.1::numeric) AS numeric_sum_of_ten
+FROM generate_series(1, 10);
+ float_equal | numeric_equal |  float_sum_of_ten  | numeric_sum_of_ten 
+-------------+---------------+--------------------+--------------------
+ f           | t             | 0.9999999999999999 |                1.0
+(1 row)
+
+
+=== 6. SELECT *: запрос зависит от числа и порядка столбцов ===
+CREATE TABLE messages_archive (id bigint PRIMARY KEY, chat_id bigint NOT NULL, text text NOT NULL);
+CREATE TABLE
+CREATE VIEW chat_feed AS SELECT * FROM messages;
+CREATE VIEW
+ALTER TABLE messages ADD COLUMN edited_at timestamptz;
+ALTER TABLE
+INSERT INTO messages_archive SELECT * FROM messages;
+psql:/lab/antipatterns.sql:205: ERROR:  INSERT has more expressions than target columns
+LINE 1: INSERT INTO messages_archive SELECT * FROM messages;
+                                            ^
+SQLSTATE 42601
+SELECT table_name, string_agg(column_name, ', ' ORDER BY ordinal_position) AS columns
+FROM information_schema.columns
+WHERE table_schema = 'antipatterns' AND table_name IN ('messages', 'chat_feed')
+GROUP BY table_name
+ORDER BY table_name;
+ table_name |           columns            
+------------+------------------------------
+ chat_feed  | id, chat_id, text
+ messages   | id, chat_id, text, edited_at
+(2 rows)
+
+INSERT INTO messages_archive (id, chat_id, text)
+SELECT id, chat_id, text FROM messages;
+INSERT 0 1
+
+=== 7. «ID для всего»: суррогатный ключ прячет настоящий ===
+CREATE TABLE members_by_id (
+    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    chat_id bigint NOT NULL REFERENCES chats (id),
+    user_id bigint NOT NULL REFERENCES users (id)
+);
+CREATE TABLE
+INSERT INTO members_by_id (chat_id, user_id) VALUES (10, 1), (10, 2), (10, 1);
+INSERT 0 3
+SELECT chat_id, user_id, count(*) AS rows_per_member
+FROM members_by_id
+GROUP BY chat_id, user_id
+HAVING count(*) > 1;
+ chat_id | user_id | rows_per_member 
+---------+---------+-----------------
+      10 |       1 |               2
+(1 row)
+
+INSERT INTO members VALUES (10, 1);
+psql:/lab/antipatterns.sql:246: ERROR:  duplicate key value violates unique constraint "members_pkey"
+DETAIL:  Key (chat_id, user_id)=(10, 1) already exists.
+SQLSTATE 23505
+
+=== 8. Ключ без ограничения: ссылка без FOREIGN KEY ===
+CREATE TABLE chats_nofk    (id bigint PRIMARY KEY, title text NOT NULL);
+CREATE TABLE
+CREATE TABLE messages_nofk (id bigint PRIMARY KEY, chat_id bigint NOT NULL, text text NOT NULL);
+CREATE TABLE
+INSERT INTO chats_nofk VALUES (10, 'Бэкенд'), (20, 'Обед');
+INSERT 0 2
+INSERT INTO messages_nofk VALUES
+    (1, 10, 'Привет'),
+    (2, 20, 'Кто на обед?'),
+    (3, 30, 'В чат, которого не было');
+INSERT 0 3
+DELETE FROM chats_nofk WHERE id = 20;
+DELETE 1
+SELECT m.id, m.chat_id, m.text
+FROM messages_nofk m
+WHERE NOT EXISTS (SELECT 1 FROM chats_nofk c WHERE c.id = m.chat_id)
+ORDER BY m.id;
+ id | chat_id |          text           
+----+---------+-------------------------
+  2 |      20 | Кто на обед?
+  3 |      30 | В чат, которого не было
+(2 rows)
+
+ALTER TABLE messages_nofk
+    ADD CONSTRAINT messages_nofk_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES chats_nofk (id);
+psql:/lab/antipatterns.sql:274: ERROR:  insert or update on table "messages_nofk" violates foreign key constraint "messages_nofk_chat_id_fkey"
+DETAIL:  Key (chat_id)=(20) is not present in table "chats_nofk".
+SQLSTATE 23503
+ALTER TABLE messages_nofk
+    ADD CONSTRAINT messages_nofk_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES chats_nofk (id) NOT VALID;
+ALTER TABLE
+INSERT INTO messages_nofk VALUES (4, 40, 'Ещё одна сирота');
+psql:/lab/antipatterns.sql:283: ERROR:  insert or update on table "messages_nofk" violates foreign key constraint "messages_nofk_chat_id_fkey"
+DETAIL:  Key (chat_id)=(40) is not present in table "chats_nofk".
+SQLSTATE 23503
+DELETE FROM messages_nofk m
+WHERE NOT EXISTS (SELECT 1 FROM chats_nofk c WHERE c.id = m.chat_id);
+DELETE 2
+ALTER TABLE messages_nofk VALIDATE CONSTRAINT messages_nofk_chat_id_fkey;
+ALTER TABLE
+SELECT conname, convalidated
+FROM pg_constraint
+WHERE conname = 'messages_nofk_chat_id_fkey';
+          conname           | convalidated 
+----------------------------+--------------
+ messages_nofk_chat_id_fkey | t
+(1 row)
+
+
+=== 9. Имена ограничений, которые придумывает PostgreSQL ===
+CREATE TABLE chat_invites (
+    id         bigint      PRIMARY KEY,
+    chat_id    bigint      NOT NULL REFERENCES chats (id),
+    code       text        NOT NULL UNIQUE,
+    max_uses   int         CHECK (max_uses > 0),
+    expires_at timestamptz NOT NULL,
+    CHECK (max_uses < 1000),
+    CHECK (expires_at > '2026-01-01' OR max_uses IS NULL),
+    UNIQUE (chat_id, code)
+);
+CREATE TABLE
+CREATE INDEX ON chat_invites (expires_at);
+CREATE INDEX
+CREATE INDEX ON chat_invites (expires_at);
+CREATE INDEX
+SELECT conname, pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE conrelid = 'chat_invites'::regclass AND contype <> 'n'
+ORDER BY conname;
+            conname            |                                            definition                                             
+-------------------------------+---------------------------------------------------------------------------------------------------
+ chat_invites_chat_id_code_key | UNIQUE (chat_id, code)
+ chat_invites_chat_id_fkey     | FOREIGN KEY (chat_id) REFERENCES chats(id)
+ chat_invites_check            | CHECK (((expires_at > '2026-01-01 00:00:00+00'::timestamp with time zone) OR (max_uses IS NULL)))
+ chat_invites_code_key         | UNIQUE (code)
+ chat_invites_max_uses_check   | CHECK ((max_uses > 0))
+ chat_invites_max_uses_check1  | CHECK ((max_uses < 1000))
+ chat_invites_pkey             | PRIMARY KEY (id)
+(7 rows)
+
+SELECT string_agg(conname, ', ' ORDER BY conname) AS not_null_constraints
+FROM pg_constraint
+WHERE conrelid = 'chat_invites'::regclass AND contype = 'n';
+                                                 not_null_constraints                                                  
+-----------------------------------------------------------------------------------------------------------------------
+ chat_invites_chat_id_not_null, chat_invites_code_not_null, chat_invites_expires_at_not_null, chat_invites_id_not_null
+(1 row)
+
+SELECT indexname
+FROM pg_indexes
+WHERE schemaname = 'antipatterns' AND tablename = 'chat_invites'
+ORDER BY indexname;
+           indexname           
+-------------------------------
+ chat_invites_chat_id_code_key
+ chat_invites_code_key
+ chat_invites_expires_at_idx
+ chat_invites_expires_at_idx1
+ chat_invites_pkey
+(5 rows)
+
+CREATE TABLE notification_delivery_attempts (
+    id                         bigint PRIMARY KEY,
+    subscriber_installation_id bigint NOT NULL,
+    notification_template_code text   NOT NULL,
+    UNIQUE (subscriber_installation_id, notification_template_code)
+);
+CREATE TABLE
+SELECT conname, octet_length(conname) AS bytes
+FROM pg_constraint
+WHERE conrelid = 'notification_delivery_attempts'::regclass AND contype = 'u';
+                             conname                             | bytes 
+-----------------------------------------------------------------+-------
+ notification_delivery_attempt_subscriber_installation_id_no_key |    63
+(1 row)
+

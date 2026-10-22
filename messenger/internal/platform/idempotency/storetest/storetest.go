@@ -1,5 +1,5 @@
 // Package storetest — контрактные тесты хранилища ключей идемпотентности: одна батарея
-// проверок для любой реализации idempotency.Store (сейчас — в памяти, в модуле 2a — Postgres).
+// проверок для любой реализации idempotency.Store (в памяти и Postgres).
 package storetest
 
 import (
@@ -13,13 +13,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"messenger/internal/platform/idempotency"
 )
 
 var t0 = time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 
+// ReservationTTL — срок резервации, с которым newStore обязан создать хранилище: проверки
+// перехвата зависшей резервации считают время от него.
+const ReservationTTL = 15 * time.Second
+
 // Run прогоняет контракт против хранилища, которое создаёт newStore. Каждая проверка
-// получает своё, пустое хранилище.
+// получает своё, пустое хранилище. Идти ли проверкам параллельно, решает newStore
+// (t.Parallel): независимые хранилища в памяти — да, а Postgres-хранилище делит базу
+// тестового пакета, которую каждая проверка восстанавливает из снимка, — нет.
 func Run(t *testing.T, newStore func(t *testing.T) idempotency.Store) {
 	t.Helper()
 	tests := []struct {
@@ -35,12 +43,15 @@ func Run(t *testing.T, newStore func(t *testing.T) idempotency.Store) {
 		{"одновременный Reserve", testConcurrentReserve},
 		{"запись — копия", testReturnsCopy},
 		{"отменённый контекст", testCanceledContext},
+		{"зависшая резервация перехватывается", testReserveTakesOverStaleInProgress},
+		{"свежая резервация не перехватывается", testReserveKeepsFreshInProgress},
+		{"готовый ответ не перехватывается", testReserveKeepsDone},
+		{"одновременный перехват", testConcurrentTakeOver},
+		{"чужой Release не снимает резервацию", testReleaseForeignOwner},
+		{"чужой Complete — ErrReservationLost", testCompleteForeignOwner},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tt.fn(t, newStore(t))
-		})
+		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newStore(t)) })
 	}
 }
 
@@ -82,20 +93,36 @@ func testScopes(t *testing.T, s idempotency.Store) {
 	}
 }
 
-func complete(t *testing.T, s idempotency.Store, scope, key string) idempotency.Record {
+// done — готовый ответ на резервацию reserved, какой его сохраняет middleware.
+func done(reserved idempotency.Record) idempotency.Record {
+	reserved.Done, reserved.Status, reserved.Body = true, http.StatusCreated, []byte(`{"id":"1"}`)
+	reserved.Header = http.Header{"Location": {"/v1/chats/1"}}
+	return reserved
+}
+
+// complete сохраняет готовый ответ на резервацию reserved (её вернул Reserve).
+func complete(t *testing.T, s idempotency.Store, scope, key string, reserved idempotency.Record) idempotency.Record {
 	t.Helper()
-	done := pending("A")
-	done.Done, done.Status, done.Body = true, http.StatusCreated, []byte(`{"id":"1"}`)
-	done.Header = http.Header{"Location": {"/v1/chats/1"}}
-	if err := s.Complete(context.Background(), scope, key, done); err != nil {
+	rec := done(reserved)
+	if err := s.Complete(context.Background(), scope, key, rec); err != nil {
 		t.Fatal(err)
 	}
-	return done
+	return rec
+}
+
+// reserveDone занимает ключ и сразу сохраняет ответ: запись, которую Reserve не перехватит.
+func reserveDone(t *testing.T, s idempotency.Store, scope, key string, rec idempotency.Record, now time.Time) {
+	t.Helper()
+	reserved, created := reserve(t, s, scope, key, rec, now)
+	if !created {
+		t.Fatalf("ключ %s уже занят", key)
+	}
+	complete(t, s, scope, key, reserved)
 }
 
 func testComplete(t *testing.T, s idempotency.Store) {
-	reserve(t, s, "u1", "k", pending("A"), t0)
-	want := complete(t, s, "u1", "k")
+	reserved, _ := reserve(t, s, "u1", "k", pending("A"), t0)
+	want := complete(t, s, "u1", "k", reserved)
 	got, created := reserve(t, s, "u1", "k", pending("A"), t0.Add(time.Minute))
 	if created || !got.Done || got.Status != want.Status || string(got.Body) != string(want.Body) || got.Header.Get("Location") != "/v1/chats/1" {
 		t.Fatalf("после Complete: created=%v, запись %+v", created, got)
@@ -103,22 +130,21 @@ func testComplete(t *testing.T, s idempotency.Store) {
 }
 
 func testRelease(t *testing.T, s idempotency.Store) {
-	reserve(t, s, "u1", "k", pending("A"), t0)
-	if err := s.Release(context.Background(), "u1", "k"); err != nil {
+	reserved, _ := reserve(t, s, "u1", "k", pending("A"), t0)
+	if err := s.Release(context.Background(), "u1", "k", reserved.Owner); err != nil {
 		t.Fatal(err)
 	}
 	if _, created := reserve(t, s, "u1", "k", pending("A"), t0); !created {
 		t.Fatal("после Release ключ должен заниматься заново")
 	}
 	// Release незанятого ключа — не ошибка: освобождать нечего.
-	if err := s.Release(context.Background(), "u1", "нет такого"); err != nil {
+	if err := s.Release(context.Background(), "u1", "нет такого", reserved.Owner); err != nil {
 		t.Fatalf("Release незанятого ключа: %v", err)
 	}
 }
 
 func testExpired(t *testing.T, s idempotency.Store) {
-	reserve(t, s, "u1", "k", pending("A"), t0)
-	complete(t, s, "u1", "k")
+	reserveDone(t, s, "u1", "k", pending("A"), t0)
 	expiry := t0.Add(idempotency.TTL)
 	if _, created := reserve(t, s, "u1", "k", pending("B"), expiry.Add(-time.Nanosecond)); created {
 		t.Fatal("за наносекунду до ExpiresAt запись ещё жива")
@@ -162,8 +188,7 @@ func testConcurrentReserve(t *testing.T, s idempotency.Store) {
 
 // Запись хранит срез и карту: правка возвращённой записи не должна менять хранилище.
 func testReturnsCopy(t *testing.T, s idempotency.Store) {
-	reserve(t, s, "u1", "k", pending("A"), t0)
-	complete(t, s, "u1", "k")
+	reserveDone(t, s, "u1", "k", pending("A"), t0)
 	got, _ := reserve(t, s, "u1", "k", pending("A"), t0)
 	got.Body[0] = 'X'
 	got.Header.Set("Location", "/чужой")
@@ -182,12 +207,109 @@ func testCanceledContext(t *testing.T, s idempotency.Store) {
 	if err := s.Complete(ctx, "u1", "k", pending("A")); !errors.Is(err, context.Canceled) {
 		t.Errorf("Complete: ждали context.Canceled, получили %v", err)
 	}
-	if err := s.Release(ctx, "u1", "k"); !errors.Is(err, context.Canceled) {
+	if err := s.Release(ctx, "u1", "k", uuid.New()); !errors.Is(err, context.Canceled) {
 		t.Errorf("Release: ждали context.Canceled, получили %v", err)
 	}
 	// Отменённые вызовы ничего не записали: ключ свободен.
 	if _, created := reserve(t, s, "u1", "k", pending("A"), t0); !created {
 		t.Fatal("отменённый вызов занял ключ")
+	}
+}
+
+// Резервация, ответ на которую так и не сохранили (процесс упал между операцией и
+// Complete), держит ключ ReservationTTL, а не сутки: в момент срока повтор её перехватывает
+// — с новым владельцем и своим отпечатком.
+func testReserveTakesOverStaleInProgress(t *testing.T, s idempotency.Store) {
+	stale, _ := reserve(t, s, "u1", "k", pending("A"), t0)
+	got, created := reserve(t, s, "u1", "k", pending("B"), t0.Add(ReservationTTL))
+	if !created || got.Done || got.Fingerprint != fp("B") {
+		t.Fatalf("зависшая резервация: created=%v, запись %+v", created, got)
+	}
+	if got.Owner == stale.Owner {
+		t.Fatal("перехват не сменил владельца резервации")
+	}
+	// Новый владелец сохраняет ответ как обычно, и повтор видит именно его.
+	complete(t, s, "u1", "k", got)
+	again, created := reserve(t, s, "u1", "k", pending("B"), t0.Add(ReservationTTL+time.Second))
+	if created || !again.Done || again.Fingerprint != fp("B") {
+		t.Fatalf("после перехвата и Complete: created=%v, запись %+v", created, again)
+	}
+}
+
+func testReserveKeepsFreshInProgress(t *testing.T, s idempotency.Store) {
+	first, _ := reserve(t, s, "u1", "k", pending("A"), t0)
+	got, created := reserve(t, s, "u1", "k", pending("A"), t0.Add(ReservationTTL-time.Microsecond))
+	if created || got.Done || got.Owner != first.Owner {
+		t.Fatalf("до срока резервации: created=%v, запись %+v", created, got)
+	}
+}
+
+// Срок резервации касается только записей «в работе»: готовый ответ живёт до ExpiresAt.
+func testReserveKeepsDone(t *testing.T, s idempotency.Store) {
+	reserveDone(t, s, "u1", "k", pending("A"), t0)
+	got, created := reserve(t, s, "u1", "k", pending("A"), t0.Add(ReservationTTL+time.Hour))
+	if created || !got.Done {
+		t.Fatalf("готовый ответ после срока резервации: created=%v, запись %+v", created, got)
+	}
+}
+
+// Гонка за зависшую резервацию: перехватывает ровно один из повторов.
+func testConcurrentTakeOver(t *testing.T, s idempotency.Store) {
+	reserve(t, s, "u1", "k", pending("A"), t0)
+	const n = 20
+	var (
+		wg        sync.WaitGroup
+		won, errs atomic.Int32
+	)
+	start := make(chan struct{})
+	for range n {
+		wg.Go(func() {
+			<-start
+			_, created, err := s.Reserve(context.Background(), "u1", "k", pending("B"), t0.Add(ReservationTTL))
+			switch {
+			case err != nil:
+				errs.Add(1)
+			case created:
+				won.Add(1)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	if won.Load() != 1 || errs.Load() != 0 {
+		t.Fatalf("перехватили %d раз (ждали 1), ошибок %d", won.Load(), errs.Load())
+	}
+}
+
+// Запоздавший прежний владелец (его запрос шёл дольше резервации) освобождает ключ после
+// сбоя — и не должен снять резервацию того, кто её перехватил.
+func testReleaseForeignOwner(t *testing.T, s idempotency.Store) {
+	stale, _ := reserve(t, s, "u1", "k", pending("A"), t0)
+	now := t0.Add(ReservationTTL)
+	current, _ := reserve(t, s, "u1", "k", pending("A"), now)
+	if err := s.Release(context.Background(), "u1", "k", stale.Owner); err != nil {
+		t.Fatalf("Release чужой резервации: %v", err)
+	}
+	got, created := reserve(t, s, "u1", "k", pending("A"), now)
+	if created || got.Owner != current.Owner {
+		t.Fatalf("чужой Release снял резервацию: created=%v, владелец сменился %v", created, got.Owner != current.Owner)
+	}
+}
+
+func testCompleteForeignOwner(t *testing.T, s idempotency.Store) {
+	stale, _ := reserve(t, s, "u1", "k", pending("A"), t0)
+	now := t0.Add(ReservationTTL)
+	current, _ := reserve(t, s, "u1", "k", pending("A"), now)
+	if err := s.Complete(context.Background(), "u1", "k", done(stale)); !errors.Is(err, idempotency.ErrReservationLost) {
+		t.Fatalf("Complete перехваченной резервации: ждали ErrReservationLost, получили %v", err)
+	}
+	got, _ := reserve(t, s, "u1", "k", pending("A"), now)
+	if got.Done || got.Owner != current.Owner {
+		t.Fatalf("чужой Complete перезаписал запись: %+v", got)
+	}
+	// Ключ, которого нет (освобождён или удалён очисткой), — тоже потерянная резервация.
+	if err := s.Complete(context.Background(), "u1", "нет такого", done(stale)); !errors.Is(err, idempotency.ErrReservationLost) {
+		t.Fatalf("Complete незанятого ключа: ждали ErrReservationLost, получили %v", err)
 	}
 }
 
@@ -198,7 +320,8 @@ type SweepStore = interface {
 	idempotency.Sweeper
 }
 
-// RunSweeper прогоняет контракт очистки. Каждая проверка получает своё, пустое хранилище.
+// RunSweeper прогоняет контракт очистки. Каждая проверка получает своё, пустое хранилище;
+// параллельность, как и в Run, решает newStore.
 func RunSweeper(t *testing.T, newStore func(t *testing.T) SweepStore) {
 	t.Helper()
 	tests := []struct {
@@ -212,10 +335,7 @@ func RunSweeper(t *testing.T, newStore func(t *testing.T) SweepStore) {
 		{"отменённый контекст", testSweepCanceled},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tt.fn(t, newStore(t))
-		})
+		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newStore(t)) })
 	}
 }
 
@@ -228,7 +348,8 @@ func sweep(t *testing.T, s idempotency.Sweeper, now time.Time) int {
 	return removed
 }
 
-// alive — запись по ключу ещё есть: Reserve её не занимает, а возвращает.
+// alive — запись по ключу ещё есть: Reserve её не занимает, а возвращает. Проверять так
+// можно только готовые записи или «в работе» до срока резервации — зависшую Reserve перехватит.
 func alive(t *testing.T, s idempotency.Store, key string, now time.Time) bool {
 	t.Helper()
 	_, created := reserve(t, s, "u1", key, pending("probe"), now)
@@ -236,12 +357,11 @@ func alive(t *testing.T, s idempotency.Store, key string, now time.Time) bool {
 }
 
 func testSweepExpiredOnly(t *testing.T, s SweepStore) {
-	reserve(t, s, "u1", "old", pending("A"), t0)
-	complete(t, s, "u1", "old")
+	reserveDone(t, s, "u1", "old", pending("A"), t0)
 	later := t0.Add(time.Hour)
 	fresh := pending("B")
 	fresh.ExpiresAt = later.Add(idempotency.TTL)
-	reserve(t, s, "u1", "fresh", fresh, later)
+	reserveDone(t, s, "u1", "fresh", fresh, later)
 	expiry := t0.Add(idempotency.TTL)
 
 	if n := sweep(t, s, expiry.Add(-time.Nanosecond)); n != 0 {
@@ -290,7 +410,7 @@ func testSweepMany(t *testing.T, s SweepStore) {
 	fresh := pending("B")
 	fresh.ExpiresAt = t0.Add(2 * idempotency.TTL)
 	for i := range live {
-		reserve(t, s, "u1", fmt.Sprintf("live-%d", i), fresh, t0)
+		reserveDone(t, s, "u1", fmt.Sprintf("live-%d", i), fresh, t0)
 	}
 	now := t0.Add(idempotency.TTL)
 	if n := sweep(t, s, now); n != expired {

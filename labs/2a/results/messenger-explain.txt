@@ -1,0 +1,442 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+# из labs/: docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&1'
+
+=== 1. Данные: 100 000 пользователей, 1 000 000 чатов; у «тяжёлого» пользователя 1 000 чатов, у «лёгкого» — 20 ===
+CREATE FUNCTION pg_temp.uid(n bigint) RETURNS uuid
+    LANGUAGE sql IMMUTABLE RETURN format('00000000-0000-7000-8000-%s', lpad(n::text, 12, '0'))::uuid;
+CREATE FUNCTION
+CREATE FUNCTION pg_temp.cid(n bigint) RETURNS uuid
+    LANGUAGE sql IMMUTABLE RETURN format('00000000-0000-7000-9000-%s', lpad(n::text, 12, '0'))::uuid;
+CREATE FUNCTION
+INSERT INTO users.users (id, username, display_name, created_at)
+SELECT pg_temp.uid(n), 'user_' || n, 'Пользователь ' || n, timestamptz '2026-01-01 00:00Z'
+FROM generate_series(1, 100000) AS n;
+INSERT 0 100000
+INSERT INTO chat.chats (id, kind, title, last_seq, version, created_at, last_activity_at)
+SELECT pg_temp.cid(n), 'group', 'чат ' || n, 0, 0, timestamptz '2026-09-01 00:00Z',
+       timestamptz '2026-09-01 00:00Z' + random() * interval '30 days'
+FROM generate_series(1, 1000000) AS n;
+INSERT 0 1000000
+INSERT INTO chat.members (chat_id, user_id)
+SELECT pg_temp.cid(n), pg_temp.uid(3 + n % 99998) FROM generate_series(1, 1000000) AS n
+UNION
+SELECT pg_temp.cid(n), pg_temp.uid(3 + (n::bigint * 7919) % 99998) FROM generate_series(1, 1000000) AS n
+UNION
+SELECT pg_temp.cid(n), pg_temp.uid(1) FROM generate_series(1, 1000) AS n
+UNION
+SELECT pg_temp.cid(n), pg_temp.uid(2) FROM generate_series(1001, 1020) AS n;
+INSERT 0 2001000
+INSERT INTO chat.messages (chat_id, seq, id, author_id, client_message_id, text, sent_at)
+SELECT pg_temp.cid(1), s, uuidv7(), pg_temp.uid(1), gen_random_uuid(), 'сообщение ' || s,
+       timestamptz '2026-09-01 00:00Z' + s * interval '1 minute'
+FROM generate_series(1, 10000) AS s;
+INSERT 0 10000
+UPDATE chat.chats SET last_seq = 10000, version = 10000 WHERE id = pg_temp.cid(1);
+UPDATE 1
+VACUUM ANALYZE users.users, chat.chats, chat.members, chat.messages;
+VACUUM
+PREPARE list_chats_first(uuid, int) AS
+SELECT c.id, c.kind, c.title, c.last_seq, c.version, c.created_at, c.last_activity_at,
+       ARRAY(SELECT m.user_id FROM chat.members m WHERE m.chat_id = c.id ORDER BY m.user_id)
+FROM chat.chats c
+JOIN chat.members me ON me.chat_id = c.id
+WHERE me.user_id = $1
+ORDER BY c.last_activity_at DESC, c.id DESC
+LIMIT $2;
+PREPARE
+PREPARE list_chats_after(uuid, int, timestamptz, uuid) AS
+SELECT c.id, c.kind, c.title, c.last_seq, c.version, c.created_at, c.last_activity_at,
+       ARRAY(SELECT m.user_id FROM chat.members m WHERE m.chat_id = c.id ORDER BY m.user_id)
+FROM chat.chats c
+JOIN chat.members me ON me.chat_id = c.id
+WHERE me.user_id = $1 AND (c.last_activity_at, c.id) < ($3, $4)
+ORDER BY c.last_activity_at DESC, c.id DESC
+LIMIT $2;
+PREPARE
+SELECT c.last_activity_at AS cursor_at, c.id AS cursor_id
+FROM chat.chats c JOIN chat.members me ON me.chat_id = c.id
+WHERE me.user_id = pg_temp.uid(1)
+ORDER BY c.last_activity_at DESC, c.id DESC
+OFFSET 499 LIMIT 1 
+
+=== 2. Первая страница списка чатов (listChatsFirst, limit 51 = 50 + «есть ли дальше») ===
+--- тяжёлый пользователь (1 000 чатов)
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_chats_first(pg_temp.uid(1), 51);
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Limit (actual rows=51.00 loops=1)
+   Buffers: shared hit=5095 read=22 written=22
+   ->  Result (actual rows=51.00 loops=1)
+         Buffers: shared hit=5095 read=22 written=22
+         ->  Sort (actual rows=51.00 loops=1)
+               Sort Key: c.last_activity_at DESC, c.id DESC
+               Sort Method: top-N heapsort  Memory: 36kB
+               Buffers: shared hit=4963
+               ->  Nested Loop (actual rows=1000.00 loops=1)
+                     Buffers: shared hit=4963
+                     ->  Bitmap Heap Scan on members me (actual rows=1000.00 loops=1)
+                           Recheck Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                           Heap Blocks: exact=960
+                           Buffers: shared hit=963
+                           ->  Bitmap Index Scan on members_user_id_idx (actual rows=1000.00 loops=1)
+                                 Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                                 Index Searches: 1
+                                 Buffers: shared hit=3
+                     ->  Index Scan using chats_pkey on chats c (actual rows=1.00 loops=1000)
+                           Index Cond: (id = me.chat_id)
+                           Index Searches: 1000
+                           Buffers: shared hit=4000
+         SubPlan 1
+           ->  Index Only Scan using members_pkey on members m (actual rows=3.00 loops=51)
+                 Index Cond: (chat_id = c.id)
+                 Heap Fetches: 0
+                 Index Searches: 51
+                 Buffers: shared hit=132 read=22 written=22
+ Planning:
+   Buffers: shared hit=57
+ Planning Time: 0.276 ms
+ Execution Time: 2.078 ms
+(32 rows)
+
+--- лёгкий пользователь (20 чатов)
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_chats_first(pg_temp.uid(2), 51);
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Limit (actual rows=20.00 loops=1)
+   Buffers: shared hit=143 read=21 written=21
+   ->  Result (actual rows=20.00 loops=1)
+         Buffers: shared hit=143 read=21 written=21
+         ->  Sort (actual rows=20.00 loops=1)
+               Sort Key: c.last_activity_at DESC, c.id DESC
+               Sort Method: quicksort  Memory: 27kB
+               Buffers: shared hit=83 read=20 written=20
+               ->  Nested Loop (actual rows=20.00 loops=1)
+                     Buffers: shared hit=83 read=20 written=20
+                     ->  Index Scan using members_user_id_idx on members me (actual rows=20.00 loops=1)
+                           Index Cond: (user_id = '00000000-0000-7000-8000-000000000002'::uuid)
+                           Index Searches: 1
+                           Buffers: shared hit=3 read=20 written=20
+                     ->  Index Scan using chats_pkey on chats c (actual rows=1.00 loops=20)
+                           Index Cond: (id = me.chat_id)
+                           Index Searches: 20
+                           Buffers: shared hit=80
+         SubPlan 1
+           ->  Index Only Scan using members_pkey on members m (actual rows=3.00 loops=20)
+                 Index Cond: (chat_id = c.id)
+                 Heap Fetches: 0
+                 Index Searches: 20
+                 Buffers: shared hit=60 read=1 written=1
+ Planning:
+   Buffers: shared hit=32
+ Planning Time: 0.217 ms
+ Execution Time: 0.200 ms
+(28 rows)
+
+
+=== 3. Следующая страница (listChatsAfter): курсор (last_activity_at, id) после 500-го чата тяжёлого ===
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_chats_after(pg_temp.uid(1), 51, '2026-09-16 09:33:54.096254+00', '00000000-0000-7000-9000-000000000314');
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=51.00 loops=1)
+   Buffers: shared hit=5115 read=2 written=2
+   ->  Result (actual rows=51.00 loops=1)
+         Buffers: shared hit=5115 read=2 written=2
+         ->  Sort (actual rows=51.00 loops=1)
+               Sort Key: c.last_activity_at DESC, c.id DESC
+               Sort Method: top-N heapsort  Memory: 36kB
+               Buffers: shared hit=4963
+               ->  Nested Loop (actual rows=500.00 loops=1)
+                     Buffers: shared hit=4963
+                     ->  Bitmap Heap Scan on members me (actual rows=1000.00 loops=1)
+                           Recheck Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                           Heap Blocks: exact=960
+                           Buffers: shared hit=963
+                           ->  Bitmap Index Scan on members_user_id_idx (actual rows=1000.00 loops=1)
+                                 Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                                 Index Searches: 1
+                                 Buffers: shared hit=3
+                     ->  Index Scan using chats_pkey on chats c (actual rows=0.50 loops=1000)
+                           Index Cond: (id = me.chat_id)
+                           Filter: (ROW(last_activity_at, id) < ROW('2026-09-16 09:33:54.096254+00'::timestamp with time zone, '00000000-0000-7000-9000-000000000314'::uuid))
+                           Rows Removed by Filter: 0
+                           Index Searches: 1000
+                           Buffers: shared hit=4000
+         SubPlan 1
+           ->  Index Only Scan using members_pkey on members m (actual rows=3.00 loops=51)
+                 Index Cond: (chat_id = c.id)
+                 Heap Fetches: 0
+                 Index Searches: 51
+                 Buffers: shared hit=152 read=2 written=2
+ Planning:
+   Buffers: shared hit=32
+ Planning Time: 0.172 ms
+ Execution Time: 1.876 ms
+(34 rows)
+
+
+=== 4. Индекс chat.chats (last_activity_at DESC, id DESC), которого в схеме нет: план его не берёт, а сообщения теряют HOT ===
+PREPARE append_message(uuid, bigint, timestamptz, uuid, uuid, uuid, text, timestamptz) AS
+WITH chat AS (
+    UPDATE chat.chats
+    SET last_seq = last_seq + 1, version = version + 1, last_activity_at = $3
+    WHERE id = $1 AND version = $2
+    RETURNING last_seq
+)
+INSERT INTO chat.messages (chat_id, seq, id, author_id, client_message_id, text, sent_at)
+SELECT $1, chat.last_seq, $4, $5, $6, $7, $8 FROM chat
+RETURNING seq;
+PREPARE
+CREATE FUNCTION pg_temp.send_batch(from_version int) RETURNS SETOF text LANGUAGE sql AS $$
+SELECT format('EXECUTE append_message(%L, %s, %L, uuidv7(), %L, gen_random_uuid(), ''сообщение'', %L)',
+           pg_temp.cid(2), v, timestamptz '2026-10-01 00:00Z' + v * interval '1 second', pg_temp.uid(3),
+           timestamptz '2026-10-01 00:00Z' + v * interval '1 second')
+FROM generate_series(from_version, from_version + 199) AS v
+$$;
+CREATE FUNCTION pg_temp.chat_updates() RETURNS TABLE (n_tup_upd bigint, n_tup_hot_upd bigint)
+    LANGUAGE sql RETURN (SELECT ROW(n_tup_upd, n_tup_hot_upd)
+                         FROM pg_stat_user_tables WHERE relid = 'chat.chats'::regclass);
+--- без индекса (схема мессенджера): 200 сообщений
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd AS upd0, n_tup_hot_upd AS hot0 FROM pg_temp.chat_updates() 
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd - 1 AS updates, n_tup_hot_upd - 0 AS hot_updates FROM pg_temp.chat_updates();
+ updates | hot_updates 
+---------+-------------
+     200 |         200
+(1 row)
+
+--- с индексом: план первой страницы и ещё 200 сообщений
+CREATE INDEX chats_last_activity_idx ON chat.chats (last_activity_at DESC, id DESC);
+CREATE INDEX
+ANALYZE chat.chats;
+ANALYZE
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_chats_first(pg_temp.uid(1), 51);
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Limit (actual rows=51.00 loops=1)
+   Buffers: shared hit=5117
+   ->  Result (actual rows=51.00 loops=1)
+         Buffers: shared hit=5117
+         ->  Sort (actual rows=51.00 loops=1)
+               Sort Key: c.last_activity_at DESC, c.id DESC
+               Sort Method: top-N heapsort  Memory: 36kB
+               Buffers: shared hit=4963
+               ->  Nested Loop (actual rows=1000.00 loops=1)
+                     Buffers: shared hit=4963
+                     ->  Bitmap Heap Scan on members me (actual rows=1000.00 loops=1)
+                           Recheck Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                           Heap Blocks: exact=960
+                           Buffers: shared hit=963
+                           ->  Bitmap Index Scan on members_user_id_idx (actual rows=1000.00 loops=1)
+                                 Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                                 Index Searches: 1
+                                 Buffers: shared hit=3
+                     ->  Index Scan using chats_pkey on chats c (actual rows=1.00 loops=1000)
+                           Index Cond: (id = me.chat_id)
+                           Index Searches: 1000
+                           Buffers: shared hit=4000
+         SubPlan 1
+           ->  Index Only Scan using members_pkey on members m (actual rows=3.00 loops=51)
+                 Index Cond: (chat_id = c.id)
+                 Heap Fetches: 0
+                 Index Searches: 51
+                 Buffers: shared hit=154
+ Planning:
+   Buffers: shared hit=64 read=1
+ Planning Time: 0.320 ms
+ Execution Time: 1.866 ms
+(32 rows)
+
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd AS upd0, n_tup_hot_upd AS hot0 FROM pg_temp.chat_updates() 
+SELECT pg_stat_force_next_flush() 
+SELECT n_tup_upd - 201 AS updates, n_tup_hot_upd - 200 AS hot_updates FROM pg_temp.chat_updates();
+ updates | hot_updates 
+---------+-------------
+     200 |           0
+(1 row)
+
+DROP INDEX chat.chats_last_activity_idx;
+DROP INDEX
+
+=== 5. members по (user_id, chat_id) вместо (user_id): chat_id — из индекса, без чтения таблицы (с откатом) ===
+BEGIN;
+BEGIN
+DROP INDEX chat.members_user_id_idx;
+DROP INDEX
+CREATE INDEX members_user_id_chat_id_idx ON chat.members (user_id, chat_id);
+CREATE INDEX
+ANALYZE chat.members;
+ANALYZE
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_chats_first(pg_temp.uid(1), 51);
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=51.00 loops=1)
+   Buffers: shared hit=4156 read=9
+   ->  Result (actual rows=51.00 loops=1)
+         Buffers: shared hit=4156 read=9
+         ->  Sort (actual rows=51.00 loops=1)
+               Sort Key: c.last_activity_at DESC, c.id DESC
+               Sort Method: top-N heapsort  Memory: 36kB
+               Buffers: shared hit=4002 read=9
+               ->  Nested Loop (actual rows=1000.00 loops=1)
+                     Buffers: shared hit=4002 read=9
+                     ->  Index Only Scan Backward using members_user_id_chat_id_idx on members me (actual rows=1000.00 loops=1)
+                           Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                           Heap Fetches: 0
+                           Index Searches: 1
+                           Buffers: shared hit=1 read=9
+                     ->  Index Scan using chats_pkey on chats c (actual rows=1.00 loops=1000)
+                           Index Cond: (id = me.chat_id)
+                           Index Searches: 1000
+                           Buffers: shared hit=4000
+         SubPlan 1
+           ->  Index Only Scan using members_pkey on members m (actual rows=3.00 loops=51)
+                 Index Cond: (chat_id = c.id)
+                 Heap Fetches: 0
+                 Index Searches: 51
+                 Buffers: shared hit=154
+ Planning:
+   Buffers: shared hit=73 read=1
+ Planning Time: 0.351 ms
+ Execution Time: 1.242 ms
+(29 rows)
+
+SELECT relname AS index, pg_size_pretty(pg_relation_size(oid)) AS size
+FROM pg_class WHERE relname IN ('members_user_id_idx', 'members_user_id_chat_id_idx', 'members_pkey');
+            index            |  size  
+-----------------------------+--------
+ members_user_id_chat_id_idx | 95 MB
+ members_pkey                | 122 MB
+(2 rows)
+
+ROLLBACK;
+ROLLBACK
+SELECT relname AS index, pg_size_pretty(pg_relation_size(oid)) AS size
+FROM pg_class WHERE relname IN ('members_user_id_idx', 'members_pkey');
+        index        |  size  
+---------------------+--------
+ members_pkey        | 122 MB
+ members_user_id_idx | 19 MB
+(2 rows)
+
+
+=== 6. Страница истории чата (listMessagesBefore): диапазон первичного ключа (chat_id, seq) ===
+PREPARE list_messages_before(uuid, bigint, int) AS
+SELECT chat_id, seq, id, author_id, client_message_id, text, sent_at FROM chat.messages
+WHERE chat_id = $1 AND seq < $2
+ORDER BY seq DESC
+LIMIT $3;
+PREPARE
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_messages_before(pg_temp.cid(1), 5000, 51);
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Limit (actual rows=51.00 loops=1)
+   Buffers: shared hit=3
+   ->  Index Scan Backward using messages_pkey on messages (actual rows=51.00 loops=1)
+         Index Cond: ((chat_id = '00000000-0000-7000-9000-000000000001'::uuid) AND (seq < '5000'::bigint))
+         Index Searches: 1
+         Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=29
+ Planning Time: 0.110 ms
+ Execution Time: 0.016 ms
+(10 rows)
+
+
+=== 7. OFFSET против keyset: та же страница по номеру позиции ===
+PREPARE list_messages_offset(uuid, int, int) AS
+SELECT chat_id, seq, id, author_id, client_message_id, text, sent_at FROM chat.messages
+WHERE chat_id = $1
+ORDER BY seq DESC
+OFFSET $2 LIMIT $3;
+PREPARE
+SELECT max(seq) AS first_seq, min(seq) AS last_seq
+FROM (SELECT seq FROM chat.messages WHERE chat_id = pg_temp.cid(1) ORDER BY seq DESC OFFSET 5001 LIMIT 51) AS page;
+ first_seq | last_seq 
+-----------+----------
+      4999 |     4949
+(1 row)
+
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_messages_offset(pg_temp.cid(1), 5001, 51);
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Limit (actual rows=51.00 loops=1)
+   Buffers: shared hit=110
+   ->  Index Scan Backward using messages_pkey on messages (actual rows=5052.00 loops=1)
+         Index Cond: (chat_id = '00000000-0000-7000-9000-000000000001'::uuid)
+         Index Searches: 1
+         Buffers: shared hit=110
+ Planning Time: 0.034 ms
+ Execution Time: 0.352 ms
+(8 rows)
+
+--- список чатов тяжёлого пользователя: OFFSET 500 — та же страница, что курсор из раздела 3
+PREPARE list_chats_offset(uuid, int, int) AS
+SELECT c.id, c.kind, c.title, c.last_seq, c.version, c.created_at, c.last_activity_at,
+       ARRAY(SELECT m.user_id FROM chat.members m WHERE m.chat_id = c.id ORDER BY m.user_id)
+FROM chat.chats c
+JOIN chat.members me ON me.chat_id = c.id
+WHERE me.user_id = $1
+ORDER BY c.last_activity_at DESC, c.id DESC
+OFFSET $2 LIMIT $3;
+PREPARE
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+EXECUTE list_chats_offset(pg_temp.uid(1), 500, 51);
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Limit (actual rows=51.00 loops=1)
+   Buffers: shared hit=6617
+   ->  Result (actual rows=551.00 loops=1)
+         Buffers: shared hit=6617
+         ->  Sort (actual rows=551.00 loops=1)
+               Sort Key: c.last_activity_at DESC, c.id DESC
+               Sort Method: quicksort  Memory: 157kB
+               Buffers: shared hit=4963
+               ->  Nested Loop (actual rows=1000.00 loops=1)
+                     Buffers: shared hit=4963
+                     ->  Bitmap Heap Scan on members me (actual rows=1000.00 loops=1)
+                           Recheck Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                           Heap Blocks: exact=960
+                           Buffers: shared hit=963
+                           ->  Bitmap Index Scan on members_user_id_idx (actual rows=1000.00 loops=1)
+                                 Index Cond: (user_id = '00000000-0000-7000-8000-000000000001'::uuid)
+                                 Index Searches: 1
+                                 Buffers: shared hit=3
+                     ->  Index Scan using chats_pkey on chats c (actual rows=1.00 loops=1000)
+                           Index Cond: (id = me.chat_id)
+                           Index Searches: 1000
+                           Buffers: shared hit=4000
+         SubPlan 1
+           ->  Index Only Scan using members_pkey on members m (actual rows=3.00 loops=551)
+                 Index Cond: (chat_id = c.id)
+                 Heap Fetches: 0
+                 Index Searches: 551
+                 Buffers: shared hit=1654
+ Planning:
+   Buffers: shared hit=55
+ Planning Time: 0.206 ms
+ Execution Time: 2.525 ms
+(32 rows)
+
+
+=== 8. Цена ключей chat.messages: таблица и три её индекса на 10 000 сообщений чата 1 и 400 — чата 2 ===
+SELECT c.relname AS relation, pg_relation_size(c.oid) AS bytes, pg_size_pretty(pg_relation_size(c.oid)) AS size
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'chat' AND c.relname IN ('messages', 'messages_pkey', 'messages_id_key', 'messages_client_id_key')
+ORDER BY bytes DESC;
+        relation        |  bytes  |  size   
+------------------------+---------+---------
+ messages               | 1400832 | 1368 kB
+ messages_client_id_key |  966656 | 944 kB
+ messages_pkey          |  442368 | 432 kB
+ messages_id_key        |  344064 | 336 kB
+(4 rows)
+

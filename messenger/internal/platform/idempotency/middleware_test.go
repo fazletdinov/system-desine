@@ -2,7 +2,9 @@ package idempotency_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,7 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
+
+	"github.com/google/uuid"
 
 	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/idempotency"
@@ -64,6 +69,18 @@ func serve(t *testing.T, store idempotency.Store, h http.Handler) server {
 		mux.ServeHTTP(w, r)
 	})
 	return server{h: withUser, clock: clk, logs: &logs}
+}
+
+// reservationTTL — срок резервации хранилищ теста: как в сборке при сроке запроса 10 с.
+const reservationTTL = 10*time.Second + idempotency.ReservationGrace
+
+func newMemStore(t *testing.T) *memory.Store {
+	t.Helper()
+	s, err := memory.NewStore(reservationTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
 
 func request(t *testing.T, key, body string) *http.Request {
@@ -119,7 +136,7 @@ func problemCode(t *testing.T, rec *httptest.ResponseRecorder) (string, string) 
 
 func TestIdempotencyReplaysResponse(t *testing.T) {
 	var calls atomic.Int32
-	s := serve(t, memory.NewStore(), created(&calls))
+	s := serve(t, newMemStore(t), created(&calls))
 
 	first := s.do(request(t, "key-1", `{"kind":"group"}`))
 	again := s.do(request(t, "key-1", `{"kind":"group"}`))
@@ -187,7 +204,7 @@ func TestIdempotencyPassThrough(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
-			s := serve(t, memory.NewStore(), created(&calls))
+			s := serve(t, newMemStore(t), created(&calls))
 
 			s.do(tt.first(t))
 			rec := s.do(tt.second(t))
@@ -201,7 +218,7 @@ func TestIdempotencyPassThrough(t *testing.T) {
 
 func TestIdempotencyKeyReusedWithOtherBody(t *testing.T) {
 	var calls atomic.Int32
-	s := serve(t, memory.NewStore(), created(&calls))
+	s := serve(t, newMemStore(t), created(&calls))
 
 	s.do(request(t, "key-1", `{"title":"A"}`))
 	rec := s.do(request(t, "key-1", `{"title":"B"}`))
@@ -243,7 +260,7 @@ func TestIdempotencyReleasesAfter5xx(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
-			s := serve(t, memory.NewStore(), statusSeq(&calls, tt.first))
+			s := serve(t, newMemStore(t), statusSeq(&calls, tt.first))
 
 			s.do(request(t, "key-1", `{}`))
 			rec := s.do(request(t, "key-1", `{}`))
@@ -258,7 +275,7 @@ func TestIdempotencyReleasesAfter5xx(t *testing.T) {
 // 4xx — окончательный ответ: повтор того же запроса получит ту же ошибку, а не второй шанс.
 func TestIdempotencyKeeps4xx(t *testing.T) {
 	var calls atomic.Int32
-	s := serve(t, memory.NewStore(), statusSeq(&calls, http.StatusBadRequest))
+	s := serve(t, newMemStore(t), statusSeq(&calls, http.StatusBadRequest))
 
 	first := s.do(request(t, "key-1", `{}`))
 	again := s.do(request(t, "key-1", `{}`))
@@ -273,7 +290,7 @@ func TestIdempotencyKeeps4xx(t *testing.T) {
 
 func TestIdempotencyExpiredKeyRunsAgain(t *testing.T) {
 	var calls atomic.Int32
-	s := serve(t, memory.NewStore(), created(&calls))
+	s := serve(t, newMemStore(t), created(&calls))
 
 	s.do(request(t, "key-1", `{}`))
 	s.clock.Advance(idempotency.TTL)
@@ -294,7 +311,7 @@ func TestIdempotencyRejectsBadKey(t *testing.T) {
 	for name, key := range tests {
 		t.Run(name, func(t *testing.T) {
 			var calls atomic.Int32
-			s := serve(t, memory.NewStore(), created(&calls))
+			s := serve(t, newMemStore(t), created(&calls))
 
 			rec := s.do(request(t, key, `{}`))
 
@@ -309,7 +326,7 @@ func TestIdempotencyRejectsBadKey(t *testing.T) {
 	}
 	t.Run("ровно 255 символов — годится", func(t *testing.T) {
 		var calls atomic.Int32
-		s := serve(t, memory.NewStore(), created(&calls))
+		s := serve(t, newMemStore(t), created(&calls))
 		if rec := s.do(request(t, strings.Repeat("k", idempotency.KeyMaxLen), `{}`)); rec.Code != http.StatusCreated {
 			t.Fatalf("ответ %d, ждали 201", rec.Code)
 		}
@@ -318,7 +335,7 @@ func TestIdempotencyRejectsBadKey(t *testing.T) {
 
 func TestIdempotencyBodyTooLarge(t *testing.T) {
 	var calls atomic.Int32
-	s := serve(t, memory.NewStore(), created(&calls))
+	s := serve(t, newMemStore(t), created(&calls))
 
 	rec := s.do(request(t, "key-1", `{"t":"`+strings.Repeat("a", httpjson.MaxBodyBytes)+`"}`))
 
@@ -334,7 +351,7 @@ func TestIdempotencyBodyTooLarge(t *testing.T) {
 // Без личности ключ не к чему привязать: это ошибка сборки конвейера, а не клиента.
 func TestIdempotencyWithoutPrincipal(t *testing.T) {
 	var calls atomic.Int32
-	s := serve(t, memory.NewStore(), created(&calls))
+	s := serve(t, newMemStore(t), created(&calls))
 	r := request(t, "key-1", `{}`)
 	r.Header.Set(userHdr, noUser)
 
@@ -361,7 +378,7 @@ func waitFor(t *testing.T, cond func() bool) {
 }
 
 func TestIdempotencyConcurrent(t *testing.T) {
-	store := memory.NewStore()
+	store := newMemStore(t)
 	var calls atomic.Int32
 	release := make(chan struct{})
 	s := serve(t, store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -403,7 +420,7 @@ func TestIdempotencyConcurrent(t *testing.T) {
 }
 
 func TestIdempotencyInProgressCode(t *testing.T) {
-	store := memory.NewStore()
+	store := newMemStore(t)
 	entered, release := make(chan struct{}), make(chan struct{})
 	s := serve(t, store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		close(entered)
@@ -425,7 +442,7 @@ func TestIdempotencyInProgressCode(t *testing.T) {
 }
 
 func TestIdempotencyReleasesAfterPanic(t *testing.T) {
-	store := memory.NewStore()
+	store := newMemStore(t)
 	var calls atomic.Int32
 	s := serve(t, store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if calls.Add(1) == 1 {
@@ -456,7 +473,7 @@ func TestIdempotencyContentTypeInFingerprint(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusCreated)
 	})
-	s := serve(t, memory.NewStore(), h)
+	s := serve(t, newMemStore(t), h)
 
 	wrong := request(t, "key-1", `{}`)
 	wrong.Header.Set("Content-Type", "text/plain")
@@ -477,7 +494,7 @@ func TestIdempotencyContentTypeInFingerprint(t *testing.T) {
 // запрос другим.
 func TestIdempotencyContentTypeSpellingIsSameRequest(t *testing.T) {
 	var calls atomic.Int32
-	s := serve(t, memory.NewStore(), created(&calls))
+	s := serve(t, newMemStore(t), created(&calls))
 
 	s.do(request(t, "key-1", `{}`))
 	again := request(t, "key-1", `{}`)
@@ -486,5 +503,102 @@ func TestIdempotencyContentTypeSpellingIsSameRequest(t *testing.T) {
 
 	if calls.Load() != 1 || rec.Header().Get(idempotency.ReplayedHeader) != "true" {
 		t.Fatalf("ответ %d, вызовов %d — ждали повтор и 1 вызов", rec.Code, calls.Load())
+	}
+}
+
+// lostComplete — хранилище, в котором ответ не сохраняется: так выглядит процесс, упавший
+// между операцией и Complete, — ключ остаётся «в работе».
+type lostComplete struct{ *memory.Store }
+
+func (lostComplete) Complete(context.Context, string, string, idempotency.Record) error {
+	return errors.New("соединение с базой потеряно")
+}
+
+// Бэклог «409 на 24 ч»: ответ не сохранился, но ключ не заперт до конца суток. До срока
+// резервации повтор получает 409 «ещё выполняется», после — выполняется заново.
+func TestIdempotencyStaleReservationIsTakenOver(t *testing.T) {
+	var calls atomic.Int32
+	s := serve(t, lostComplete{newMemStore(t)}, created(&calls))
+	if rec := s.do(request(t, "key-1", `{}`)); rec.Code != http.StatusCreated {
+		t.Fatalf("первый запрос: %d", rec.Code)
+	}
+
+	s.clock.Advance(reservationTTL - time.Second)
+	early := s.do(request(t, "key-1", `{}`))
+	s.clock.Advance(time.Second)
+	late := s.do(request(t, "key-1", `{}`))
+
+	if code, _ := problemCode(t, early); early.Code != http.StatusConflict || code != string(problem.CodeIdempotencyInProgress) {
+		t.Fatalf("до срока резервации: %d %s, ждали 409 idempotency_in_progress", early.Code, code)
+	}
+	if late.Code != http.StatusCreated || late.Header().Get(idempotency.ReplayedHeader) != "" || calls.Load() != 2 {
+		t.Fatalf("после срока резервации: %d, вызовов %d — ждали новое выполнение (201, 2 вызова)", late.Code, calls.Load())
+	}
+}
+
+// Ответ, который не удалось сохранить потому, что резервацию уже перехватили, — не сбой
+// хранилища: в журнале предупреждение, а не ошибка.
+func TestIdempotencyLostReservationIsWarning(t *testing.T) {
+	store := newMemStore(t)
+	var s server
+	s = serve(t, store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Запрос идёт дольше резервации, и повтор перехватывает её посреди обработки.
+		s.clock.Advance(reservationTTL)
+		if _, created, err := store.Reserve(context.Background(), "alice", "key-1", idempotency.Record{ExpiresAt: s.clock.Now().Add(idempotency.TTL)}, s.clock.Now()); err != nil || !created {
+			t.Errorf("перехват: created=%v, %v", created, err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+
+	s.do(request(t, "key-1", `{}`))
+
+	if out := s.logs.String(); !strings.Contains(out, "перехватил повтор") || !strings.Contains(out, `"level":"WARN"`) || strings.Contains(out, `"level":"ERROR"`) {
+		t.Fatalf("журнал: ждали WARN о перехвате без ERROR:\n%s", out)
+	}
+}
+
+// hungStore — хранилище, которое зависло после Reserve: Complete и Release ждут, пока
+// не истечёт их ctx, и возвращают его ошибку. Так выглядит база, переставшая отвечать.
+type hungStore struct{ *memory.Store }
+
+func (hungStore) Complete(ctx context.Context, _, _ string, _ idempotency.Record) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (hungStore) Release(ctx context.Context, _, _ string, _ uuid.UUID) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// Complete и Release не наследуют отмену запроса, но срок у них есть: зависшее хранилище
+// не держит горутину запроса вечно. Без срока synctest сообщил бы о вечной блокировке.
+func TestIdempotencyStoreCallsAreBounded(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		logMsg string
+	}{
+		{"сохранение ответа", http.StatusCreated, "не удалось сохранить ответ"},
+		{"освобождение ключа после 5xx", http.StatusInternalServerError, "не удалось освободить ключ"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := serve(t, hungStore{newMemStore(t)}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(tt.status)
+				}))
+				start := time.Now()
+
+				s.do(request(t, "key-1", `{}`))
+
+				if waited := time.Since(start); waited != idempotency.ReservationGrace {
+					t.Errorf("хранилище держало запрос %v, ждали срок %v", waited, idempotency.ReservationGrace)
+				}
+				if out := s.logs.String(); !strings.Contains(out, tt.logMsg) || !strings.Contains(out, context.DeadlineExceeded.Error()) {
+					t.Errorf("журнал: ждали «%s» с истёкшим сроком:\n%s", tt.logMsg, out)
+				}
+			})
+		})
 	}
 }

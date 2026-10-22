@@ -3,7 +3,7 @@
 # region build
 # Стадия сборки идёт на платформе сборщика ($BUILDPLATFORM): Go сам кросс-компилирует
 # под TARGETOS/TARGETARCH, и для arm64-образа не нужна эмуляция QEMU (урок 1.19).
-FROM --platform=$BUILDPLATFORM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
 WORKDIR /src
 # Сначала только манифесты модулей: слой зависимостей пересобирается, когда меняются
 # они, а не при каждой правке кода.

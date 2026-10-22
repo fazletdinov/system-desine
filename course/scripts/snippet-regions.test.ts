@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasRegion, scanSnippetRefs } from './snippet-regions'
+import { extractRegion, hasRegion, scanSnippetRefs, vitepressFindsRegion } from './snippet-regions'
 
 const refs = (md: string) => scanSnippetRefs(md).refs
 
@@ -50,4 +50,38 @@ describe('hasRegion', () => {
     ['<!-- #region a -->\nx\n<!-- #endregion a -->\n'],
     ['//#region a\nx\n//#endregion a\n'],
   ])('находит регион в формате VitePress: %j', (src) => expect(hasRegion(src, 'a')).toBe(true))
+})
+
+describe('extractRegion', () => {
+  const sql = [
+    '-- шапка',
+    '-- #region flat',
+    'CREATE TABLE t (',
+    '    id bigint',
+    ');',
+    '-- #endregion flat',
+    '',
+    '    -- #region outer',
+    '    SELECT 1;',
+    '    -- #region inner',
+    '    SELECT 2;',
+    '    -- #endregion inner',
+    '    -- #endregion outer',
+  ].join('\n')
+
+  it('находит SQL-регион «--» и не включает метки', () =>
+    expect(extractRegion(sql, 'flat')).toBe('CREATE TABLE t (\n    id bigint\n);'))
+  it('вырезает вложенные метки того же формата и снимает общий отступ, как VitePress', () =>
+    expect(extractRegion(sql, 'outer')).toBe('SELECT 1;\nSELECT 2;'))
+  it('метки другого формата внутри региона оставляет — VitePress тоже их не трогает', () =>
+    expect(extractRegion('-- #region a\n// #region b\nx\n-- #endregion a\n', 'a')).toBe('// #region b\nx'))
+  it('нет региона — null', () => expect(extractRegion(sql, 'missing')).toBeNull())
+  it('нет закрывающей метки — null', () => expect(extractRegion('-- #region a\nx\n', 'a')).toBeNull())
+  it('CRLF не попадает в текст', () => expect(extractRegion('-- #region a\r\nx\r\n-- #endregion a\r\n', 'a')).toBe('x'))
+})
+
+describe('vitepressFindsRegion', () => {
+  it('Go-регион VitePress находит сам', () => expect(vitepressFindsRegion('// #region a\nx\n// #endregion a\n', 'a')).toBe(true))
+  it('SQL-регион «--» VitePress не находит — его вырезаем мы', () =>
+    expect(vitepressFindsRegion('-- #region a\nx\n-- #endregion a\n', 'a')).toBe(false))
 })

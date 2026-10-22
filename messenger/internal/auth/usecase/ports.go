@@ -72,3 +72,15 @@ type TokenIssuer interface {
 }
 
 // #endregion ports
+
+// #region transactor
+// Transactor задаёт границу транзакции: регистрация пишет профиль (контекст user) и
+// учётные данные (auth) — либо оба, либо ничего (ADR-0015). Use case не знает, чем
+// транзакция обеспечена: в Postgres — platform/pgtx, в тестах — фейк.
+type Transactor interface {
+	// WithinTx выполняет fn в одной транзакции: ошибка fn — откат. fn не запускает
+	// горутины с переданным ctx: транзакция pgx не для одновременного использования.
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+// #endregion transactor

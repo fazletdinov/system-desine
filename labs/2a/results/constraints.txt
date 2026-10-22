@@ -1,0 +1,291 @@
+# машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic, Docker 29.9.1, PostgreSQL 18.6 (данные на tmpfs), go1.27.2
+# из labs/: docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/constraints.sql 2>&1'
+
+=== 1. Схема: имена ограничений заданы явно — по ним адаптер узнаёт, что нарушено ===
+CREATE TABLE users (
+    id       bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    username text NOT NULL
+        CONSTRAINT users_username_key UNIQUE
+        CONSTRAINT users_username_check
+            CHECK (username ~ '^[a-z0-9_]+$' AND length(username) BETWEEN 3 AND 32)
+);
+CREATE TABLE
+CREATE TABLE chats (
+    id    bigint PRIMARY KEY,
+    title text   NOT NULL
+);
+CREATE TABLE
+CREATE TABLE members (
+    chat_id bigint NOT NULL
+        CONSTRAINT members_chat_id_fkey REFERENCES chats (id) ON DELETE CASCADE,
+    user_id bigint NOT NULL
+        CONSTRAINT members_user_id_fkey REFERENCES users (id),
+    PRIMARY KEY (chat_id, user_id)
+);
+CREATE TABLE
+INSERT INTO users (username) VALUES ('alice'), ('bob');
+INSERT 0 2
+INSERT INTO chats VALUES (1, 'Бэкенд'), (2, 'Обед');
+INSERT 0 2
+INSERT INTO members VALUES (1, 1), (1, 2), (2, 1);
+INSERT 0 3
+
+=== 2. NOT NULL — 23502 not_null_violation ===
+INSERT INTO users (username) VALUES (NULL);
+psql:/lab/constraints.sql:47: ERROR:  null value in column "username" of relation "users" violates not-null constraint
+DETAIL:  Failing row contains (3, null).
+SQLSTATE 23502
+
+=== 3. CHECK — 23514 check_violation ===
+INSERT INTO users (username) VALUES ('Alice!');
+psql:/lab/constraints.sql:54: ERROR:  new row for relation "users" violates check constraint "users_username_check"
+DETAIL:  Failing row contains (4, Alice!).
+SQLSTATE 23514
+
+=== 4. UNIQUE — 23505 unique_violation; VERBOSITY verbose показывает поля ошибки ===
+INSERT INTO users (username) VALUES ('alice');
+psql:/lab/constraints.sql:64: ERROR:  23505: duplicate key value violates unique constraint "users_username_key"
+DETAIL:  Key (username)=(alice) already exists.
+SCHEMA NAME:  constraints
+TABLE NAME:  users
+CONSTRAINT NAME:  users_username_key
+LOCATION:  _bt_check_unique, nbtinsert.c:666
+SQLSTATE 23505
+
+=== 5. FOREIGN KEY — 23503 foreign_key_violation, с обеих сторон связи ===
+INSERT INTO members VALUES (99, 1);
+psql:/lab/constraints.sql:73: ERROR:  insert or update on table "members" violates foreign key constraint "members_chat_id_fkey"
+DETAIL:  Key (chat_id)=(99) is not present in table "chats".
+SQLSTATE 23503
+DELETE FROM users WHERE username = 'bob';
+psql:/lab/constraints.sql:79: ERROR:  update or delete on table "users" violates foreign key constraint "members_user_id_fkey" on table "members"
+DETAIL:  Key (id)=(2) is still referenced from table "members".
+SQLSTATE 23503
+
+=== 6. ON DELETE CASCADE: удаление чата уносит его участников ===
+SELECT chat_id, count(*) AS members FROM members GROUP BY chat_id ORDER BY chat_id;
+ chat_id | members 
+---------+---------
+       1 |       2
+       2 |       1
+(2 rows)
+
+DELETE FROM chats WHERE id = 1;
+DELETE 1
+SELECT chat_id, count(*) AS members FROM members GROUP BY chat_id ORDER BY chat_id;
+ chat_id | members 
+---------+---------
+       2 |       1
+(1 row)
+
+
+=== 7. Частичный UNIQUE по выражению: адрес уникален без учёта регистра среди неудалённых ===
+CREATE TABLE emails (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    address    text NOT NULL,
+    deleted_at timestamptz
+);
+CREATE TABLE
+CREATE UNIQUE INDEX emails_address_active_key ON emails (lower(address)) WHERE deleted_at IS NULL;
+CREATE INDEX
+INSERT INTO emails (address) VALUES ('Alice@Example.com');
+INSERT 0 1
+INSERT INTO emails (address) VALUES ('alice@example.com');
+psql:/lab/constraints.sql:104: ERROR:  duplicate key value violates unique constraint "emails_address_active_key"
+DETAIL:  Key (lower(address))=(alice@example.com) already exists.
+SQLSTATE 23505
+UPDATE emails SET deleted_at = now() WHERE address = 'Alice@Example.com';
+UPDATE 1
+INSERT INTO emails (address) VALUES ('alice@example.com');
+INSERT 0 1
+SELECT id, address, deleted_at IS NOT NULL AS deleted FROM emails ORDER BY id;
+ id |      address      | deleted 
+----+-------------------+---------
+  1 | Alice@Example.com | t
+  3 | alice@example.com | f
+(2 rows)
+
+
+=== 8. EXCLUDE — 23P01 exclusion_violation: периоды тишины одного участника не пересекаются ===
+CREATE TABLE mutes (
+    chat_id bigint    NOT NULL,
+    user_id bigint    NOT NULL,
+    during  tstzrange NOT NULL,
+    CONSTRAINT mutes_no_overlap EXCLUDE USING gist (
+        chat_id WITH =,
+        user_id WITH =,
+        during  WITH &&
+    )
+);
+CREATE TABLE
+INSERT INTO mutes VALUES (2, 1, '[2026-10-20 10:00+00, 2026-10-20 12:00+00)');
+INSERT 0 1
+INSERT INTO mutes VALUES (2, 2, '[2026-10-20 11:00+00, 2026-10-20 13:00+00)');
+INSERT 0 1
+INSERT INTO mutes VALUES (2, 1, '[2026-10-20 12:00+00, 2026-10-20 14:00+00)');
+INSERT 0 1
+INSERT INTO mutes VALUES (2, 1, '[2026-10-20 11:00+00, 2026-10-20 11:30+00)');
+psql:/lab/constraints.sql:133: ERROR:  conflicting key value violates exclusion constraint "mutes_no_overlap"
+DETAIL:  Key (chat_id, user_id, during)=(2, 1, ["2026-10-20 11:00:00+00","2026-10-20 11:30:00+00")) conflicts with existing key (chat_id, user_id, during)=(2, 1, ["2026-10-20 10:00:00+00","2026-10-20 12:00:00+00")).
+SQLSTATE 23P01
+
+=== 9. Отложенный FOREIGN KEY: проверка в COMMIT, а не в каждой команде ===
+ALTER TABLE members ALTER CONSTRAINT members_chat_id_fkey DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE
+BEGIN;
+BEGIN
+INSERT INTO members VALUES (3, 1);
+psql:/lab/constraints.sql:144: ERROR:  insert or update on table "members" violates foreign key constraint "members_chat_id_fkey"
+DETAIL:  Key (chat_id)=(3) is not present in table "chats".
+SQLSTATE 23503
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+SET CONSTRAINTS members_chat_id_fkey DEFERRED;
+SET CONSTRAINTS
+INSERT INTO members VALUES (3, 1);
+INSERT 0 1
+INSERT INTO chats VALUES (3, 'Релиз');
+INSERT 0 1
+COMMIT;
+COMMIT
+BEGIN;
+BEGIN
+SET CONSTRAINTS members_chat_id_fkey DEFERRED;
+SET CONSTRAINTS
+INSERT INTO members VALUES (4, 1);
+INSERT 0 1
+COMMIT;
+psql:/lab/constraints.sql:161: ERROR:  insert or update on table "members" violates foreign key constraint "members_chat_id_fkey"
+DETAIL:  Key (chat_id)=(4) is not present in table "chats".
+SQLSTATE 23503
+SELECT chat_id, user_id FROM members ORDER BY chat_id, user_id;
+ chat_id | user_id 
+---------+---------
+       2 |       1
+       3 |       1
+(2 rows)
+
+
+=== 10. Отложенный UNIQUE: сдвиг позиций одной командой ===
+CREATE TABLE pins (
+    chat_id  bigint NOT NULL,
+    position int    NOT NULL,
+    note     text   NOT NULL,
+    CONSTRAINT pins_position_key UNIQUE (chat_id, position)
+);
+CREATE TABLE
+INSERT INTO pins VALUES (2, 1, 'правила'), (2, 2, 'расписание');
+INSERT 0 2
+UPDATE pins SET position = position + 1 WHERE chat_id = 2;
+psql:/lab/constraints.sql:179: ERROR:  duplicate key value violates unique constraint "pins_position_key"
+DETAIL:  Key (chat_id, "position")=(2, 2) already exists.
+SQLSTATE 23505
+ALTER TABLE pins DROP CONSTRAINT pins_position_key;
+ALTER TABLE
+ALTER TABLE pins ADD CONSTRAINT pins_position_key
+    UNIQUE (chat_id, position) DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE
+UPDATE pins SET position = position + 1 WHERE chat_id = 2;
+UPDATE 2
+INSERT INTO pins VALUES (2, 1, 'объявление');
+INSERT 0 1
+SELECT position, note FROM pins WHERE chat_id = 2 ORDER BY position;
+ position |    note    
+----------+------------
+        1 | объявление
+        2 | правила
+        3 | расписание
+(3 rows)
+
+
+=== 11. CHECK и NOT NULL отложить нельзя — 0A000 feature_not_supported ===
+ALTER TABLE users ADD CONSTRAINT users_username_short CHECK (length(username) <= 16) DEFERRABLE;
+psql:/lab/constraints.sql:196: ERROR:  CHECK constraints cannot be marked DEFERRABLE
+LINE 1: ...ers_username_short CHECK (length(username) <= 16) DEFERRABLE...
+                                                             ^
+SQLSTATE 0A000
+ALTER TABLE chats ADD CONSTRAINT chats_title_not_null NOT NULL title DEFERRABLE;
+psql:/lab/constraints.sql:200: ERROR:  NOT NULL constraints cannot be marked DEFERRABLE
+LINE 1: ...DD CONSTRAINT chats_title_not_null NOT NULL title DEFERRABLE...
+                                                             ^
+SQLSTATE 0A000
+
+=== 12. Ошибка ограничения обрывает транзакцию — 25P02 in_failed_sql_transaction ===
+BEGIN;
+BEGIN
+INSERT INTO users (username) VALUES ('alice');
+psql:/lab/constraints.sql:208: ERROR:  duplicate key value violates unique constraint "users_username_key"
+DETAIL:  Key (username)=(alice) already exists.
+SQLSTATE 23505
+SELECT username FROM users WHERE username = 'alice';
+psql:/lab/constraints.sql:213: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+SQLSTATE 25P02
+ROLLBACK;
+ROLLBACK
+SELECT username FROM users WHERE username = 'alice';
+ username 
+----------
+ alice
+(1 row)
+
+
+=== 13. Внешний ключ без индекса на ссылающемся столбце: удаление родителя ищет детей ===
+CREATE TABLE big_chats (id bigint PRIMARY KEY);
+CREATE TABLE big_messages (
+    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    chat_id bigint NOT NULL CONSTRAINT big_messages_chat_id_fkey REFERENCES big_chats (id)
+);
+INSERT INTO big_chats SELECT g FROM generate_series(1, 1001) AS g;
+INSERT INTO big_messages (chat_id) SELECT 1 + g % 1000 FROM generate_series(1, 1000000) AS g;
+VACUUM ANALYZE big_chats, big_messages;
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Delete on big_chats (actual time=0.012..0.013 rows=0.00 loops=1)
+   ->  Index Scan using big_chats_pkey on big_chats (actual time=0.004..0.005 rows=1.00 loops=1)
+         Index Cond: (id = 1001)
+         Index Searches: 1
+ Planning Time: 0.065 ms
+ Trigger for constraint big_messages_chat_id_fkey: time=22.441 calls=1
+ Execution Time: 22.473 ms
+(7 rows)
+
+CREATE INDEX big_messages_chat_id_idx ON big_messages (chat_id);
+CREATE INDEX
+INSERT INTO big_chats VALUES (1001);
+INSERT 0 1
+EXPLAIN (ANALYZE, COSTS OFF, BUFFERS OFF) DELETE FROM big_chats WHERE id = 1001;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Delete on big_chats (actual time=0.011..0.011 rows=0.00 loops=1)
+   ->  Index Scan using big_chats_pkey on big_chats (actual time=0.005..0.005 rows=1.00 loops=1)
+         Index Cond: (id = 1001)
+         Index Searches: 1
+ Planning Time: 0.032 ms
+ Trigger for constraint big_messages_chat_id_fkey: time=0.160 calls=1
+ Execution Time: 0.178 ms
+(7 rows)
+
+
+=== 14. Отложенное ограничение не годится в арбитры ON CONFLICT — 55000 ===
+INSERT INTO pins VALUES (2, 1, 'дубль')
+    ON CONFLICT (chat_id, position) DO UPDATE SET note = EXCLUDED.note;
+psql:/lab/constraints.sql:251: ERROR:  ON CONFLICT does not support deferrable unique constraints/exclusion constraints as arbiters
+SQLSTATE 55000
+
+=== 15. WITHOUT OVERLAPS (PostgreSQL 18): то же исключающее ограничение короче — 23P01 ===
+CREATE TABLE mutes_wo (
+    chat_id bigint    NOT NULL,
+    user_id bigint    NOT NULL,
+    during  tstzrange NOT NULL,
+    CONSTRAINT mutes_wo_key UNIQUE (chat_id, user_id, during WITHOUT OVERLAPS)
+);
+CREATE TABLE
+INSERT INTO mutes_wo VALUES (2, 1, '[2026-10-20 10:00+00, 2026-10-20 12:00+00)');
+INSERT 0 1
+INSERT INTO mutes_wo VALUES (2, 1, '[2026-10-20 11:00+00, 2026-10-20 11:30+00)');
+psql:/lab/constraints.sql:265: ERROR:  conflicting key value violates exclusion constraint "mutes_wo_key"
+DETAIL:  Key (chat_id, user_id, during)=(2, 1, ["2026-10-20 11:00:00+00","2026-10-20 11:30:00+00")) conflicts with existing key (chat_id, user_id, during)=(2, 1, ["2026-10-20 10:00:00+00","2026-10-20 12:00:00+00")).
+SQLSTATE 23P01

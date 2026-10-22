@@ -1,6 +1,6 @@
 // Package storetest — контрактные тесты хранилища чатов: одна батарея проверок
-// для любой реализации портов. Сейчас её проходит memory.Store, в модуле 2a —
-// Postgres-адаптер. Если обе реализации проходят контракт, use case'ам всё равно,
+// для любой реализации портов. Её проходят memory.Store и Postgres-адаптер
+// (chat/adapters/postgres). Раз обе реализации проходят контракт, use case'ам всё равно,
 // с какой из них работать.
 package storetest
 
@@ -23,6 +23,7 @@ type Store interface {
 	usecase.ChatFinder
 	usecase.DirectChatFinder
 	usecase.MessageAppender
+	usecase.MessageByClientIDFinder
 	usecase.MessageLister
 	usecase.ChatLister
 }
@@ -31,7 +32,9 @@ var t0 = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
 
 // #region run
 // Run прогоняет контракт против хранилища, которое создаёт newStore. Каждая проверка
-// получает своё, пустое хранилище: параллельные проверки не делят состояние.
+// получает своё, пустое хранилище. Идти ли проверкам параллельно, решает newStore
+// (t.Parallel): независимые хранилища в памяти — да, а Postgres-адаптер делит одну
+// базу тестового пакета, которую каждая проверка восстанавливает из снимка, — нет.
 func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
 	tests := []struct {
@@ -48,16 +51,16 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 		{"чаты с одним временем — порядок по id", testListChatsTieBreak},
 		{"limit < 1 у списка чатов", testListChatsLimit},
 		{"одновременная запись", testConcurrentAppend},
+		{"две записи с одной версией", testAppendSameVersion},
+		{"одно время активности на границе страницы", testListChatsCursorTies},
 		{"повтор client_message_id", testDuplicateClientMessageID},
 		{"одновременные повторы client_message_id", testConcurrentDuplicateClientMessageID},
+		{"поиск по client_message_id", testFindMessageByClientID},
 		{"отменённый контекст", testCanceledContext},
 		{"найденный чат — копия", testFindReturnsCopy},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tt.fn(t, newStore(t))
-		})
+		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newStore(t)) })
 	}
 }
 
@@ -72,9 +75,35 @@ func id[T any](t *testing.T, parse func(string) (T, error), prefix string, n int
 	return v
 }
 
+// appendRounds — забеги testConcurrentAppend: у каждого свой чат и своя пара участников.
+const appendRounds = 20
+
+// batteryUsers — сколько пользователей нужно батарее: user(1)…user(batteryUsers).
+const batteryUsers = 2 * appendRounds
+
+// UserIDs — участники чатов батареи. Хранилище, где участник ссылается на таблицу
+// пользователей (в Postgres — внешний ключ chat.members → users.users), заводит их в
+// newStore до проверки.
+func UserIDs() []string {
+	ids := make([]string, batteryUsers)
+	for n := range ids {
+		ids[n] = userID(n + 1)
+	}
+	return ids
+}
+
+func userID(n int) string { return fmt.Sprintf("00000000-0000-7000-8000-%012d", n) }
+
 func user(t *testing.T, n int) domain.UserID {
 	t.Helper()
-	return id(t, domain.ParseUserID, "8000", n)
+	if n < 1 || n > batteryUsers {
+		t.Fatalf("пользователь %d вне UserIDs (1…%d): хранилище с внешним ключом его не знает", n, batteryUsers)
+	}
+	u, err := domain.ParseUserID(userID(n))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }
 
 // newDirect — личный чат номер n между пользователями a и b.
@@ -368,8 +397,7 @@ func testListChatsLimit(t *testing.T, s Store) {
 // Окно гонки «прочитал версию — записал» узкое, и один забег его может не задеть.
 // Поэтому забегов несколько, каждый — в своём чате.
 func testConcurrentAppend(t *testing.T, s Store) {
-	const rounds = 20
-	for r := range rounds {
+	for r := range appendRounds {
 		c := newDirect(t, r+1, 2*r+1, 2*r+2)
 		create(t, s, c)
 		raceAppend(t, s, c, r)
@@ -438,6 +466,87 @@ func raceAppend(t *testing.T, s Store, c *domain.Chat, round int) {
 	}
 }
 
+// Две записи с одной и той же прочитанной версией, одновременно: проходит ровно одна,
+// вторая получает ErrConcurrentUpdate, и в истории одно сообщение с seq 1. В отличие
+// от testConcurrentAppend здесь нет перечитывания: обе стороны гарантированно держат
+// одну версию, и исход не зависит от того, кто успел прочитать чат раньше.
+func testAppendSameVersion(t *testing.T, s Store) {
+	c := newDirect(t, 1, 1, 2)
+	create(t, s, c)
+	const writers = 2
+	chats := make([]*domain.Chat, writers)
+	msgs := make([]domain.Message, writers)
+	for w := range writers {
+		chats[w] = find(t, s, c.ID())
+		msgs[w] = post(t, chats[w], w+1) // t.Fatal — только здесь, не в горутинах
+	}
+	errs := make([]error, writers)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for w := range writers {
+		wg.Go(func() {
+			<-start
+			errs[w] = s.AppendMessage(context.Background(), chats[w], msgs[w], 0)
+		})
+	}
+	close(start)
+	wg.Wait()
+	var ok, conflicts int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, domain.ErrConcurrentUpdate):
+			conflicts++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if ok != 1 || conflicts != 1 {
+		t.Fatalf("успешных %d, конфликтов %d — ждали 1 и 1", ok, conflicts)
+	}
+	if got := seqs(t, s, c.ID()); fmt.Sprint(got) != "[1]" {
+		t.Fatalf("в истории seq %v, ждали [1]", got)
+	}
+	if got := find(t, s, c.ID()); got.Version() != 1 || got.LastSeq() != 1 {
+		t.Fatalf("после гонки версия %d, lastSeq %d — ждали 1 и 1", got.Version(), got.LastSeq())
+	}
+}
+
+// Равное время активности даёт не только создание: три чата получили сообщения в один
+// момент, а четвёртый — без сообщений, старше. Граница первой страницы проходит внутри
+// группы равных времён, и курсор (время, id) обязан продолжить ровно со следующего чата.
+func testListChatsCursorTies(t *testing.T, s Store) {
+	chats := []*domain.Chat{newDirect(t, 1, 1, 2), newDirect(t, 2, 1, 3), newDirect(t, 3, 1, 4), newDirect(t, 4, 1, 5)}
+	for _, c := range chats {
+		create(t, s, c)
+	}
+	at := t0.Add(time.Minute)
+	for i, c := range chats[:3] {
+		postAt(t, s, c.ID(), i+1, at)
+	}
+	want := []domain.ChatID{chats[2].ID(), chats[1].ID(), chats[0].ID(), chats[3].ID()}
+	var got []domain.ChatID
+	var after *usecase.ChatPosition
+	for range len(want) {
+		page, err := s.ListChatsByMember(context.Background(), user(t, 1), after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, c := range page {
+			got = append(got, c.ID())
+		}
+		last := page[len(page)-1]
+		after = &usecase.ChatPosition{LastActivityAt: last.LastActivityAt(), ID: last.ID()}
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("по страницам %v, ждали %v — без потерь и повторов на границе", got, want)
+	}
+}
+
 // appendOnce сохраняет сообщение в свежепрочитанный чат одной попыткой.
 func appendOnce(t *testing.T, s Store, chatID domain.ChatID, msg func(*domain.Chat) domain.Message) error {
 	t.Helper()
@@ -446,8 +555,9 @@ func appendOnce(t *testing.T, s Store, chatID domain.ChatID, msg func(*domain.Ch
 	return s.AppendMessage(context.Background(), cur, msg(cur), v)
 }
 
-// Последовательный повтор: тот же (чат, автор, client_message_id) — дубль с сохранённым
-// сообщением; тот же client_message_id у другого автора или в другом чате — не дубль.
+// Последовательный повтор: тот же (чат, автор, client_message_id) — дубль, и сохранённое
+// сообщение находится по ключу; тот же client_message_id у другого автора или в другом
+// чате — не дубль.
 func testDuplicateClientMessageID(t *testing.T, s Store) {
 	c, other := newDirect(t, 1, 1, 2), newDirect(t, 2, 1, 3)
 	create(t, s, c)
@@ -461,12 +571,17 @@ func testDuplicateClientMessageID(t *testing.T, s Store) {
 	}
 	// Повтор: новый id сообщения (так его выдал бы use case на новый запрос), тот же ключ.
 	err := appendOnce(t, s, c.ID(), func(cur *domain.Chat) domain.Message { return postAs(t, cur, 2, 1, user(t, 1)) })
-	var dup *domain.DuplicateMessageError
-	if !errors.As(err, &dup) || !errors.Is(err, domain.ErrDuplicateMessage) {
-		t.Fatalf("повтор: ждали DuplicateMessageError, получили %v", err)
+	// Сам дубль хранилище прикладывать не обязано: в Postgres транзакция после нарушения
+	// уникальности оборвана, и use case читает сохранённое через FindMessageByClientID.
+	if !errors.Is(err, domain.ErrDuplicateMessage) {
+		t.Fatalf("повтор: ждали ErrDuplicateMessage, получили %v", err)
 	}
-	if dup.Existing.ID() != first.ID() || dup.Existing.Seq() != 1 || dup.Existing.ClientID() != clientID(t, 1) {
-		t.Fatalf("повтор вернул не то сообщение: id %s, seq %d", dup.Existing.ID(), dup.Existing.Seq())
+	saved, err := s.FindMessageByClientID(context.Background(), c.ID(), user(t, 1), clientID(t, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.ID() != first.ID() || saved.Seq() != 1 || saved.Text() != first.Text() || !saved.SentAt().Equal(first.SentAt()) {
+		t.Fatalf("по ключу найдено не то сообщение: id %s, seq %d", saved.ID(), saved.Seq())
 	}
 	if got := find(t, s, c.ID()); got.Version() != 1 || got.LastSeq() != 1 {
 		t.Fatalf("повтор изменил чат: версия %d, lastSeq %d", got.Version(), got.LastSeq())
@@ -484,7 +599,7 @@ func testDuplicateClientMessageID(t *testing.T, s Store) {
 }
 
 // Несколько одновременных повторов одного сообщения: сохранено ровно одно, остальные
-// получают DuplicateMessageError с ним же.
+// получают ErrDuplicateMessage, и по ключу находится именно сохранённое.
 func testConcurrentDuplicateClientMessageID(t *testing.T, s Store) {
 	const n = 50
 	c := newDirect(t, 1, 1, 2)
@@ -504,7 +619,7 @@ func testConcurrentDuplicateClientMessageID(t *testing.T, s Store) {
 		wg      sync.WaitGroup
 		mu      sync.Mutex
 		saved   int
-		dupIDs  = map[domain.MessageID]int{}
+		dups    int
 		failure error
 	)
 	start := make(chan struct{})
@@ -528,13 +643,12 @@ func testConcurrentDuplicateClientMessageID(t *testing.T, s Store) {
 					return
 				}
 				err = s.AppendMessage(context.Background(), cur, m, v)
-				var dup *domain.DuplicateMessageError
 				mu.Lock()
 				switch {
 				case err == nil:
 					saved++
-				case errors.As(err, &dup):
-					dupIDs[dup.Existing.ID()]++
+				case errors.Is(err, domain.ErrDuplicateMessage):
+					dups++
 				case errors.Is(err, domain.ErrConcurrentUpdate):
 					mu.Unlock()
 					continue // проиграли гонку версий — пробуем снова, как use case
@@ -551,16 +665,49 @@ func testConcurrentDuplicateClientMessageID(t *testing.T, s Store) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if saved != 1 || len(dupIDs) > 1 {
-		t.Fatalf("сохранено %d, разных «существующих» %d — ждали 1 и не больше 1", saved, len(dupIDs))
+	if saved != 1 || dups != n-1 {
+		t.Fatalf("сохранено %d, дублей %d — ждали 1 и %d", saved, dups, n-1)
 	}
 	msgs, err := s.ListMessagesBefore(context.Background(), c.ID(), 0, domain.ListLimitMax)
 	if err != nil || len(msgs) != 1 {
 		t.Fatalf("в истории %d сообщений, ждали 1: %v", len(msgs), err)
 	}
-	for existing := range dupIDs {
-		if existing != msgs[0].ID() {
-			t.Fatalf("повторы получили %s, а сохранено %s", existing, msgs[0].ID())
+	found, err := s.FindMessageByClientID(context.Background(), c.ID(), c.Members()[0], key)
+	if err != nil || found.ID() != msgs[0].ID() {
+		t.Fatalf("по ключу найдено %s (%v), а сохранено %s", found.ID(), err, msgs[0].ID())
+	}
+}
+
+// Ключ сообщения — вся тройка (чат, автор, client_message_id): совпадение двух из трёх
+// не находит чужое сообщение.
+func testFindMessageByClientID(t *testing.T, s Store) {
+	c, other := newDirect(t, 1, 1, 2), newDirect(t, 2, 1, 3)
+	create(t, s, c)
+	create(t, s, other)
+	var saved domain.Message
+	if err := appendOnce(t, s, c.ID(), func(cur *domain.Chat) domain.Message {
+		saved = postAs(t, cur, 1, 1, user(t, 1))
+		return saved
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.FindMessageByClientID(context.Background(), c.ID(), user(t, 1), clientID(t, 1))
+	if err != nil || got.ID() != saved.ID() || got.Seq() != saved.Seq() || got.AuthorID() != saved.AuthorID() || got.ChatID() != c.ID() {
+		t.Fatalf("нашли %+v (%v), ждали сообщение %s", got, err, saved.ID())
+	}
+	misses := []struct {
+		name   string
+		chat   domain.ChatID
+		author domain.UserID
+		client domain.ClientMessageID
+	}{
+		{"другой автор", c.ID(), user(t, 2), clientID(t, 1)},
+		{"другой чат", other.ID(), user(t, 1), clientID(t, 1)},
+		{"другой ключ", c.ID(), user(t, 1), clientID(t, 2)},
+	}
+	for _, m := range misses {
+		if _, err := s.FindMessageByClientID(context.Background(), m.chat, m.author, m.client); !errors.Is(err, usecase.ErrMessageNotFound) {
+			t.Fatalf("%s: ждали ErrMessageNotFound, получили %v", m.name, err)
 		}
 	}
 }
@@ -596,6 +743,10 @@ func testCanceledContext(t *testing.T, s Store) {
 		{"FindChat", func(ctx context.Context) error { _, err := s.FindChat(ctx, c.ID()); return err }},
 		{"FindDirectChat", func(ctx context.Context) error { _, err := s.FindDirectChat(ctx, a, b); return err }},
 		{"AppendMessage", func(ctx context.Context) error { return s.AppendMessage(ctx, c, msg, 0) }},
+		{"FindMessageByClientID", func(ctx context.Context) error {
+			_, err := s.FindMessageByClientID(ctx, c.ID(), a, msg.ClientID())
+			return err
+		}},
 		// limit 0: проверка контекста должна идти раньше проверки лимита.
 		{"ListMessagesBefore", func(ctx context.Context) error { _, err := s.ListMessagesBefore(ctx, c.ID(), 0, 0); return err }},
 		{"ListChatsByMember", func(ctx context.Context) error { _, err := s.ListChatsByMember(ctx, a, nil, 0); return err }},

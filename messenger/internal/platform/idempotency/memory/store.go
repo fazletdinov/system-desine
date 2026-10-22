@@ -1,30 +1,49 @@
 // Package memory — хранилище ключей идемпотентности в памяти процесса. Просроченные
 // записи удаляет фоновая очистка (Sweep, урок 1.5.6); до неё просроченную запись
 // только перезаписывал Reserve, а ключ, к которому не возвращались, жил вечно.
-// В модуле 2a хранилищем станет Postgres.
+// Сервер с модуля 2a хранит ключи в Postgres (idempotency/postgres); это хранилище —
+// эталон контракта storetest и фейк для тестов middleware.
 package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"messenger/internal/platform/idempotency"
 )
 
 type entryKey struct{ scope, key string }
 
-// #region store
-type Store struct {
-	mu      sync.Mutex // защищает records
-	records map[entryKey]idempotency.Record
+// entry — запись и срок её резервации: срок — деталь хранилища, наружу не отдаётся.
+type entry struct {
+	rec           idempotency.Record
+	reservedUntil time.Time
 }
 
-func NewStore() *Store { return &Store{records: make(map[entryKey]idempotency.Record)} }
+// #region store
+type Store struct {
+	reservationTTL time.Duration
+	mu             sync.Mutex // защищает records
+	records        map[entryKey]entry
+}
+
+// NewStore — reservationTTL: сколько держится резервация «в работе», после неё повтор
+// перехватывает ключ (idempotency.Store).
+func NewStore(reservationTTL time.Duration) (*Store, error) {
+	if reservationTTL <= 0 {
+		return nil, errors.New("idempotency memory: срок резервации должен быть больше нуля")
+	}
+	return &Store{reservationTTL: reservationTTL, records: make(map[entryKey]entry)}, nil
+}
 
 // Reserve — проверка «есть ли запись» и запись «в работе» под одним замком: между ними
-// никто не вклинится, и из двух одновременных запросов ключ займёт ровно один.
+// никто не вклинится, и из двух одновременных запросов ключ займёт ровно один. Так же,
+// под замком, из двух перехватчиков зависшей резервации её получает один.
 func (s *Store) Reserve(ctx context.Context, scope, key string, rec idempotency.Record, now time.Time) (idempotency.Record, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return idempotency.Record{}, false, fmt.Errorf("idempotency memory: %w", err)
@@ -32,11 +51,18 @@ func (s *Store) Reserve(ctx context.Context, scope, key string, rec idempotency.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := entryKey{scope, key}
-	if old, ok := s.records[k]; ok && now.Before(old.ExpiresAt) {
-		return clone(old), false, nil
+	if old, ok := s.records[k]; ok && !old.free(now) {
+		return clone(old.rec), false, nil
 	}
-	s.records[k] = clone(rec)
+	rec.Owner = uuid.New()
+	s.records[k] = entry{rec: clone(rec), reservedUntil: now.Add(s.reservationTTL)}
 	return clone(rec), true, nil
+}
+
+// free — ключ можно занять: запись просрочена или это зависшая резервация. Границы
+// включительны, как у Sweep: в момент срока запись уже не держит ключ.
+func (e entry) free(now time.Time) bool {
+	return !now.Before(e.rec.ExpiresAt) || (!e.rec.Done && !now.Before(e.reservedUntil))
 }
 
 // #endregion store
@@ -47,17 +73,25 @@ func (s *Store) Complete(ctx context.Context, scope, key string, rec idempotency
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.records[entryKey{scope, key}] = clone(rec)
+	k := entryKey{scope, key}
+	old, ok := s.records[k]
+	if !ok || old.rec.Owner != rec.Owner {
+		return idempotency.ErrReservationLost
+	}
+	s.records[k] = entry{rec: clone(rec), reservedUntil: old.reservedUntil}
 	return nil
 }
 
-func (s *Store) Release(ctx context.Context, scope, key string) error {
+func (s *Store) Release(ctx context.Context, scope, key string, owner uuid.UUID) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("idempotency memory: %w", err)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.records, entryKey{scope, key})
+	k := entryKey{scope, key}
+	if old, ok := s.records[k]; ok && old.rec.Owner == owner {
+		delete(s.records, k)
+	}
 	return nil
 }
 
@@ -92,8 +126,8 @@ func (s *Store) deleteExpired(now time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
-	for k, rec := range s.records {
-		if now.Before(rec.ExpiresAt) {
+	for k, e := range s.records {
+		if now.Before(e.rec.ExpiresAt) {
 			continue
 		}
 		// Удалять во время range можно: спецификация Go это разрешает.

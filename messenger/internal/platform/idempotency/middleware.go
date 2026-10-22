@@ -10,6 +10,8 @@ import (
 	"mime"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"messenger/internal/platform/httpjson"
 	"messenger/internal/platform/principal"
 	"messenger/internal/platform/problem"
@@ -21,9 +23,12 @@ import (
 // обычная обработка. Маршрут — шаблон ServeMux ("POST /v1/chats"): middleware подключается
 // после маршрутизатора (через сгенерированный обработчик), где r.Pattern уже заполнен.
 //
-// Ограничение: запись ключа и бизнес-операция — разные операции. Упади процесс между
-// ними — повтор выполнится заново. Атомарно станет в 2a, когда запись ключа переедет
-// в транзакцию операции (ADR-0005).
+// Ограничение: запись ключа и бизнес-операция — разные транзакции. Middleware стоит на
+// границе HTTP и не знает транзакции use case'а: он занимает ключ до обработчика и
+// сохраняет ответ (Complete) после него. Упади процесс между операцией и Complete —
+// резервация зависнет, после срока резервации повтор её перехватит и выполнит операцию
+// заново. Атомарность дала бы только запись ключа в той же транзакции, что и операция
+// (внутри use case'а, «атомарные фазы» Brandur Leach), — этого здесь нет (ADR-0005).
 func Middleware(store Store, clock Clock, log *slog.Logger, routes ...string) func(http.Handler) http.Handler {
 	guarded := make(map[string]bool, len(routes))
 	for _, r := range routes {
@@ -98,14 +103,24 @@ func (g guard) serve(w http.ResponseWriter, r *http.Request, next http.Handler, 
 func notOurs(error) (problem.Problem, bool) { return problem.Problem{}, false }
 
 // #region run
+// storeTimeout — срок на Complete и Release после обработчика. Отмену запроса они не
+// наследуют (см. run), но и без срока их оставлять нельзя: зависшая база держала бы
+// горутину запроса и соединение пула бесконечно, а остановка сервера ждала бы их дольше
+// своего бюджета, до SIGKILL. Срок — тот же запас ReservationGrace, ради которого
+// резервация живёт дольше запроса: позже сохранять ответ бессмысленно — повтор уже может
+// перехватить ключ. При сроках по умолчанию 5 с укладываются в бюджет остановки
+// (terminationGrace 30 с); проверка конфигурации в app.go этот срок не учитывает.
+const storeTimeout = ReservationGrace
+
 // run выполняет запрос впервые и запоминает ответ. После обработчика клиент мог уйти —
 // с хранилищем говорим вне его отмены, иначе ключ навсегда остался бы «в работе».
+// Срок на эти вызовы — свой, storeTimeout.
 func (g guard) run(w http.ResponseWriter, r *http.Request, next http.Handler, scope, key string, rec Record) {
-	ctx := context.WithoutCancel(r.Context())
+	base := context.WithoutCancel(r.Context())
 	cw := &captureWriter{ResponseWriter: w}
 	defer func() {
 		if v := recover(); v != nil {
-			g.release(ctx, scope, key)
+			g.release(base, scope, key, rec.Owner)
 			panic(v) // ответит Recover снаружи
 		}
 	}()
@@ -113,7 +128,7 @@ func (g guard) run(w http.ResponseWriter, r *http.Request, next http.Handler, sc
 	// 5xx и «ничего не записано» (клиент ушёл) — запрос не удался: освобождаем ключ,
 	// чтобы повтор прошёл заново. 2xx и 4xx — окончательный ответ, его и повторяем.
 	if cw.status == 0 || cw.status >= http.StatusInternalServerError {
-		g.release(ctx, scope, key)
+		g.release(base, scope, key, rec.Owner)
 		return
 	}
 	rec.Done, rec.Status, rec.Body = true, cw.status, cw.body.Bytes()
@@ -123,7 +138,14 @@ func (g guard) run(w http.ResponseWriter, r *http.Request, next http.Handler, sc
 			rec.Header.Set(h, v)
 		}
 	}
-	if err := g.store.Complete(ctx, scope, key, rec); err != nil {
+	ctx, cancel := context.WithTimeout(base, storeTimeout)
+	defer cancel()
+	err := g.store.Complete(ctx, scope, key, rec)
+	switch {
+	case errors.Is(err, ErrReservationLost):
+		// Не сбой хранилища: запрос шёл дольше резервации, и повтор её уже перехватил.
+		g.log.Warn("idempotency: ответ не сохранён — резервацию перехватил повтор", "key", key)
+	case err != nil:
 		g.log.Error("idempotency: не удалось сохранить ответ", "key", key, "err", err)
 	}
 }
@@ -154,8 +176,11 @@ func (g guard) replay(w http.ResponseWriter, r *http.Request, rec Record, fp [sh
 
 // #endregion replay
 
-func (g guard) release(ctx context.Context, scope, key string) {
-	if err := g.store.Release(ctx, scope, key); err != nil {
+// release освобождает ключ со сроком storeTimeout поверх base — ctx без отмены запроса.
+func (g guard) release(base context.Context, scope, key string, owner uuid.UUID) {
+	ctx, cancel := context.WithTimeout(base, storeTimeout)
+	defer cancel()
+	if err := g.store.Release(ctx, scope, key, owner); err != nil {
 		g.log.Error("idempotency: не удалось освободить ключ", "key", key, "err", err)
 	}
 }
