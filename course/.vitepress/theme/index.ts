@@ -11,6 +11,7 @@ import N from '../../components/N.vue'
 import Deep from '../../components/Deep.vue'
 import MermaidDiagram from '../../components/MermaidDiagram.vue'
 import LessonKicker from '../../components/LessonKicker.vue'
+import Run from '../../components/Run.vue'
 import '../../components/parts.css'
 import '../../viz/palette.css'
 import './custom.css'
@@ -27,5 +28,6 @@ export default {
     app.component('N', N)
     app.component('Deep', Deep)
     app.component('MermaidDiagram', MermaidDiagram)
+    app.component('Run', Run)
   },
 } satisfies Theme

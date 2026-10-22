@@ -217,6 +217,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run check:go
       - run: npm run check:refs
+      # Блоки «Запустить самому»: у каждого прогона урока есть команда, её каталог, пакеты и файлы существуют.
+      - run: npm run check:run
       # check:base сам собирает сайт под подпутём /check-base/ (как на Pages) и ищет ссылки мимо базы.
       - run: npm run check:base
 
