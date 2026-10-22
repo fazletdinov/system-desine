@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { loadGlossaryFile } from '../../glossary/load'
+import { captionSegments, captionText, type Caption } from '../core/caption'
 import { stepTermIds } from '../core/explain'
 import type { InnerEntry, LeafEntry } from './btree-model'
 import { BT_SCENARIOS, btreeScenario, type BtFrame, type BtScenarioId } from './btree'
@@ -57,6 +58,7 @@ describe('вставка и сплит', () => {
     const m = steps[i]!.model
     expect(m.nodes.b9).toBeDefined()
     expect((m.nodes.b6!.entries as InnerEntry[]).some((e) => e.sep === 50)).toBe(false)
+    expect((steps[i + 1]!.model.nodes.b6!.entries as InnerEntry[]).filter((e) => e.sep === 50 && e.child === 'b9')).toHaveLength(1)
   })
   it('в кадре шага 1 пять листьев, снимки соседних шагов не делят объекты', () => {
     expect(leaves(steps[0]!)).toHaveLength(5)
@@ -90,4 +92,47 @@ describe('каждый шаг', () => {
       expect(new Set(ids).size).toBe(ids.length)
     }
   })
+
+  it('разметка терминов не просачивается в текст', () => {
+    for (const id of IDS)
+      for (const s of btreeScenario(id)) {
+        const texts = [s.state.title, s.state.learn, ...Object.values(s.state.notes).map(captionText), ...stepCaptions(s).map(captionText)]
+        for (const t of texts) expect(t).not.toMatch(/\[\[|\]\]/)
+      }
+  })
+
+  // Читатель открывает вкладки независимо: первое упоминание каждого термина в сценарии должно быть подсказкой.
+  const KEYWORDS: [id: string, re: RegExp][] = [
+    ['tid', /\bTID\b/],
+    ['heap-table', /\b[Hh]eap(?! (Scan|Fetches))/],
+    ['db-page', /(?<!мета)страниц/i],
+    ['seq-scan', /Seq Scan/],
+    ['bitmap-scan', /Bitmap/],
+    ['b-tree', /B-tree|B-дерев/],
+    ['query-planner', /планировщик/i],
+    ['index-only-scan', /Index Only Scan/],
+    ['index', /индексн\p{L}* запис/iu],
+    ['metapage', /метастраниц/i],
+    ['posting-list', /posting list/i],
+    ['visibility-map', /карт\p{L}* видимости|visibility map/iu],
+    ['vacuum', /VACUUM/],
+    ['mvcc', /MVCC/],
+    ['fillfactor', /fillfactor/i],
+    ['free-space-map', /FSM|карт\p{L}* свободного места/iu],
+    ['b-tree-page-split', /сплит/i],
+  ]
+  it.each(IDS)('%s: первое упоминание каждого термина — подсказка', (id) => {
+    const segs = btreeScenario(id).flatMap((s) => stepCaptions(s).flatMap((c) => [...captionSegments(c)]))
+    const misses = KEYWORDS.flatMap(([termId, re]) => {
+      const first = segs.find((seg) => re.test(seg.text))
+      return first && first.termId !== termId ? [`${termId}: «${first.text.slice(0, 90)}»`] : []
+    })
+    expect(misses).toEqual([])
+  })
 })
+
+// Подписи шага в порядке показа, без общей подписи: в ней терминов нет намеренно.
+function stepCaptions(s: ReturnType<typeof btreeScenario>[number]): Caption[] {
+  const { card, quiz } = s
+  return [...(card ? [card.what, card.uses, card.reads, card.why] : []), ...(quiz ? [quiz.question, quiz.answer] : [])]
+}

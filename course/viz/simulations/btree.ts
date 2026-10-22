@@ -6,16 +6,20 @@ import type { Step } from '../core/types'
 import {
   buildModel,
   cloneModel,
+  BUILD_FILL,
   heapInsert,
   isLeaf,
+  LEAF_CAPACITY,
   leafInsert,
   parentOf,
   pickChild,
   rowAt,
   splitLeaf,
   type BtModel,
+  type BtNode,
   type InnerEntry,
   type InnerNode,
+  type LeafEntry,
   type LeafNode,
   type Tid,
 } from './btree-model'
@@ -123,7 +127,7 @@ SET enable_indexscan = off;
 SET enable_bitmapscan = off;
 SELECT chat_id FROM chat.members
 WHERE user_id = 42;`,
-    note: 'Настройки enable_* не запрещают план, а делают его очень дорогим в оценке — для экспериментов, не для продакшена.',
+    note: 'Настройки enable_* не запрещают план: планировщик выберет его, только если других путей нет (в EXPLAIN узел помечен Disabled: true; до PG 18 это делалось огромной добавкой к стоимости) — для экспериментов, не для продакшена.',
   },
   {
     id: 'ins',
@@ -156,6 +160,12 @@ interface StepInfo {
 type Edit = (w: Work, m: BtModel) => void
 
 const MARKER = /\[\[([a-z0-9-]+)\|([^\]]+)\]\]/g
+// Разметка, не распознанная как термин (опечатка в id, нет «|»), — ошибка автора, а не текст.
+function stripTerms(src: string): string {
+  const plain = src.replace(MARKER, '$2')
+  if (plain.includes('[[') || plain.includes(']]')) throw new Error(`btree: битая разметка термина в «${src}»`)
+  return plain
+}
 const FIRST_SENTENCE = /^.*?[.!?](?=\s|$)/s
 
 const need = <T>(v: T | undefined, what: string): T => {
@@ -173,6 +183,12 @@ const plural = (n: number, one: string, few: string, many: string): string => {
   const d = n % 10
   if (n % 100 >= 11 && n % 100 <= 14) return many
   return d === 1 ? one : d >= 2 && d <= 4 ? few : many
+}
+
+function leafById(m: BtModel, id: string): LeafNode {
+  const n = need(m.nodes[id], `узла ${id}`)
+  if (!isLeaf(n)) throw new Error(`btree: узел ${id} не лист`)
+  return n
 }
 
 function emptyWork(): Work {
@@ -214,9 +230,8 @@ class Tracer {
     return this.w
   }
 
-  // «[[id|текст]]» — термин глоссария; в подписи (plain) разметка снимается.
-  private caption(src: string, plain = false): Caption {
-    if (plain) return src.replace(MARKER, '$2')
+  // «[[id|текст]]» — термин глоссария; повторное вхождение в сценарии остаётся обычным текстом.
+  private caption(src: string): Caption {
     const out: CaptionSegment[] = []
     let from = 0
     for (const m of src.matchAll(MARKER)) {
@@ -230,6 +245,7 @@ class Tracer {
       from = m.index + whole.length
     }
     if (from < src.length) out.push({ text: src.slice(from) })
+    stripTerms(src)
     return out.length === 1 && out[0]?.termId === undefined ? need(out[0], 'сегмента').text : out
   }
 
@@ -242,7 +258,7 @@ class Tracer {
     edit?.(w, this.m)
     this.w = w
 
-    const plainWhat = this.caption(info.did, true) as string
+    const plainWhat = stripTerms(info.did)
     const lead = FIRST_SENTENCE.exec(plainWhat)?.[0] ?? plainWhat
     const state: BtFrame = {
       ...structuredClone(w),
@@ -272,9 +288,12 @@ class Tracer {
     if (note !== undefined) w.notes[id] = note
   }
 
-  hint(w: Work, kind: 'node' | 'page', id: string | number): void {
-    if (kind === 'node') w.nodes[String(id)] ??= 'hint'
-    else w.pages[Number(id)] ??= 'hint'
+  hintNode(w: Work, id: string): void {
+    w.nodes[id] ??= 'hint'
+  }
+
+  hintPage(w: Work, no: number): void {
+    w.pages[no] ??= 'hint'
   }
 
   fetchRow(w: Work, t: Tid, key: number): void {
@@ -295,6 +314,23 @@ class Tracer {
     w.counters.heapPages.push(page)
     w.pages[page] = 'cur'
   }
+}
+
+// Тексты шага спуска: сравнение ключа с разделителями, список веток и объяснение «почему».
+function descentTexts(m: BtModel, inner: InnerNode, i: number, key: number, child: BtNode) {
+  const next = inner.entries[i + 1]
+  const rightSep = sepS(entryAt(inner, 1))
+  const cmp =
+    i === 0
+      ? `${key} < ${rightSep}`
+      : `${key} ≥ ${sepS(entryAt(inner, i))}` + (next ? ` и ${key} < ${sepS(next)}` : '')
+  const list = inner.entries.map((e) => `${sepS(e)} → ${need(m.nodes[e.child], 'потомка').block}`).join(' · ')
+  const range = `${i ? 'от ' + sepS(entryAt(inner, i)) : 'меньше ' + rightSep}${i && next ? ' до ' + sepS(next) + ' (не включая)' : ''}`
+  const why =
+    inner.id === m.root
+      ? `Одна [[db-page|страница]] отсекает часть дерева: всё, что ≥ ${rightSep}, лежит в правой ветке, всё, что меньше, — в левой. В настоящем индексе в корне сотни разделителей, и один шаг отбрасывает почти всё дерево.`
+      : `Внутренняя страница делит свою часть ключей ещё мельче. Разделитель — наименьший ключ поддерева справа от него, поэтому в блоке ${child.block} лежат ключи ${range}.`
+  return { cmp, list: `записи «разделитель → блок»: ${list}`, why }
 }
 
 // Метастраница → корень → внутренние страницы; возвращает лист, в котором должен лежать ключ.
@@ -322,29 +358,19 @@ function descend(t: Tracer, key: number, opts: { meta?: boolean; lastWhyExtra?: 
     const i = pickChild(inner, key)
     const child = need(m.nodes[entryAt(inner, i).child], 'потомка')
     const isRoot = inner.id === m.root
-    const next = inner.entries[i + 1]
-    const cmp =
-      i === 0
-        ? `${key} < ${sepS(entryAt(inner, 1))}`
-        : `${key} ≥ ${sepS(entryAt(inner, i))}` + (next ? ` и ${key} < ${sepS(next)}` : '')
-    const list = inner.entries.map((e) => `${sepS(e)} → ${need(m.nodes[e.child], 'потомка').block}`).join(' · ')
-    const rightSep = sepS(entryAt(inner, 1))
-    const range = `${i ? 'от ' + sepS(entryAt(inner, i)) : 'меньше ' + rightSep}${i && next ? ' до ' + sepS(next) + ' (не включая)' : ''}`
-    const why = isRoot
-      ? `Одна страница отсекает часть дерева: всё, что ≥ ${rightSep}, лежит в правой ветке, всё, что меньше, — в левой. В настоящем индексе в корне сотни разделителей, и один шаг отбрасывает почти всё дерево.`
-      : `Внутренняя страница делит свою часть ключей ещё мельче. Разделитель — наименьший ключ поддерева справа от него, поэтому в блоке ${child.block} лежат ключи ${range}.`
+    const tx = descentTexts(m, inner, i, key, child)
     t.step(
       {
         title: `${isRoot ? 'Корень' : 'Внутренняя страница'} (блок ${inner.block}): куда спускаться`,
         learn: isRoot ? 'Корень B-tree: выбор ветки' : 'Внутренняя страница: сужение поиска',
-        did: `Читает страницу и ищет последний разделитель, который ≤ ${key}: ${cmp} → идёт в блок ${child.block}.`,
+        did: `Читает [[db-page|страницу]] и ищет последний разделитель, который ≤ ${key}: ${tx.cmp} → идёт в блок ${child.block}.`,
         uses: isRoot ? 'корень индекса' : 'внутренняя страница индекса',
-        reads: `записи «разделитель → блок»: ${list}`,
-        why: isLeaf(child) && opts.lastWhyExtra ? why + opts.lastWhyExtra : why,
+        reads: tx.list,
+        why: isLeaf(child) && opts.lastWhyExtra ? tx.why + opts.lastWhyExtra : tx.why,
         focus: 'node:' + inner.id,
       },
       (w) => {
-        t.indexPage(w, inner.id, `${cmp} → блок ${child.block}`)
+        t.indexPage(w, inner.id, `${tx.cmp} → блок ${child.block}`)
         w.edges.push([inner.id, child.id])
       },
     )
@@ -368,14 +394,18 @@ function planStep(t: Tracer, estimate: string, why: string, quiz?: StepInfo['qui
 
 // --- сценарии ----------------------------------------------------------------
 
+function leafKeyEntry(m: BtModel, key: number): LeafEntry | undefined {
+  return Object.values(m.nodes)
+    .filter(isLeaf)
+    .flatMap((n) => n.entries)
+    .find((e) => e.key === key)
+}
+
 function intro(): Step<BtFrame>[] {
   const t = new Tracer()
   const { m } = t
-  const key42 = need(
-    leafKeyEntry(m, 42),
-    'ключа 42',
-  )
-  const hintAllPages = (w: Work) => m.pages.forEach((p) => t.hint(w, 'page', p.no))
+  const key42 = need(leafKeyEntry(m, 42), 'ключа 42')
+  const hintAllPages = (w: Work) => m.pages.forEach((p) => t.hintPage(w, p.no))
   t.step(
     {
       title: 'Откуда берётся запрос',
@@ -405,7 +435,7 @@ function intro(): Step<BtFrame>[] {
       title: 'Без индекса: прочитать всё',
       learn: 'Seq Scan',
       did: 'Чтобы найти строки с user_id = 42 без индекса, остаётся прочитать все страницы подряд и проверить каждую строку. Это [[seq-scan|Seq Scan]] (последовательное сканирование).',
-      uses: 'heap',
+      uses: '[[heap-table|heap]]',
       reads: 'все 6 страниц, 24 строки; совпали 3 — на страницах 0, 1 и 5',
       why: 'Строки не отсортированы по user_id. Остановиться раньше нельзя: дальше может найтись ещё одна. В лабе в chat.members 2 млн строк — это порядка 15 тыс. страниц (оценка: ~60 байт на строку).',
       focus: 'page:5',
@@ -417,11 +447,15 @@ function intro(): Step<BtFrame>[] {
     (w) => {
       m.pages.forEach((p) => {
         w.pages[p.no] = 'read'
-        p.rows.filter((r) => r.user === 42).forEach((r) => push(w.hitRows, `${p.no}:${r.lp}`))
+        p.rows
+          .filter((r) => r.user === 42)
+          .forEach((r) => {
+            push(w.hitRows, `${p.no}:${r.lp}`)
+            w.result.push(r.chat)
+          })
       })
       w.counters.heapAccess = m.pages.length
       w.counters.heapPages = m.pages.map((p) => p.no)
-      w.result = ['c1', 'c4', 'c12']
     },
   )
   t.step(
@@ -441,7 +475,7 @@ function intro(): Step<BtFrame>[] {
       w.result = []
       Object.values(m.nodes)
         .filter((n) => isLeaf(n))
-        .forEach((n) => t.hint(w, 'node', n.id))
+        .forEach((n) => t.hintNode(w, n.id))
       push(w.hitEntries, 42)
       key42.tids.forEach(([p, lp]) => {
         w.tids.push([42, p, lp])
@@ -456,10 +490,10 @@ function intro(): Step<BtFrame>[] {
       did: 'Отсортированные записи сами занимают много страниц. Чтобы не листать их по одной, над листьями строят «оглавление»: внутренние страницы, а над ними — корень. Каждая запись оглавления — «разделитель → номер страницы уровнем ниже».',
       uses: '[[b-tree|B-tree]]: корень → внутренние страницы → листья',
       reads: '—',
-      why: 'Страница оглавления вмещает сотни разделителей, поэтому каждый уровень сужает поиск в сотни раз. Миллионы записей — это всего 3 уровня. В лабе на 2 млн строк спуск по этому индексу читает ровно 3 страницы: в EXPLAIN Bitmap Index Scan … Buffers: shared hit=3.',
+      why: 'Страница оглавления вмещает сотни разделителей, поэтому каждый уровень сужает поиск в сотни раз. Миллионы записей — это всего 3 уровня. В лабе на 2 млн строк спуск по этому индексу читает ровно 3 страницы: в EXPLAIN [[bitmap-scan|Bitmap Index Scan]] … Buffers: shared hit=3.',
       focus: 'node:b8',
     },
-    (w) => ['b8', 'b6', 'b7'].forEach((id) => t.hint(w, 'node', id)),
+    (w) => ['b8', 'b6', 'b7'].forEach((id) => t.hintNode(w, id)),
   )
   t.step(
     {
@@ -472,7 +506,7 @@ function intro(): Step<BtFrame>[] {
       focus: 'tid',
       quiz: {
         q: 'Есть ли в индексе members_user_id_idx значение chat_id?',
-        a: 'Нет. В индексной записи только ключ user_id и TID. За chat_id приходится идти в таблицу по TID. Обойтись без таблицы можно, только если запросу хватает самого ключа (сценарий «Index Only Scan») или если столбец добавить в индекс через INCLUDE.',
+        a: 'Нет. В индексной записи только ключ user_id и TID. За chat_id приходится идти в таблицу по TID. Обойтись без таблицы можно, только если запросу хватает самого ключа (сценарий «[[index-only-scan|Index Only Scan]]») или если столбец добавить в индекс через INCLUDE.',
       },
     },
     (w) => {
@@ -489,23 +523,16 @@ function intro(): Step<BtFrame>[] {
   return t.steps
 }
 
-function leafKeyEntry(m: BtModel, key: number) {
-  return Object.values(m.nodes)
-    .filter(isLeaf)
-    .flatMap((n) => n.entries)
-    .find((e) => e.key === key)
-}
-
 function one(): Step<BtFrame>[] {
   const t = new Tracer()
   const { m } = t
   planStep(
     t,
     'оценка: строк с user_id = 15 ≈ 1',
-    'Оценка селективности: по pg_stats значение 15 редкое, строк ≈ 1. Seq Scan — 6 страниц подряд. Index Scan — 3 страницы индекса + 1 страница таблицы, но вразброс (random_page_cost = 4 против seq_page_cost = 1). План зависит от статистики, селективности, индексов и настроек. Честно: на нашей игрушечной таблице из 6 страниц реальный PostgreSQL выбрал бы Seq Scan — она меньше самого индекса. Модель изображает масштаб лабы (2 млн строк), где для такого пользователя план — Index Scan.',
+    'Оценка селективности: по pg_stats значение 15 редкое, строк ≈ 1. [[seq-scan|Seq Scan]] — 6 [[db-page|страниц]] подряд. Index Scan — 3 страницы индекса + 1 страница таблицы, но вразброс (random_page_cost = 4 против seq_page_cost = 1). План зависит от статистики, селективности, индексов и настроек. Честно: на нашей игрушечной таблице из 6 страниц реальный PostgreSQL выбрал бы Seq Scan — она меньше самого индекса. Модель изображает масштаб лабы (2 млн строк), где для такого пользователя план — Index Scan.',
     {
       q: 'Что изменится в плане, если у пользователя не 1, а 1000 чатов?',
-      a: 'Строк много → много случайных чтений таблицы. В лабе для «тяжёлого» пользователя (1000 чатов) план стал другим: [[bitmap-scan|Bitmap Index Scan]] собирает все TID из индекса (3 страницы), сортирует их по страницам, и Bitmap Heap Scan читает 960 страниц таблицы по порядку, каждую один раз. Для «лёгкого» (20 чатов) — обычный Index Scan.',
+      a: 'Строк много → много случайных чтений таблицы. В лабе для «тяжёлого» пользователя (1000 чатов) план стал другим: [[bitmap-scan|Bitmap Index Scan]] собирает все [[tid|TID]] из индекса (3 страницы), сортирует их по страницам, и Bitmap Heap Scan читает 960 страниц таблицы по порядку, каждую один раз. Для «лёгкого» (20 чатов) — обычный Index Scan.',
     },
   )
   const leaf = descend(t, 15)
@@ -521,12 +548,12 @@ function one(): Step<BtFrame>[] {
       learn: 'Листовая страница и TID',
       did: `Записи в листе отсортированы, PostgreSQL находит 15 двоичным поиском по записям страницы. Рядом с ключом — TID ${tidS(tid)}.`,
       uses: 'листовая страница индекса',
-      reads: `индексная запись 15 → ${tidS(tid)}`,
+      reads: `[[index|индексная запись]] 15 → ${tidS(tid)}`,
       why: 'В листе лежит не строка, а её адрес. Следующий ключ — 19 > 15, значит других строк с 15 нет и дальше искать не нужно.',
       focus: 'entry:15',
       quiz: {
         q: 'Мы нашли ключ в листовой странице. Почему этого недостаточно, чтобы получить всю строку таблицы?',
-        a: 'В индексной записи только ключ и TID. Запросу нужен chat_id — он есть только в строке таблицы. Кроме того, индекс не знает, видна ли строка нашей транзакции: версии строк и их xmin/xmax ([[mvcc|MVCC]], урок 2.2) хранятся в heap. Поэтому Index Scan обязан сходить в таблицу.',
+        a: 'В индексной записи только ключ и TID. Запросу нужен chat_id — он есть только в строке таблицы. Кроме того, индекс не знает, видна ли строка нашей транзакции: версии строк и их xmin/xmax ([[mvcc|MVCC]], урок 2.2) хранятся в [[heap-table|heap]]. Поэтому Index Scan обязан сходить в таблицу.',
       },
     },
     (w) => {
@@ -539,7 +566,7 @@ function one(): Step<BtFrame>[] {
       title: `Таблица: строка по TID ${tidS(tid)}`,
       learn: 'Heap и TID',
       did: `Читает страницу ${tid[0]} таблицы, берёт ${tid[1]}-й указатель строки (line pointer) и по нему — саму строку. Проверяет, видна ли эта версия строки текущей транзакции.`,
-      uses: 'страница heap',
+      uses: 'страница [[heap-table|heap]]',
       reads: `строка (${chat}, 15)`,
       why: `TID — прямой адрес: страница ${tid[0]}, позиция ${tid[1]}. Никакого поиска по таблице — одно чтение страницы.`,
       focus: `row:${tid[0]}:${tid[1]}`,
@@ -549,7 +576,7 @@ function one(): Step<BtFrame>[] {
   t.step({
     title: 'Результат',
     learn: 'Сколько это стоило',
-    did: `Исполнитель возвращает chat_id = ${chat}. В настоящем listChatsFirst по этому chat_id дальше ищется сам чат: Index Scan using chats_pkey — такой же спуск, только по другому B-tree.`,
+    did: `Исполнитель возвращает chat_id = ${chat}. В настоящем listChatsFirst по этому chat_id дальше ищется сам чат: Index Scan using chats_pkey — такой же спуск, только по другому [[b-tree|B-tree]].`,
     uses: '—',
     reads: 'итого: 3 страницы индекса + 1 страница таблицы',
     why: 'Seq Scan прочитал бы все 6 страниц таблицы, а на 2 млн строк — порядка 15 тыс. В лабе для пользователя с 20 чатами: Index Scan using members_user_id_idx, Buffers: 23 (3 страницы спуска по индексу + по странице таблицы на каждый из 20 чатов), выполнение 0,2 мс (источник: labs/2a/results/messenger-explain.txt).',
@@ -564,7 +591,7 @@ function dup(): Step<BtFrame>[] {
   planStep(
     t,
     'оценка: строк с user_id = 42 ≈ 3',
-    'Ожидается несколько строк — всё ещё мало по сравнению с размером таблицы, поэтому в масштабе лабы выбирается Index Scan. Чем больше строк ожидается, тем ближе выбор к Bitmap Heap Scan или Seq Scan.',
+    'Ожидается несколько строк — всё ещё мало по сравнению с размером таблицы, поэтому в масштабе лабы выбирается Index Scan. Чем больше строк ожидается, тем ближе выбор к [[bitmap-scan|Bitmap Heap Scan]] или [[seq-scan|Seq Scan]].',
   )
   const leaf = descend(t, 42, {
     lastWhyExtra: ' Разделитель 42 означает «в этом поддереве ключи ≥ 42», поэтому поиск 42 идёт именно сюда.',
@@ -577,7 +604,7 @@ function dup(): Step<BtFrame>[] {
     {
       title: `Лист (блок ${leaf.block}): один ключ — три адреса`,
       learn: 'Дедупликация: posting list',
-      did: `Ключ 42 записан в листе один раз со списком из трёх TID: ${e.tids.map(tidS).join(' ')}. Это [[posting-list|posting list]] — дедупликация B-tree (PostgreSQL 13+): одинаковые ключи хранятся одной записью, адреса внутри отсортированы.`,
+      did: `Ключ 42 записан в листе один раз со списком из трёх [[tid|TID]]: ${e.tids.map(tidS).join(' ')}. Это [[posting-list|posting list]] — дедупликация [[b-tree|B-tree]] (PostgreSQL 13+): одинаковые ключи хранятся одной записью, адреса внутри отсортированы.`,
       uses: 'листовая страница индекса',
       reads: `42 → ${e.tids.map(tidS).join(' ')}`,
       why: 'Пользователь мессенджера состоит во многих чатах — user_id повторяется постоянно. Без дедупликации на каждую пару была бы отдельная запись с копией ключа; с ней индекс заметно меньше. Если повторов больше, чем помещается в странице, они продолжаются в соседнем листе — тогда поиск идёт вправо по ссылке между листьями.',
@@ -599,7 +626,7 @@ function dup(): Step<BtFrame>[] {
         title: `Таблица: TID ${tidS(tid)}`,
         learn: 'Переход по TID в heap',
         did: `Берёт ${i + 1}-й адрес из списка и читает страницу ${tid[0]} таблицы, позицию ${tid[1]}: строка (${chat}, 42).`,
-        uses: 'страница heap',
+        uses: 'страница [[heap-table|heap]]',
         reads: `строка (${chat}, 42)`,
         why: i
           ? 'Другая страница — новое чтение. Строки одного ключа разбросаны по таблице.'
@@ -633,7 +660,7 @@ function range(): Step<BtFrame>[] {
   planStep(
     t,
     'оценка: ≈ 10 строк из 24 — почти половина',
-    'Честно: при такой доле строк планировщик выбрал бы Bitmap Heap Scan или Seq Scan. Здесь мы проходим Index Scan, чтобы увидеть механику диапазона.',
+    'Честно: при такой доле строк планировщик выбрал бы [[bitmap-scan|Bitmap Heap Scan]] или [[seq-scan|Seq Scan]]. Здесь мы проходим Index Scan, чтобы увидеть механику диапазона.',
   )
   let leaf: LeafNode | undefined = descend(t, lo)
   let prev: LeafNode | undefined
@@ -672,8 +699,8 @@ function range(): Step<BtFrame>[] {
         {
           title: `Таблица: ${list.length} ${plural(list.length, 'строка', 'строки', 'строк')} по TID`,
           learn: 'Случайные чтения таблицы',
-          did: `По очереди проходит адреса: ${list.map((x) => `${x.key}→${tidS(x.tid)}`).join(', ')}. Страницы таблицы: ${list.map((x) => x.tid[0]).join(', ')}.`,
-          uses: 'страницы heap',
+          did: `По очереди проходит адреса ([[tid|TID]]): ${list.map((x) => `${x.key}→${tidS(x.tid)}`).join(', ')}. Страницы таблицы: ${list.map((x) => x.tid[0]).join(', ')}.`,
+          uses: 'страницы [[heap-table|heap]]',
           reads: `строки ${list.map((x) => `${need(rowAt(m, x.tid), 'строки').chat}/${x.key}`).join(', ')}`,
           why: 'Ключи в индексе идут подряд, а их строки лежат вразброс: Index Scan скачет по страницам таблицы. Если подряд идут два адреса на одной странице, повторно её не читают.',
           focus: `page:${first.tid[0]}`,
@@ -683,7 +710,7 @@ function range(): Step<BtFrame>[] {
     }
     if (beyond || !cur.right) break
     prev = cur
-    leaf = need(m.nodes[cur.right], 'соседа') as LeafNode
+    leaf = leafById(m, cur.right)
   }
   const { counters: c, result } = t.now
   t.step({
@@ -741,7 +768,7 @@ function ios(): Step<BtFrame>[] {
           : `Бит all-visible у страницы ${tid[0]} не стоит (на ней недавно меняли строки, [[vacuum|VACUUM]] ещё не отметил). Приходится прочитать страницу ${tid[0]} и проверить версию строки ${tidS(tid)}: это Heap Fetches.`,
         uses: 'карта видимости (visibility map): 2 бита на страницу таблицы',
         reads: visible ? '1 бит карты видимости' : `бит карты + страница таблицы ${tid[0]}`,
-        why: 'Карту видимости обновляет VACUUM, любая запись на страницу сбрасывает бит. Чем свежее VACUUM, тем меньше Index Only Scan ходит в таблицу.',
+        why: 'Карту видимости обновляет [[vacuum|VACUUM]], любая запись на страницу сбрасывает бит. Чем свежее VACUUM, тем меньше Index Only Scan ходит в таблицу.',
         focus: 'vm:' + tid[0],
       },
       (w) => {
@@ -765,7 +792,7 @@ function ios(): Step<BtFrame>[] {
     did: 'Возвращает 3. Прочитано 3 страницы индекса и 1 страница таблицы (Heap Fetches: 1). Обычный Index Scan прочитал бы 3 страницы таблицы.',
     uses: '—',
     reads: 'count = 3',
-    why: 'В лабе подзапрос «участники чата» идёт как Index Only Scan using members_pkey … Heap Fetches: 0: таблица после VACUUM, все страницы all-visible, в heap не пошли ни разу (источник: labs/2a/results/messenger-explain.txt).',
+    why: 'В лабе подзапрос «участники чата» идёт как Index Only Scan using members_pkey … Heap Fetches: 0: таблица после VACUUM, все страницы all-visible, в [[heap-table|heap]] не пошли ни разу (источник: labs/2a/results/messenger-explain.txt).',
     focus: 'vm:5',
     quiz: {
       q: 'Будет ли Index Only Scan по members_user_id_idx для SELECT chat_id FROM chat.members WHERE user_id = 42?',
@@ -781,8 +808,8 @@ function seq(): Step<BtFrame>[] {
   t.step({
     title: 'План: Seq Scan',
     learn: 'Последовательное сканирование',
-    did: 'Индексные способы выключены (или индекса нет) — остаётся читать таблицу целиком, страницу за страницей, и проверять условие у каждой строки.',
-    uses: 'heap',
+    did: 'Индексные способы выключены (или индекса нет) — остаётся читать таблицу целиком, [[db-page|страницу]] за страницей, и проверять условие у каждой строки.',
+    uses: '[[heap-table|heap]]',
     reads: '—',
     why: '[[seq-scan|Seq Scan]] читает страницы подряд, а последовательное чтение дешевле случайного. Поэтому на большой доле строк он выигрывает.',
     focus: 'plan',
@@ -794,7 +821,7 @@ function seq(): Step<BtFrame>[] {
         title: `Страница ${p.no}: ${hit.length ? 'есть совпадение' : 'нет совпадений'}`,
         learn: 'Seq Scan: каждая страница',
         did: `Читает страницу ${p.no} и проверяет все ${p.rows.length} строки: user_id ${p.rows.map((r) => r.user).join(', ')}.${hit.length ? ' 42 нашлась — но читаем дальше: без индекса неизвестно, есть ли ещё.' : ''}`,
-        uses: 'страница heap',
+        uses: 'страница [[heap-table|heap]]',
         reads: `${p.rows.length} строки`,
         why: 'Проверяется каждая строка таблицы, даже если ответ — одна строка.',
         focus: 'page:' + p.no,
@@ -820,14 +847,14 @@ function seq(): Step<BtFrame>[] {
   t.step({
     title: 'Когда индекс не помогает',
     learn: 'Когда планировщик не берёт индекс',
-    did: 'Реальные планы из лабы (2 млн строк chat.members):\n• 20 чатов → Index Scan: 23 страницы, 0,2 мс;\n• 1000 чатов → Bitmap Heap Scan: 3 страницы индекса + 960 страниц таблицы, 2 мс.',
+    did: 'Реальные планы из лабы (2 млн строк chat.members):\n• 20 чатов → Index Scan: 23 страницы, 0,2 мс;\n• 1000 чатов → [[bitmap-scan|Bitmap Heap Scan]]: 3 страницы индекса + 960 страниц таблицы, 2 мс.',
     uses: '—',
     reads: 'labs/2a/results/messenger-explain.txt',
     why: 'Индекс проигрывает, когда условие выбирает большую долю строк, когда таблица маленькая, когда статистика устарела и оценка врёт, когда условие не совпадает с индексом (функция над столбцом, другой тип, второй столбец составного индекса без первого).',
     focus: 'plan',
     quiz: {
-      q: 'Когда планировщик выберет Seq Scan, хотя индекс есть?',
-      a: 'Когда по оценке это дешевле: условие выбирает заметную долю таблицы (случайных чтений больше, чем страниц в таблице), таблица крошечная, или индекс к условию не подходит — например WHERE lower(x) = … при индексе по x. Между ними есть [[bitmap-scan|Bitmap Heap Scan]]: TID из индекса, но таблица читается по порядку страниц — его и выбрал план для пользователя с 1000 чатов.',
+      q: 'Когда [[query-planner|планировщик]] выберет Seq Scan, хотя индекс есть?',
+      a: 'Когда по оценке это дешевле: условие выбирает заметную долю таблицы (случайных чтений больше, чем страниц в таблице), таблица крошечная, или индекс к условию не подходит — например WHERE lower(x) = … при индексе по x. Между ними есть [[bitmap-scan|Bitmap Heap Scan]]: [[tid|TID]] из индекса, но таблица читается по порядку страниц — его и выбрал план для пользователя с 1000 чатов.',
     },
   })
   return t.steps
@@ -836,20 +863,24 @@ function seq(): Step<BtFrame>[] {
 function ins(): Step<BtFrame>[] {
   const t = new Tracer()
   const { m } = t
+  // Новая строка попадает на новую страницу, только если последняя полна: сценарий рассчитан на 24 строки при 4 на странице.
+  const newPage = m.pages.length
+  const expected1: Tid = [newPage, 1]
   let t1: Tid | undefined
   let t2: Tid | undefined
   t.step(
     {
       title: 'Строка 1 → таблица',
       learn: 'Вставка в heap',
-      did: 'Сначала строка (c13, 45) кладётся в таблицу. Страницы 0–5 заполнены, поэтому таблица растёт на страницу 6, и строка получает TID (6,1).',
-      uses: 'heap и карта свободного места ([[free-space-map|FSM]])',
-      reads: 'FSM: свободного места на страницах 0–5 нет',
+      did: `Сначала строка (c13, 45) кладётся в таблицу. [[db-page|Страницы]] 0–${newPage - 1} заполнены, поэтому таблица растёт на страницу ${newPage}, и строка получает [[tid|TID]] ${tidS(expected1)}.`,
+      uses: '[[heap-table|heap]] и [[free-space-map|карта свободного места]] (FSM)',
+      reads: `FSM: свободного места на страницах 0–${newPage - 1} нет`,
       why: 'Место для новой строки PostgreSQL ищет по карте свободного места, а не в конце по порядку ключа. Поэтому строки одного пользователя оказываются на разных страницах.',
-      focus: 'page:6',
+      focus: `page:${newPage}`,
     },
     (w) => {
       t1 = heapInsert(m, 'c13', 45)
+      if (t1[0] !== expected1[0] || t1[1] !== expected1[1]) throw new Error(`btree: ожидали TID ${tidS(expected1)}, получили ${tidS(t1)}`)
       w.result.push('(c13, 45)')
       w.pages[t1[0]] = 'cur'
       push(w.hitRows, `${t1[0]}:${t1[1]}`)
@@ -861,14 +892,14 @@ function ins(): Step<BtFrame>[] {
     {
       title: `Лист (блок ${leaf.block}): запись 45 помещается`,
       learn: 'Вставка в лист',
-      did: `Спуск привёл в блок ${leaf.block}. Там 4 записи из 5 возможных — PostgreSQL вставляет 45 → ${tidS(tid1)} на своё место по порядку.`,
+      did: `Спуск привёл в блок ${leaf.block}. Там ${leaf.entries.length} ${plural(leaf.entries.length, 'запись', 'записи', 'записей')} из ${LEAF_CAPACITY} возможных — PostgreSQL вставляет 45 → ${tidS(tid1)} на своё место по порядку.`,
       uses: 'листовая страница',
-      reads: 'есть место: 4 из 5',
-      why: 'При CREATE INDEX листья заполняются не до конца ([[fillfactor|fillfactor]] 90%), чтобы осталось место под вставки. В модели это 4 записи из 5. Индекс members_pkey получает свою запись так же — на схеме его нет.',
+      reads: `есть место: ${leaf.entries.length} из ${LEAF_CAPACITY}`,
+      why: `При CREATE INDEX листья заполняются не до конца ([[fillfactor|fillfactor]] 90%), чтобы осталось место под вставки. В модели листья заполнены на ${BUILD_FILL} записи из ${LEAF_CAPACITY}. Индекс members_pkey получает свою запись так же — на схеме его нет.`,
       focus: 'entry:45',
     },
     (w) => {
-      leafInsert(need(m.nodes[leaf.id], 'листа') as LeafNode, 45, tid1)
+      leafInsert(leafById(m, leaf.id), 45, tid1)
       t.indexPage(w, leaf.id)
       push(w.hitEntries, 45)
       w.tids.push([45, tid1[0], tid1[1]])
@@ -878,11 +909,11 @@ function ins(): Step<BtFrame>[] {
     {
       title: 'Строка 2 → таблица',
       learn: 'Вставка в heap',
-      did: 'Вторая строка (c13, 53) ложится на ту же новую страницу 6: TID (6,2).',
-      uses: 'heap',
-      reads: 'на странице 6 есть место',
+      did: `Вторая строка (c13, 53) ложится на ту же новую страницу ${newPage}: TID ${tidS([newPage, 2])}.`,
+      uses: '[[heap-table|heap]]',
+      reads: `на странице ${newPage} есть место`,
       why: 'Обе строки одного INSERT вставляются по очереди: строка в heap, затем запись в каждый индекс таблицы.',
-      focus: 'page:6',
+      focus: `page:${newPage}`,
     },
     (w) => {
       t2 = heapInsert(m, 'c13', 53)
@@ -898,14 +929,14 @@ function ins(): Step<BtFrame>[] {
     {
       title: `Лист (блок ${leaf.block}) полон: сплит`,
       learn: 'Расщепление страницы',
-      did: `В блоке ${leaf.block} уже 5 записей из 5 — для 53 нет места. Сначала PostgreSQL пробует освободить место (убрать мёртвые записи, дедуплицировать) — здесь не помогает. Тогда он расщепляет страницу ([[b-tree-page-split|сплит]]): берёт новую (блок ${m.nextBlock}), переносит туда правую половину и перевязывает соседей.`,
+      did: `В блоке ${leaf.block} уже ${leaf.entries.length} записей из ${LEAF_CAPACITY} — для 53 нет места. Сначала PostgreSQL пробует освободить место (убрать мёртвые записи, дедуплицировать) — здесь не помогает. Тогда он расщепляет страницу ([[b-tree-page-split|сплит]]): берёт новую (блок ${m.nextBlock}), переносит туда правую половину и перевязывает соседей.`,
       uses: 'две листовые страницы',
       reads: '—',
       why: 'Страница фиксированного размера, поэтому расти «вширь» нельзя — только делиться. После сплита обе половины наполовину пусты: следующие вставки сюда снова пройдут без сплита.',
       focus: 'node:' + splitId,
     },
     (w) => {
-      const left = need(m.nodes[leaf.id], 'листа') as LeafNode
+      const left = leafById(m, leaf.id)
       leafInsert(left, 53, tid2)
       const right = splitLeaf(m, left)
       w.nodes[left.id] = 'cur'
@@ -916,7 +947,7 @@ function ins(): Step<BtFrame>[] {
       w.sibs.push([left.id, right.id])
     },
   )
-  const created = need(m.nodes[splitId], 'нового листа') as LeafNode
+  const created = leafById(m, splitId)
   const separator = need(created.entries[0], 'ключа').key
   const parent = need(parentOf(m, leaf.id), 'родителя')
   t.step(
@@ -926,7 +957,7 @@ function ins(): Step<BtFrame>[] {
       did: `Родитель (блок ${parent.block}) получает новую запись «${separator} → блок ${created.block}». Теперь поиск ключей ≥ ${separator} из блока ${parent.block} идёт в новый лист.`,
       uses: 'внутренняя страница',
       reads: `место в блоке ${parent.block} есть`,
-      why: 'Если бы в родителе не хватило места, расщепился бы и он, и так вверх до корня. Когда расщепляется корень, над ним появляется новый — только так B-tree растёт в высоту, поэтому все листья всегда на одной глубине.',
+      why: 'Если бы в родителе не хватило места, расщепился бы и он, и так вверх до корня. Когда расщепляется корень, над ним появляется новый — только так [[b-tree|B-tree]] растёт в высоту, поэтому все листья всегда на одной глубине.',
       focus: 'node:' + parent.id,
     },
     (w) => {
@@ -943,7 +974,7 @@ function ins(): Step<BtFrame>[] {
     did: 'Каждая вставленная строка chat.members трогает: страницу heap, лист members_pkey, лист members_user_id_idx (иногда со сплитом), проверки внешних ключей (поиск по chats_pkey и users_pkey), и всё это пишется в WAL до COMMIT.',
     uses: 'heap, все индексы таблицы, WAL',
     reads: '—',
-    why: 'Каждый новый индекс — ещё одна запись на каждую вставку и место на диске и в кэше. В мессенджере индекс по chat.chats (last_activity_at) не завели именно поэтому: планировщик его не брал, а обновление чата потеряло бы HOT (урок 2.2, labs/2a).',
+    why: 'Каждый новый индекс — ещё одна запись на каждую вставку и место на диске и в кэше. В мессенджере индекс по chat.chats (last_activity_at) не завели именно поэтому: [[query-planner|планировщик]] его не брал, а обновление чата потеряло бы HOT (урок 2.2, labs/2a).',
     focus: 'node:' + created.id,
     quiz: {
       q: 'Почему индекс ускоряет SELECT, но замедляет INSERT?',
