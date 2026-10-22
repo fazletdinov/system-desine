@@ -141,6 +141,19 @@ VALUES ('c13', 45), ('c13', 53);`,
   },
 ]
 
+// Над холстом SQL сценария показан целиком, а подсвечено условие, которое разбирает сцена:
+// хвост строки после WHERE (для INSERT — после VALUES). Возвращает куски текста, а не HTML,
+// чтобы сцена выводила их обычной интерполяцией без v-html.
+export interface SqlParts { before: string; cond: string; after: string }
+const CONDITION = /^((?!\s*--).*?\b(?:WHERE|VALUES)\s+)(.*?);?[ \t]*$/m
+export function sqlCondition(sql: string): SqlParts {
+  const m = CONDITION.exec(sql)
+  const [head, cond] = [m?.[1], m?.[2]]
+  if (m === null || head === undefined || cond === undefined || cond === '') return { before: sql, cond: '', after: '' }
+  const start = m.index + head.length
+  return { before: sql.slice(0, start), cond, after: sql.slice(start + cond.length) }
+}
+
 // --- трассировщик кадров -----------------------------------------------------
 
 // Всё, что кадр хранит помимо модели и текстовых полей шага.
@@ -559,7 +572,7 @@ function one(): Step<BtFrame>[] {
       focus: 'entry:15',
       quiz: {
         q: 'Мы нашли ключ в листовой странице. Почему этого недостаточно, чтобы получить всю строку таблицы?',
-        a: 'В индексной записи только ключ и TID. Запросу нужен chat_id — он есть только в строке таблицы. Кроме того, индекс не знает, видна ли строка нашей транзакции: версии строк и их xmin/xmax ([[mvcc|MVCC]], урок 2.2) хранятся в [[heap-table|heap]]. Поэтому Index Scan обязан сходить в таблицу.',
+        a: 'В индексной записи только ключ и TID. Запросу нужен chat_id — он есть только в строке таблицы. Кроме того, индекс не знает, видна ли строка нашей транзакции: версии строк и их xmin/xmax ([[mvcc|MVCC]], урок 2.4) хранятся в [[heap-table|heap]]. Поэтому Index Scan обязан сходить в таблицу.',
       },
     },
     (w) => {
@@ -980,7 +993,7 @@ function ins(): Step<BtFrame>[] {
     did: 'Каждая вставленная строка chat.members трогает: страницу heap, лист members_pkey, лист members_user_id_idx (иногда со сплитом), проверки внешних ключей (поиск по chats_pkey и users_pkey), и всё это пишется в WAL до COMMIT.',
     uses: 'heap, все индексы таблицы, WAL',
     reads: '—',
-    why: 'Каждый новый индекс — ещё одна запись на каждую вставку и место на диске и в кэше. В мессенджере индекс по chat.chats (last_activity_at) не завели именно поэтому: [[query-planner|планировщик]] его не брал, а обновление чата потеряло бы HOT (урок 2.2, labs/2a).',
+    why: 'Каждый новый индекс — ещё одна запись на каждую вставку и место на диске и в кэше. В мессенджере индекс по chat.chats (last_activity_at) не завели именно поэтому: [[query-planner|планировщик]] его не брал, а обновление чата потеряло бы HOT (раздел «Цена бесполезного индекса: HOT» этого урока, labs/2a).',
     focus: 'node:' + created.id,
     quiz: {
       q: 'Почему индекс ускоряет SELECT, но замедляет INSERT?',

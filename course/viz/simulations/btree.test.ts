@@ -4,7 +4,7 @@ import { loadGlossaryFile } from '../../glossary/load'
 import { captionSegments, captionText, type Caption } from '../core/caption'
 import { stepTermIds } from '../core/explain'
 import type { InnerEntry, LeafEntry } from './btree-model'
-import { BT_SCENARIOS, btreeScenario, type BtFrame, type BtScenarioId } from './btree'
+import { BT_SCENARIOS, btreeScenario, sqlCondition, type BtFrame, type BtScenarioId } from './btree'
 
 const IDS: BtScenarioId[] = ['intro', 'one', 'dup', 'range', 'ios', 'seq', 'ins']
 const frames = (id: BtScenarioId): BtFrame[] => btreeScenario(id).map((s) => s.state)
@@ -13,6 +13,27 @@ const last = (id: BtScenarioId): BtFrame => frames(id).at(-1)!
 it('вкладки идут в порядке прототипа', () => {
   expect(BT_SCENARIOS.map((s) => s.id)).toEqual(IDS)
   expect(BT_SCENARIOS.map((s) => s.view)).toEqual(['simple', 'detail', 'detail', 'detail', 'detail', 'simple', 'detail'])
+})
+
+describe('sqlCondition: какую часть SQL сценария подсветить', () => {
+  const sql = (id: BtScenarioId): string => BT_SCENARIOS.find((s) => s.id === id)!.sql
+  it.each([
+    ['intro', 'me.user_id = $1'],
+    ['one', 'user_id = 15'],
+    ['range', 'user_id BETWEEN 20 AND 50'],
+    ['seq', 'user_id = 42'],
+    ['ins', "('c13', 45), ('c13', 53)"],
+  ] as const)('%s: подсвечено «%s»', (id, cond) => {
+    const parts = sqlCondition(sql(id))
+    expect(parts.cond).toBe(cond)
+    expect(parts.before + parts.cond + parts.after).toBe(sql(id))
+  })
+  it('условие ищется в строке кода, а не в комментарии', () => {
+    expect(sqlCondition('-- WHERE в комментарии\nSELECT 1\nWHERE a = 1;').cond).toBe('a = 1')
+  })
+  it('без WHERE и VALUES подсветки нет, текст цел', () => {
+    expect(sqlCondition('SELECT 1;')).toEqual({ before: 'SELECT 1;', cond: '', after: '' })
+  })
 })
 
 describe('числа в последнем шаге сценария', () => {
