@@ -113,7 +113,7 @@ onBeforeUnmount(() => {
     </p>
     <!-- Миниатюра только для узнавания: её элементы не фокусируются (inert), клик по ней открывает сцену. -->
     <button type="button" class="thumb" tabindex="-1" aria-hidden="true" @click="openScene">
-      <div inert><BtreeView :frame="previewFrame" view="simple" :selected="null" /></div>
+      <span class="thumb-inner" inert><BtreeView :frame="previewFrame" view="simple" :selected="null" /></span>
     </button>
     <p class="tabs-list"><span class="muted">Сценарии:</span> {{ TABS.map((t) => t.label).join(' · ') }}</p>
     <button ref="openBtn" type="button" class="open-btn" @click="openScene">Открыть сцену</button>
@@ -161,6 +161,7 @@ onBeforeUnmount(() => {
 .lead { margin: 6px 0 10px; line-height: 1.6; }
 .thumb { display: block; width: 100%; padding: 8px; border: 1px solid var(--vp-c-divider); border-radius: 8px; background: var(--vp-c-bg); cursor: zoom-in; }
 .thumb:hover { border-color: var(--vp-c-brand-1); }
+.thumb-inner { display: block; }
 .tabs-list { margin: 10px 0; font-size: 14px; line-height: 1.6; }
 .open-btn { min-height: 44px; padding: 0 20px; border: 2px solid var(--vp-c-brand-1); border-radius: 8px; background: var(--vp-c-brand-1); color: var(--vp-c-white); font: inherit; font-weight: 700; cursor: pointer; }
 .open-btn:hover { background: var(--vp-c-brand-2); border-color: var(--vp-c-brand-2); }
