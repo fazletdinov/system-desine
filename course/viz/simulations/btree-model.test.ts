@@ -52,8 +52,8 @@ describe('навигация', () => {
   it('parentOf и isLeaf', () => {
     expect(parentOf(m, 'b3')?.id).toBe('b6')
     expect(parentOf(m, 'b8')).toBeUndefined()
-    expect(isLeaf(m.nodes['b1']!)).toBe(true)
-    expect(isLeaf(m.nodes['b8']!)).toBe(false)
+    expect(isLeaf(leaf(m, 'b1'))).toBe(true)
+    expect(isLeaf(inner(m, 'b8'))).toBe(false)
   })
 })
 
@@ -72,6 +72,7 @@ describe('вставка', () => {
   it('splitLeaf делит лист и перешивает соседей', () => {
     const m = buildModel()
     const l = leaf(m, 'b3')
+    const parentBefore = structuredClone(inner(m, 'b6').entries)
     leafInsert(l, 45, [6, 1])
     leafInsert(l.entries, 53, [6, 2])
     const right = splitLeaf(m, l)
@@ -82,6 +83,19 @@ describe('вставка', () => {
     expect(right.right).toBe('b4')
     expect(leaf(m, 'b4').left).toBe('b9')
     expect(m.nextBlock).toBe(10)
+    expect(inner(m, 'b6').entries).toEqual(parentBefore)
+    expect(parentOf(m, 'b9')).toBeUndefined()
+  })
+  it('пятая вставка в heap после заполнения страницы 6 открывает страницу 7', () => {
+    const m = buildModel()
+    const tids = [45, 53, 54, 55, 56].map((u, i) => heapInsert(m, `c${13 + i}`, u))
+    expect(tids.at(-1)).toEqual([7, 1])
+    expect(m.pages[6]?.rows).toHaveLength(4)
+  })
+  it('leafInsert нового ключа в LeafEntry[] сохраняет порядок', () => {
+    const entries = leaf(buildModel(), 'b3').entries
+    leafInsert(entries, 45, [6, 1])
+    expect(entries.map((e) => e.key)).toEqual([42, 45, 47, 50, 56])
   })
 })
 
@@ -89,9 +103,14 @@ describe('cloneModel', () => {
   it('копия независима от оригинала', () => {
     const m = buildModel()
     const c = cloneModel(m)
+    expect(c).toEqual(m)
     heapInsert(c, 'c13', 45)
     leaf(c, 'b1').entries.length = 0
+    leaf(c, 'b3').entries[0]?.tids.push([9, 9])
+    c.nextBlock++
     expect(m.pages).toHaveLength(6)
     expect(leaf(m, 'b1').entries).toHaveLength(4)
+    expect(leaf(m, 'b3').entries[0]?.tids).toHaveLength(3)
+    expect(m.nextBlock).toBe(9)
   })
 })

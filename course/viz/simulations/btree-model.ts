@@ -68,7 +68,7 @@ export function buildModel(): BtModel {
     leaves.push(id)
   }
   leaves.forEach((id, j) => {
-    const n = node({ nodes } as BtModel, id)
+    const n = need(nodes[id], `узла ${id}`)
     n.left = leaves[j - 1] ?? null
     n.right = leaves[j + 1] ?? null
   })
