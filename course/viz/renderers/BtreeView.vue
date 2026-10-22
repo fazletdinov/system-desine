@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import type { BtFrame, BtView, Mark } from '../simulations/btree'
 import { heapHeaderH, heapRowH, layoutScene, selectionLinks, tidPath, type Box } from '../simulations/btree-layout'
-import { isLeaf, leafOrder, type BtNode, type HeapPage, type InnerNode, type LeafNode, type Tid } from '../simulations/btree-model'
+import { isLeaf, leafOrder, type HeapPage, type Tid } from '../simulations/btree-model'
 
 const props = defineProps<{ frame: BtFrame; view: BtView; selected: string | null }>()
 const emit = defineEmits<{ select: [id: string] }>()
+
+// Маркеры стрелок получают уникальный суффикс: на странице может быть несколько сцен.
+const uid = useId()
+const tidMarker = `bt-arrow-tid-${uid}`
+const sibMarker = `bt-arrow-sib-${uid}`
 
 const model = computed(() => props.frame.model)
 const detail = computed(() => props.view === 'detail')
@@ -15,22 +20,76 @@ const links = computed(() => selectionLinks(model.value, props.selected))
 
 const tidText = (t: Tid): string => `(${t[0]},${t[1]})`
 const hasEdge = (list: readonly (readonly [string, string])[], a: string, b: string): boolean => list.some((e) => e[0] === a && e[1] === b)
+const sepText = (sep: number | null): string => (sep === null ? '−∞' : String(sep))
+const blockOf = (id: string): number => model.value.nodes[id]?.block ?? 0
 
 // Клавиатура: у каждого кликабельного элемента фокус и Enter/Пробел, как у кнопки.
-const pick = (id: string): void => emit('select', id)
+function interactive(id: string, label: string): Record<string, unknown> {
+  const pick = (): void => emit('select', id)
+  return {
+    role: 'button',
+    tabindex: 0,
+    'aria-label': label,
+    'data-explain': id,
+    onClick: pick,
+    onKeydown: (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      pick()
+    },
+  }
+}
 
-function nodeMark(n: BtNode): Mark | '' {
-  return props.frame.nodes[n.id] ?? ''
+interface NodeView {
+  id: string
+  box: Box
+  head: string
+  cls: (Mark | string)[]
+  attrs: Record<string, unknown>
+  seps: { key: string; text: string; block: number; x: number; y: number }[]
+  entries: { key: number; cls: Record<string, boolean>; attrs: Record<string, unknown>; label: string; tids: string; many: number; cell: { x: number; w: number }; y: number }[]
 }
-const nodeHead = (n: BtNode): string => {
-  const kind = isLeaf(n) ? 'лист' : n.id === model.value.root ? 'корень' : 'внутренняя'
-  return detail.value ? `${kind} · блок ${n.block}` : kind
-}
-const nodes = computed(() => Object.values(model.value.nodes).filter((n) => box(n.id).w > 0))
+
+const nodeViews = computed<NodeView[]>(() =>
+  Object.values(model.value.nodes).flatMap((n) => {
+    const b = box(n.id)
+    if (!b.w) return []
+    const leaf = isLeaf(n)
+    const kind = leaf ? 'лист' : n.id === model.value.root ? 'корень' : 'внутренняя'
+    const head = detail.value ? `${kind} · блок ${n.block}` : kind
+    const mark = props.frame.nodes[n.id]
+    const count = n.entries.length
+    const seps = leaf ? [] : n.entries.map((e, j) => ({
+      key: e.child,
+      text: sepText(e.sep),
+      block: blockOf(e.child),
+      x: detail.value ? b.x + 12 : b.x + (b.w / count) * (j + 0.5),
+      y: detail.value ? b.y + 38 + j * 18 : b.y + 38,
+    }))
+    const entries = !leaf ? [] : n.entries.map((e, j) => {
+      const w = (b.w - 8) / count
+      return {
+        key: e.key,
+        cls: entryClass(e.key),
+        attrs: interactive(`entry:${e.key}`, `Индексная запись: ключ ${e.key}`),
+        label: String(e.key),
+        tids: e.tids.map(tidText).join(' '),
+        many: e.tids.length,
+        cell: { x: b.x + 4 + w * j, w },
+        y: b.y + 24 + j * 18,
+      }
+    })
+    return [{
+      id: n.id, box: b, head, seps, entries,
+      cls: ['idx', mark ?? '', props.selected === `node:${n.id}` ? 'sel' : '', mark === 'cur' ? 'pulse' : ''],
+      attrs: interactive(`node:${n.id}`, `Страница индекса: ${head}`),
+    }]
+  }),
+)
 
 interface EdgeView { key: string; d: string; on: boolean }
 const edges = computed<EdgeView[]>(() =>
-  nodes.value.flatMap((n) => {
+  Object.values(model.value.nodes).flatMap((n) => {
     if (isLeaf(n)) return []
     const b = box(n.id)
     return n.entries.flatMap((e, j) => {
@@ -75,35 +134,60 @@ const tidPaths = computed(() => {
   })
 })
 
-const entryClass = (key: number): Record<string, boolean> => ({
-  hit: props.frame.hitEntries.includes(key) || props.frame.hintEntries.includes(key),
-  sel: links.value.entries.has(key) || props.selected === `entry:${key}`,
-})
-const rowClass = (p: number, lp: number): Record<string, boolean> => ({
-  hit: props.frame.hitRows.includes(`${p}:${lp}`),
-  sel: links.value.rows.has(`${p}:${lp}`),
-})
-
-const pageMark = (p: HeapPage): Mark | '' => props.frame.pages[p.no] ?? ''
-const rowY = (b: Box, j: number): number => b.y + heapHeaderH(detail.value) + j * heapRowH(detail.value)
-
-// Лист в simple: записи — равные ячейки в одну строку; в detail — столбец «ключ → TID».
-const cell = (b: Box, count: number, j: number): { x: number; w: number } => {
-  const w = (b.w - 8) / count
-  return { x: b.x + 4 + w * j, w }
+// Подсветка «выбранной» записи приходит из selectionLinks (включая саму выбранную запись).
+function entryClass(key: number): Record<string, boolean> {
+  return {
+    hit: props.frame.hitEntries.includes(key) || props.frame.hintEntries.includes(key),
+    sel: links.value.entries.has(key),
+  }
 }
-const innerSimple = (n: InnerNode, b: Box, j: number): number => b.x + (b.w / n.entries.length) * (j + 0.5)
-const leafOf = (n: BtNode): LeafNode | null => (isLeaf(n) ? n : null)
-const innerOf = (n: BtNode): InnerNode | null => (isLeaf(n) ? null : n)
-const sepText = (sep: number | null): string => (sep === null ? '−∞' : String(sep))
-const childBlock = (id: string): number => model.value.nodes[id]?.block ?? 0
+
+interface PageView {
+  no: number
+  box: Box
+  title: string
+  cls: (Mark | string)[]
+  attrs: Record<string, unknown>
+  vm: { cls: string; chipCls: Record<string, boolean>; attrs: Record<string, unknown>; text: string; x: number }
+  rows: { lp: number; cls: Record<string, boolean>; attrs: Record<string, unknown>; y: number; tid: string; chat: string; user: number }[]
+}
+
+function pageView(p: HeapPage): PageView {
+  const b = box(`page:${p.no}`)
+  const mark = props.frame.pages[p.no]
+  const vmCls = p.allVisible ? 'vis' : 'dirty'
+  return {
+    no: p.no,
+    box: b,
+    title: `стр. ${p.no}${detail.value ? ' · 8 КБ' : ''}`,
+    cls: ['heap', mark ?? '', props.selected === `page:${p.no}` ? 'sel' : '', mark === 'cur' ? 'pulse' : ''],
+    attrs: interactive(`page:${p.no}`, `Страница таблицы ${p.no}`),
+    vm: {
+      cls: vmCls,
+      chipCls: { cur: props.frame.vmCur === p.no, checked: props.frame.vmChecked[p.no] !== undefined },
+      attrs: interactive(`vm:${p.no}`, `Карта видимости страницы ${p.no}: ${p.allVisible ? 'all-visible' : 'нет отметки'}`),
+      text: `VM ${p.allVisible ? '✓' : '—'}`,
+      x: b.x + b.w - 58,
+    },
+    rows: p.rows.map((r, j) => ({
+      lp: r.lp,
+      cls: { hit: props.frame.hitRows.includes(`${p.no}:${r.lp}`), sel: links.value.rows.has(`${p.no}:${r.lp}`) },
+      attrs: interactive(`row:${p.no}:${r.lp}`, `Строка таблицы (${p.no},${r.lp}): ${r.chat}, user_id ${r.user}`),
+      y: b.y + heapHeaderH(detail.value) + j * heapRowH(detail.value),
+      tid: tidText([p.no, r.lp]),
+      chat: r.chat,
+      user: r.user,
+    })),
+  }
+}
+const pageViews = computed(() => model.value.pages.map(pageView))
 </script>
 
 <template>
   <svg class="bt" :viewBox="`0 0 ${scene.width} ${scene.height}`" role="group" aria-label="Схема: индекс B-tree и таблица chat.members">
     <defs>
-      <marker id="bt-arrow-tid" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="head-tid" /></marker>
-      <marker id="bt-arrow-sib" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="head-sib" /></marker>
+      <marker :id="tidMarker" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="head-tid" /></marker>
+      <marker :id="sibMarker" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="head-sib" /></marker>
     </defs>
 
     <text class="lvl" x="14" y="22">корень</text>
@@ -114,68 +198,64 @@ const childBlock = (id: string): number => model.value.nodes[id]?.block ?? 0
 
     <path v-for="e in edges" :key="e.key" class="edge" :class="{ on: e.on }" :d="e.d" />
 
-    <g v-for="s in sibs" :key="s.key" class="el" role="button" tabindex="0" aria-label="Ссылки между листьями" data-explain="sib" @click="pick('sib')" @keydown.enter.space.prevent="pick('sib')">
-      <path class="sib" :class="{ on: s.on }" :d="s.line" marker-start="url(#bt-arrow-sib)" marker-end="url(#bt-arrow-sib)" />
+    <g v-for="s in sibs" :key="s.key" class="el" v-bind="interactive('sib', 'Ссылки между листьями')">
+      <path class="sib" :class="{ on: s.on }" :d="s.line" :marker-start="`url(#${sibMarker})`" :marker-end="`url(#${sibMarker})`" />
       <path :d="s.hit" class="hit-area" />
     </g>
 
     <template v-if="detail">
-      <g class="el" role="button" tabindex="0" aria-label="Метастраница" data-explain="meta" @click="pick('meta')" @keydown.enter.space.prevent="pick('meta')">
+      <g class="el" v-bind="interactive('meta', 'Метастраница')">
         <rect class="box meta" :class="[frame.nodes.meta, { sel: selected === 'meta', pulse: frame.nodes.meta === 'cur' }]" :x="box('meta').x" :y="box('meta').y" :width="box('meta').w" :height="box('meta').h" rx="9" />
         <text class="nh" :x="box('meta').x + 10" :y="box('meta').y + 19">метастраница · блок 0</text>
-        <text class="t" :x="box('meta').x + 10" :y="box('meta').y + 38">корень → <tspan class="addr">блок {{ childBlock(model.root) }}</tspan></text>
+        <text class="t" :x="box('meta').x + 10" :y="box('meta').y + 38">корень → <tspan class="addr">блок {{ blockOf(model.root) }}</tspan></text>
       </g>
-      <path class="sib" :d="metaPath" marker-end="url(#bt-arrow-sib)" />
+      <path class="sib" :d="metaPath" :marker-end="`url(#${sibMarker})`" />
     </template>
 
-    <template v-for="n in nodes" :key="n.id">
-      <g class="el" role="button" tabindex="0" :aria-label="`Страница индекса: ${nodeHead(n)}`" :data-explain="`node:${n.id}`" @click="pick(`node:${n.id}`)" @keydown.enter.space.prevent="pick(`node:${n.id}`)">
-        <rect class="box idx" :class="[nodeMark(n), { sel: selected === `node:${n.id}`, pulse: nodeMark(n) === 'cur' }]" :x="box(n.id).x" :y="box(n.id).y" :width="box(n.id).w" :height="box(n.id).h" rx="9" />
-        <text class="nh" :x="box(n.id).x + 10" :y="box(n.id).y + 18">{{ nodeHead(n) }}</text>
+    <template v-for="n in nodeViews" :key="n.id">
+      <g class="el" v-bind="n.attrs">
+        <rect class="box" :class="n.cls" :x="n.box.x" :y="n.box.y" :width="n.box.w" :height="n.box.h" rx="9" />
+        <text class="nh" :x="n.box.x + 10" :y="n.box.y + 18">{{ n.head }}</text>
       </g>
 
-      <template v-if="innerOf(n)">
-        <template v-for="(e, j) in innerOf(n)!.entries" :key="e.child">
-          <text v-if="detail" class="t" :x="box(n.id).x + 12" :y="box(n.id).y + 38 + j * 18">{{ sepText(e.sep) }}<tspan class="addr"> → блок {{ childBlock(e.child) }}</tspan></text>
-          <text v-else class="t" text-anchor="middle" :x="innerSimple(innerOf(n)!, box(n.id), j)" :y="box(n.id).y + 38">{{ sepText(e.sep) }}</text>
+      <template v-for="s in n.seps" :key="s.key">
+        <text v-if="detail" class="t" :x="s.x" :y="s.y">{{ s.text }}<tspan class="addr"> → блок {{ s.block }}</tspan></text>
+        <text v-else class="t" text-anchor="middle" :x="s.x" :y="s.y">{{ s.text }}</text>
+      </template>
+
+      <g v-for="e in n.entries" :key="e.key" class="el ent" :class="e.cls" v-bind="e.attrs">
+        <template v-if="detail">
+          <rect :x="n.box.x + 4" :y="e.y" :width="n.box.w - 8" height="17" />
+          <text class="t" :x="n.box.x + 10" :y="e.y + 13">{{ e.label }}<tspan class="addr"> → {{ e.tids }}</tspan></text>
         </template>
-      </template>
-
-      <template v-if="leafOf(n)">
-        <g v-for="(e, j) in leafOf(n)!.entries" :key="e.key" class="el ent" :class="entryClass(e.key)" role="button" tabindex="0" :aria-label="`Индексная запись: ключ ${e.key}`" :data-explain="`entry:${e.key}`" @click="pick(`entry:${e.key}`)" @keydown.enter.space.prevent="pick(`entry:${e.key}`)">
-          <template v-if="detail">
-            <rect :x="box(n.id).x + 4" :y="box(n.id).y + 24 + j * 18" :width="box(n.id).w - 8" height="17" />
-            <text class="t" :x="box(n.id).x + 10" :y="box(n.id).y + 37 + j * 18">{{ e.key }}<tspan class="addr"> → {{ e.tids.map(tidText).join(' ') }}</tspan></text>
-          </template>
-          <template v-else>
-            <rect :x="cell(box(n.id), leafOf(n)!.entries.length, j).x" :y="box(n.id).y + 24" :width="cell(box(n.id), leafOf(n)!.entries.length, j).w" height="20" />
-            <text class="t" text-anchor="middle" :x="cell(box(n.id), leafOf(n)!.entries.length, j).x + cell(box(n.id), leafOf(n)!.entries.length, j).w / 2" :y="box(n.id).y + 38">{{ e.key }}<tspan v-if="e.tids.length > 1" class="addr small">×{{ e.tids.length }}</tspan></text>
-          </template>
-        </g>
-      </template>
+        <template v-else>
+          <rect :x="e.cell.x" :y="n.box.y + 24" :width="e.cell.w" height="20" />
+          <text class="t" text-anchor="middle" :x="e.cell.x + e.cell.w / 2" :y="n.box.y + 38">{{ e.label }}<tspan v-if="e.many > 1" class="addr small">×{{ e.many }}</tspan></text>
+        </template>
+      </g>
     </template>
 
-    <template v-for="p in model.pages" :key="p.no">
-      <g class="el" role="button" tabindex="0" :aria-label="`Страница таблицы ${p.no}`" :data-explain="`page:${p.no}`" @click="pick(`page:${p.no}`)" @keydown.enter.space.prevent="pick(`page:${p.no}`)">
-        <rect class="box heap" :class="[pageMark(p), { sel: selected === `page:${p.no}`, pulse: pageMark(p) === 'cur' }]" :x="box(`page:${p.no}`).x" :y="box(`page:${p.no}`).y" :width="box(`page:${p.no}`).w" :height="box(`page:${p.no}`).h" rx="9" />
-        <text class="nh" :x="box(`page:${p.no}`).x + 10" :y="box(`page:${p.no}`).y + 18">стр. {{ p.no }}{{ detail ? ' · 8 КБ' : '' }}</text>
+    <template v-for="p in pageViews" :key="p.no">
+      <g class="el" v-bind="p.attrs">
+        <rect class="box" :class="p.cls" :x="p.box.x" :y="p.box.y" :width="p.box.w" :height="p.box.h" rx="9" />
+        <text class="nh" :x="p.box.x + 10" :y="p.box.y + 18">{{ p.title }}</text>
       </g>
       <template v-if="detail">
-        <g class="el" role="button" tabindex="0" :aria-label="`Карта видимости страницы ${p.no}: ${p.allVisible ? 'all-visible' : 'нет отметки'}`" :data-explain="`vm:${p.no}`" @click="pick(`vm:${p.no}`)" @keydown.enter.space.prevent="pick(`vm:${p.no}`)">
-          <rect class="chip" :class="[p.allVisible ? 'vis' : 'dirty', { cur: frame.vmCur === p.no, checked: frame.vmChecked[p.no] !== undefined }]" :x="box(`page:${p.no}`).x + box(`page:${p.no}`).w - 58" :y="box(`page:${p.no}`).y + 6" width="50" height="16" />
-          <text class="vm" :class="p.allVisible ? 'vis' : 'dirty'" :x="box(`page:${p.no}`).x + box(`page:${p.no}`).w - 33" :y="box(`page:${p.no}`).y + 18" text-anchor="middle">VM {{ p.allVisible ? '✓' : '—' }}</text>
+        <g class="el" v-bind="p.vm.attrs">
+          <rect class="chip" :class="[p.vm.cls, p.vm.chipCls]" :x="p.vm.x" :y="p.box.y + 6" width="50" height="16" />
+          <text class="vm" :class="p.vm.cls" :x="p.vm.x + 25" :y="p.box.y + 18" text-anchor="middle">{{ p.vm.text }}</text>
         </g>
-        <text class="t dim small" :x="box(`page:${p.no}`).x + 10" :y="box(`page:${p.no}`).y + 36">TID   chat  user_id</text>
+        <text class="t dim small" :x="p.box.x + 10" :y="p.box.y + 36">TID   chat  user_id</text>
       </template>
-      <g v-for="(r, j) in p.rows" :key="r.lp" class="el row" :class="rowClass(p.no, r.lp)" role="button" tabindex="0" :aria-label="`Строка таблицы (${p.no},${r.lp}): ${r.chat}, user_id ${r.user}`" :data-explain="`row:${p.no}:${r.lp}`" @click="pick(`row:${p.no}:${r.lp}`)" @keydown.enter.space.prevent="pick(`row:${p.no}:${r.lp}`)">
-        <rect :x="box(`page:${p.no}`).x + 4" :y="rowY(box(`page:${p.no}`), j)" :width="box(`page:${p.no}`).w - 8" :height="detail ? 17 : 16" />
-        <text class="t" :x="box(`page:${p.no}`).x + 10" :y="rowY(box(`page:${p.no}`), j) + 12.5"><tspan v-if="detail" class="addr">{{ tidText([p.no, r.lp]) }}  </tspan>{{ r.chat }}<tspan class="addr"> · </tspan>{{ r.user }}</text>
+      <g v-for="r in p.rows" :key="r.lp" class="el row" :class="r.cls" v-bind="r.attrs">
+        <rect :x="p.box.x + 4" :y="r.y" :width="p.box.w - 8" :height="detail ? 17 : 16" />
+        <text class="t" :x="p.box.x + 10" :y="r.y + 12.5"><tspan v-if="detail" class="addr">{{ r.tid }}  </tspan>{{ r.chat }}<tspan class="addr"> · </tspan>{{ r.user }}</text>
       </g>
     </template>
 
     <!-- TID поверх страниц, но не перехватывает клики: pointer-events: none -->
     <g class="tids">
-      <path v-for="t in tidPaths" :key="t.key" class="tid" :class="{ sel: t.selected }" :d="t.d" marker-end="url(#bt-arrow-tid)" />
+      <path v-for="t in tidPaths" :key="t.key" class="tid" :class="{ sel: t.selected }" :d="t.d" :marker-end="`url(#${tidMarker})`" />
     </g>
   </svg>
 </template>
@@ -184,10 +264,11 @@ const childBlock = (id: string): number => model.value.nodes[id]?.block ?? 0
 .bt { width: 100%; height: auto; display: block; color: var(--viz-text); }
 .lvl { font: 650 10.5px var(--vp-font-family-base, system-ui); letter-spacing: 0.8px; text-transform: uppercase; fill: var(--viz-muted); }
 .box { fill: var(--viz-node-bg); stroke: var(--viz-edge); stroke-width: 1.5; }
-.box.heap { fill: color-mix(in srgb, var(--viz-service) 10%, var(--viz-node-bg)); }
+/* Заливку не тонируем: на любом оттенке muted-текст заголовка падает ниже 4,5:1 в светлой теме. Куча отличается рамкой. */
+.box.heap { stroke: color-mix(in srgb, var(--viz-service) 55%, var(--viz-edge)); }
 .box.meta { stroke-dasharray: 4 3; }
 .el { cursor: pointer; outline: none; }
-.el:hover .box { stroke: var(--viz-muted); }
+.el:hover .box:not(.cur):not(.read):not(.sel) { stroke: var(--viz-muted); }
 .el:focus-visible { outline: 2px solid var(--viz-client); outline-offset: 2px; }
 .box.read { stroke: var(--viz-active); stroke-width: 2; }
 .box.cur { stroke: var(--viz-client); stroke-width: 2.5; filter: drop-shadow(0 0 6px var(--viz-client)); }
@@ -216,11 +297,13 @@ const childBlock = (id: string): number => model.value.nodes[id]?.block ?? 0
 .tid.sel { stroke: var(--viz-text); stroke-width: 2.2; opacity: 1; }
 .chip { fill: var(--viz-node-bg); stroke: var(--viz-edge); rx: 5; }
 .chip.cur.vis { fill: var(--viz-hit-bg); stroke: var(--viz-db); }
-.chip.cur.dirty { fill: color-mix(in srgb, var(--viz-error) 25%, var(--viz-node-bg)); stroke: var(--viz-error); }
+.chip.cur.dirty { fill: color-mix(in srgb, var(--viz-error) 25%, var(--viz-node-bg)); }
 .chip.checked:not(.cur) { stroke: var(--viz-muted); }
 .vm { font: 600 10px var(--vp-font-family-base, system-ui); }
-.vm.vis { fill: var(--viz-db); }
-.vm.dirty { fill: var(--viz-error); }
+/* Подпись чипа — токены с проверенным контрастом на обычной и «активной» заливке; цвет ошибки только в рамке. */
+.vm.vis { fill: var(--viz-hit-text); }
+.vm.dirty { fill: var(--viz-text); }
+.chip.dirty { stroke: var(--viz-error); }
 @media (prefers-reduced-motion: no-preference) {
   .pulse { animation: bt-pulse 1.4s ease-in-out infinite; }
   @keyframes bt-pulse { 50% { opacity: 0.35; } }

@@ -27,7 +27,8 @@ export function layoutScene(m: BtModel, view: BtView): SceneLayout {
   const slot = SCENE_WIDTH / leaves.length
   const leafW = Math.min(detail ? 184 : 156, slot - 12)
   leaves.forEach((id, i) => {
-    const n = m.nodes[id] as LeafNode
+    const n = m.nodes[id]
+    if (!n || !isLeaf(n)) return
     boxes[id] = { x: slot * (i + 0.5) - leafW / 2, y: ROW_Y.leaf, w: leafW, h: nodeHeight(detail, n.entries.length) }
   })
   const innerW = detail ? 160 : 150
