@@ -104,7 +104,7 @@ describe('каждый шаг', () => {
   // Читатель открывает вкладки независимо: первое упоминание каждого термина в сценарии должно быть подсказкой.
   const KEYWORDS: [id: string, re: RegExp][] = [
     ['tid', /\bTID\b/],
-    ['heap-table', /\b[Hh]eap(?! (Scan|Fetches))/],
+    ['heap-table', /\b[Hh]eap/],
     ['db-page', /(?<!мета)страниц/i],
     ['seq-scan', /Seq Scan/],
     ['bitmap-scan', /Bitmap/],
@@ -124,7 +124,7 @@ describe('каждый шаг', () => {
   it.each(IDS)('%s: первое упоминание каждого термина — подсказка', (id) => {
     const segs = btreeScenario(id).flatMap((s) => stepCaptions(s).flatMap((c) => [...captionSegments(c)]))
     const misses = KEYWORDS.flatMap(([termId, re]) => {
-      const first = segs.find((seg) => re.test(seg.text))
+      const first = segs.find((seg) => re.test(seg.text) && (seg.termId === undefined || seg.termId === termId))
       return first && first.termId !== termId ? [`${termId}: «${first.text.slice(0, 90)}»`] : []
     })
     expect(misses).toEqual([])
