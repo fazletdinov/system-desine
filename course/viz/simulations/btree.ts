@@ -168,16 +168,16 @@ function stripTerms(src: string): string {
 }
 const FIRST_SENTENCE = /^.*?[.!?](?=\s|$)/s
 
-const need = <T>(v: T | undefined, what: string): T => {
+export const need = <T>(v: T | undefined, what: string): T => {
   if (v === undefined) throw new Error(`btree: нет ${what}`)
   return v
 }
-const tidS = (t: Tid): string => `(${t[0]},${t[1]})`
+export const tidS = (t: Tid): string => `(${t[0]},${t[1]})`
 const push = <T>(list: T[], v: T): void => {
   if (!list.includes(v)) list.push(v)
 }
 const entryAt = (n: InnerNode, i: number): InnerEntry => need(n.entries[i], `записи ${i} в блоке ${n.block}`)
-const sepS = (e: InnerEntry): string => String(e.sep ?? '−∞')
+export const sepS = (e: InnerEntry): string => String(e.sep ?? '−∞')
 // «1 строка, 2 строки, 5 строк»
 const plural = (n: number, one: string, few: string, many: string): string => {
   const d = n % 10
@@ -610,7 +610,7 @@ function dup(): Step<BtFrame>[] {
     {
       title: `Лист (блок ${leaf.block}): один ключ — три адреса`,
       learn: 'Дедупликация: posting list',
-      did: `Ключ 42 записан в листе один раз со списком из трёх [[tid|TID]]: ${e.tids.map(tidS).join(' ')}. Это [[posting-list|posting list]] — дедупликация [[b-tree|B-tree]] (PostgreSQL 13+): одинаковые ключи хранятся одной записью, адреса внутри отсортированы.`,
+      did: `Ключ 42 записан в листе один раз со списком из трёх [[tid|TID]]: ${e.tids.map(tidS).join(' ')}. Это [[posting-list|posting list]] — дедупликация [[b-tree|B-tree]] (PostgreSQL 13+): одинаковые ключи хранятся одной записью, адреса внутри отсортированы. При CREATE INDEX склейка делается сразу, при обычных вставках — лениво, перед тем как лист пришлось бы делить.`,
       uses: 'листовая страница индекса',
       reads: `42 → ${e.tids.map(tidS).join(' ')}`,
       why: 'Пользователь мессенджера состоит во многих чатах — user_id повторяется постоянно. Без дедупликации на каждую пару была бы отдельная запись с копией ключа; с ней индекс заметно меньше. Если повторов больше, чем помещается в странице, они продолжаются в соседнем листе — тогда поиск идёт вправо по ссылке между листьями.',
