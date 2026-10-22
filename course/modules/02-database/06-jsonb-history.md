@@ -33,6 +33,8 @@ DETAIL:  Key (username)=(alice) already exists.
 SQLSTATE 23505
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина: 12th Gen Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04.5, ядро Linux 7.0, Docker 29.9.1, PostgreSQL 18.6 с настройками образа по умолчанию и данными на tmpfs, go1.27.2; полный вывод — `labs/2a/results/history.txt`, шаг 2.
 
 alice «удалена», но её сессия жива: `ON DELETE CASCADE` на `UPDATE` не срабатывает. А имя alice занято навсегда: `UNIQUE` сравнивает со всеми строками, в том числе с «удалёнными». Дальше в уроке — ещё две ловушки той же природы и цена журнала аудита: тот же `UPDATE` 100 000 строк с триггером аудита шёл <N>в 3,3 раза дольше</N> и записал в журнал предзаписи (WAL) почти вдвое больше. Ни одна из этих цен не видна, пока не посмотришь.
@@ -66,6 +68,8 @@ alice «удалена», но её сессия жива: `ON DELETE CASCADE` �
 (3 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/jsonb/settings.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же; полный вывод — `labs/2a/results/jsonb-settings.txt`, шаг 2. Частичное обновление пишется через `||` (слить объекты верхнего уровня) или `jsonb_set` (заменить значение по пути). Но «частичное» оно только в SQL: PostgreSQL хранит документ одним значением и при любом изменении пишет новую версию строки с документом **целиком** (как любой `UPDATE`, урок 2.5). Документ на 100 КБ, в котором меняют одну галочку, — 100 КБ записи на каждую галочку.
 
 ### Чего JSONB не проверяет
@@ -83,6 +87,8 @@ INSERT 0 2
        5 | 
 (2 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/jsonb/settings.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 4. Число вместо строки и опечатка в ключе приняты молча. Опечатку видно только по последствиям: у пользователя 5 тема «не задана», и он видит умолчание вместо выбранной тёмной темы. Часть проверок можно вернуть через `CHECK`: корень — объект, ключи — только известные, `theme` — строка из списка:
 
@@ -102,6 +108,8 @@ INSERT 0 2
 (2 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/jsonb/gin.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же; полный вывод — `labs/2a/results/jsonb-gin.txt`, шаг 2. Средняя строка — <N>55 байт против 126</N>: JSONB хранит в **каждой** строке имена ключей (`"theme"`, `"notify"`, `"mentions"`, `"language"`, `"beta"`), а у столбцов имена живут один раз в каталоге. Таблица вдвое больше — значит, вдвое больше страниц читать, кешировать и копировать в реплики.
 
 Искать по содержимому JSONB можно с индексом. B-дерево индексирует значение целиком и для «содержит ли документ ключ `beta` со значением `new_composer`» не годится. Для этого есть <T id="gin-index">GIN-индекс</T> (generalized inverted index) — обратный индекс: он раскладывает документ на элементы и для каждого элемента хранит список строк, где тот встречается. Так устроен предметный указатель в конце книги: слово → список страниц. Без индекса поиск `@>` — полный просмотр (`Seq Scan`), с индексом — `Bitmap Index Scan`:
@@ -118,6 +126,8 @@ SELECT count(*) FROM settings_jsonb WHERE settings @> '{"beta": ["new_composer"]
                Index Cond: (settings @> '{"beta": ["new_composer"]}'::jsonb)
 (5 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/jsonb/gin.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 4. У GIN для JSONB два класса операторов. `jsonb_ops` (по умолчанию) индексирует каждый ключ и каждое значение и обслуживает `@>`, `?`, `?|`, `?&`. `jsonb_path_ops` индексирует хеши путей до значений, умеет только `@>` (и jsonpath), зато меньше: в лабе <N>1 048 КБ против 448 КБ</N>, и планировщик выбрал именно его. А вот `settings ->> 'language' = 'kk'` GIN не обслуживает вовсе: это сравнение текста, извлечённого из документа, а не «содержит». План — снова `Seq Scan`. Такой запрос либо переписывают через `@>` (`settings @> '{"language": "kk"}'`), либо строят B-дерево по выражению `(settings ->> 'language')`. И если ключ фильтруют так часто, что ему нужен свой индекс, это сигнал, что ему место в столбце. Устройство GIN, его медленные вставки и список ожидания (pending list) — часть 2b.
 
@@ -175,6 +185,8 @@ DETAIL:  Key (username)=(alice) already exists.
 SQLSTATE 23505
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 3. Новая alice зарегистрирована, вторая живая — отвергнута. Правило изменилось с «имя уникально» на «имя уникально среди живых», и это уже честное правило предметной области. Но у исправления есть цена, которую легко пропустить:
 
 - **Имя в ошибке стало другим.** Адаптер мессенджера узнаёт «имя занято» по `ConstraintName` (урок 2.4). Поменяли ограничение на индекс — меняйте и адаптер, в той же миграции и том же ревью.
@@ -197,6 +209,8 @@ FROM users WHERE username = 'alice' ORDER BY id;
 INSERT INTO messages (author_id, text) VALUES (1, 'пишу после удаления');
 INSERT 0 1
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 4. Две строки там, где адаптер ждёт одну: в лучшем случае ошибка, в худшем — вход в чужой, удалённый аккаунт. И вторая строка вывода хуже первой. <T id="foreign-key">Внешний ключ</T> (foreign key) проверяет, что строка `users` с `id = 1` **есть**, а не что она **жива**: сообщение от удалённой alice принято без единого слова. Условие «автор не удалён» в `FOREIGN KEY` не записать. Его держит только код — или триггер, о котором ниже. Сюда же относится сессия из начала урока: всё, что `ON DELETE CASCADE` сделал бы сам, при мягком удалении должен сделать код, в той же транзакции, что и `UPDATE deleted_at`.
 
@@ -222,6 +236,8 @@ EXPLAIN (COSTS OFF) SELECT id FROM active_users WHERE username = 'user42';
 (2 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 4. Без `deleted_at IS NULL` запрос не может взять индекс, в котором нет удалённых строк: вдруг ответ — удалённая. Остаётся полный просмотр всех 100 000 строк. С условием — или через представление, которое его подставляет, — точечный поиск по индексу. Забытый фильтр бьёт дважды: и по правильности, и по скорости.
 
 ### Ловушка 3: право на удаление
@@ -244,6 +260,8 @@ DETAIL:  Key (id)=(1) is still referenced from table "messages".
 SQLSTATE 23503
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 7. Обычный путь в таких системах — **обезличить** строку: идентификатор остаётся ради ссылок, а всё, что указывает на человека, заменяется. Сессии удаляются явно, ведь каскад на `UPDATE` не срабатывает:
 
 <<< @/../labs/2a/history.sql#erase{sql}
@@ -255,6 +273,8 @@ SQLSTATE 23503
  deleted_1 | пишу после удаления
 (2 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. Сообщения на месте, собеседники видят их от «Удалённого пользователя». Но в базе есть ещё одна копия имени, о которой легко забыть, — журнал аудита. К нему мы вернёмся в следующем разделе.
 
@@ -318,6 +338,8 @@ flowchart LR
 (3 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же, шаг 6. Правка из приложения записана с автором, ручная — без него: триггер её поймал, но кто из людей это был, не знает. `SET LOCAL` важен: настройка живёт до конца транзакции. Обычный `SET` остался бы на соединении, и следующий запрос из пула, от другого пользователя, записал бы в журнал чужое имя.
 
 Теперь вернёмся к праву на удаление. Журнал хранит строку **целиком**, и после обезличивания alice её имя осталось в истории:
@@ -332,6 +354,8 @@ FROM users_audit WHERE user_id = 1 ORDER BY id;
  UPDATE | alice    | deleted_1
 (3 rows)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же, шаг 7. Вставка, мягкое удаление и само обезличивание — имя alice во всех <N>трёх строках</N> её истории. Процедура удаления должна пройти и по журналу:
 
@@ -366,6 +390,8 @@ UPDATE audited SET display_name = display_name || '!';
  12 MB      | 12 MB        |         100000 | 26 MB
 (1 row)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/history.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же; выдержка из шага 8 (`…` — пропущены строки плана). Время <N>448 мс против 1 478 мс</N> — в 3,3 раза. Журнал предзаписи (<T id="wal">WAL</T>), который база пишет на диск при каждом изменении и отправляет репликам, — <N>39 МБ против 73 МБ</N>, в 1,9 раза. А сам журнал аудита после **одного** обновления каждой строки вырос на <N>26 МБ</N> — вдвое больше таблицы, которую он описывает: в каждой строке журнала две полные копии строки в JSONB, с именами ключей (та же цена хранения, что в разделе о JSONB). Абсолютные миллисекунды зависят от машины, поэтому `scenario.sh` проверяет только соотношение: с триггером дольше хотя бы в 1,2 раза, WAL больше хотя бы в 1,3 раза.
 

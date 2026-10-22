@@ -26,6 +26,8 @@ EXECUTE list_messages_offset(pg_temp.cid(1), 5001, 51);      -- «пропуст
    ->  Index Scan Backward using messages_pkey on messages (actual rows=5052.00 loops=1)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина: 12th Gen Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04.5, ядро Linux 7.0, Docker 29.9.1, PostgreSQL 18.6 с настройками образа по умолчанию и данными на tmpfs, go1.27.2; полный вывод — `labs/2a/results/messenger-explain.txt`, разделы 6 и 7 (выдержка: комментарии `--` добавлены здесь, в файле их нет).
 
 Индекс один и тот же, ответ один и тот же, а страниц прочитано в 37 раз больше: <N>3 страницы</N> против <N>110 страниц</N>, 51 прочитанная строка против <N>5 052</N>. Второй замер — индекс, который выглядит полезным: `chat.chats (last_activity_at DESC, id DESC)` для списка чатов «по последней активности». Лаба создаёт его и отправляет в чат 200 сообщений. Планировщик этот индекс для списка **не берёт** (план не меняется ни в одной строке), а доля дешёвых обновлений строки чата падает с 200 из 200 до <N>0 из 200</N>. Индекс, который ничего не ускорил, замедлил каждую отправку.
@@ -115,6 +117,8 @@ EXECUTE list_messages_before(pg_temp.cid(1), 5000, 51);
 (10 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Читаем снизу вверх. `Index Scan Backward using messages_pkey` — обход первичного ключа в обратном порядке, то есть от больших `seq` к меньшим. `Index Cond` содержит **оба** условия: и `chat_id`, и `seq` — индекс нашёл начало диапазона одним спуском (`Index Searches: 1`). Узел отдал ровно 51 строку, и `Limit` его остановил. Всего три страницы: спуск по неглубокому дереву и соседние страницы, где лежат 51 запись индекса и их строки. От длины чата это число почти не зависит: в чате на миллион сообщений дерево станет на уровень-два глубже, и спуск — на страницу-две длиннее, а читаемый кусок останется тем же.
 
 `COSTS OFF, TIMING OFF` убирают из вывода оценки планировщика и время каждого узла: первые разбирает часть 2b, а второе на таких коротких запросах больше шум, чем сигнал.
@@ -133,6 +137,8 @@ EXECUTE list_messages_before(pg_temp.cid(1), 5000, 51);
 (4 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же. Индексы вместе занимают <N>1 712 КБ</N> — больше самой таблицы (1 368 КБ). Самый крупный из них — ключ повтора: в нём три `uuid` по 16 байт, а `client_message_id` присылает клиент, и он случаен, поэтому вставки разбрасываются по всему индексу и делят страницы пополам (тот же эффект, что UUIDv4 в уроке 2.3). Размеры этого индекса от прогона к прогону немного гуляют по той же причине.
 
 Отсюда честный вывод про `messages_id_key`. Сегодня **ни один запрос мессенджера не ищет сообщение по `id`**: лента идёт по `(chat_id, seq)`, повтор — по ключу повтора. Индекс существует ради ограничения `UNIQUE`: `id` — внешний идентификатор сообщения, и база гарантирует, что двух сообщений с одним `id` не будет, даже если генератор ошибётся. Это единственный индекс схемы, который оправдан инвариантом, а не запросом. Если появятся ответы или ссылки на сообщение, у индекса будет и паттерн: такие запросы знают только `id` сообщения. Пока их нет, индекс держится на инварианте, и его цену стоит помнить на ревью.
@@ -147,6 +153,8 @@ EXECUTE list_messages_before(pg_temp.cid(1), 5000, 51);
                  Index Cond: (chat_id = c.id)
                  Heap Fetches: 0
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же. `Index Only Scan` — <T id="index-only-scan">сканирование только индекса</T> (index-only scan): всё, что нужно запросу (`user_id`), уже лежит в индексе рядом с `chat_id`, и в таблицу ходить не нужно (`Heap Fetches: 0`). Проверка «участник ли» в мессенджере не отдельный запрос: `FindChat` загружает чат вместе с участниками именно так, а дальше `Chat.IsMember` ищет двоичным поиском в отсортированном списке в памяти. Это и есть причина `ORDER BY m.user_id` в подзапросе (комментарий к `selectChat` в `store.go`).
 
@@ -191,6 +199,8 @@ Use case просит у хранилища на одну строку боль�
 | первая, `listChatsFirst` | 5 095 + 22 | 1 000 | 51 | 2,078 мс |
 | после курсора, `listChatsAfter` | 5 115 + 2 | 500 | 51 | 1,876 мс |
 | та же через `OFFSET 500` | 6 617 | 1 000, отдано 551 | 551 | 2,525 мс |
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же; «+ 22» — страницы, прочитанные из файлов (`read`), остальные — из кеша (`hit`). Курсор почти не сэкономил чтений по сравнению с первой страницей: план в обоих случаях находит **все** 1 000 чатов пользователя, а условие курсора проверяет уже после чтения строки чата (`Filter: (ROW(last_activity_at, id) < ROW(…))` в узле `chats_pkey`, `actual rows=0.50 loops=1000` — подошла половина). Поэтому keyset здесь покупает прежде всего **правильность**: страницы не дрейфуют, когда в чатах пишут. Но и `OFFSET` всё равно хуже: подзапрос участников в списке столбцов вычисляется для каждой строки, которую `OFFSET` потом выбросит, — 551 раз вместо 51, и 1 654 страницы на одних участниках.
 
@@ -242,6 +252,8 @@ EXECUTE list_chats_first(pg_temp.uid(1), 51);
 (32 rows)
 ```
 
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
+
 машина та же; это план из раздела 2, без индекса. План с индексом в разделе 4 совпадает с ним узел в узел и отличается только временем и тем, сколько страниц пришло из кеша, а сколько из файлов: всего их 5 117 в обоих случаях. Читаем снизу вверх:
 
 1. `Bitmap Index Scan on members_user_id_idx` находит 1 000 записей участия пользователя: три страницы индекса.
@@ -274,6 +286,8 @@ CREATE INDEX chats_last_activity_idx ON chat.chats (last_activity_at DESC, id DE
      200 |           0
 (1 row)
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же (выдержка из раздела 4). С индексом каждое из 200 обновлений меняет проиндексированный столбец `last_activity_at`, и ни одно не может быть HOT: каждая отправка теперь пишет по записи в **три** индекса `chat.chats`, включая первичный ключ, хотя `id` не менялся. Скорость списка — та же, цена отправки — выше. Поэтому миграция мессенджера такого индекса не создаёт, а комментарий в ней ссылается на этот замер. Урок 2.2 говорил о том же как о цене денормализации; теперь у неё есть число.
 
@@ -316,6 +330,8 @@ CREATE INDEX chats_last_activity_idx ON chat.chats (last_activity_at DESC, id DE
 ---------------------+--------
  members_user_id_idx | 19 MB
 ```
+
+<Run dir="labs" cmd="docker compose -f 2a/compose.yaml exec -T db sh -c 'psql -X -f /lab/messenger-explain.sql 2>&amp;1'" needs="docker" before="`docker compose -f 2a/compose.yaml up -d --wait`" />
 
 машина та же (выдержка). Весь план прочитал 4 156 + 9 страниц вместо 5 095 + 22, а время — 1,242 мс вместо 2,078. Но индекс вырос с <N>19 МБ до 95 МБ</N>. Причина — дедупликация B-дерева (PostgreSQL 13+, документация «B-Tree Indexes», раздел «Deduplication»): если один и тот же ключ повторяется, индекс хранит его один раз со списком адресов строк. У `user_id` в среднем по 20 повторов, и дедупликация сжимает индекс в разы. У пары `(user_id, chat_id)` повторов нет, каждая запись хранит свои 32 байта ключа.
 

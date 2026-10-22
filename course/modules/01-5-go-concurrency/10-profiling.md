@@ -37,6 +37,8 @@ Dropped 700 nodes (cum <= 0.10s)
      0.02s   0.1%  4.46%      2.65s 13.42%  golang.org/x/crypto/argon2.processBlocks.func1
 ```
 
+<Run dir="messenger" cmd="go tool pprof -top -cum cpu.pprof" needs="docker" before="снимите `cpu.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04, ядро Linux 7.0, go1.27.2; Docker Engine 29.9.1, контейнер `cpus: 1`, `mem_limit: 256m`. Часть строк опущена (`...`), полный вывод — ниже в уроке.
 
 Argon2id занял около <N>13 %</N> процессора. Больше всего — <N>34,9 %</N> — ушло на разбор и проверку JWT, а из них <N>28,3 %</N> — на одну функцию, `crypto/ed25519.Verify`. Каждый запрос чтения проверяет подпись токена, а чтений в этой нагрузке в сотни раз больше, чем хешей: 2390 в секунду против трёх-четырёх успешных регистраций (отказы `503` хеш не считают). Очевидная догадка оказалась неверной, и узнали мы это за двадцать секунд, ничего не меняя в коде.
@@ -156,6 +158,8 @@ API из `runtime/trace`: `NewFlightRecorder(FlightRecorderConfig{MinAge, MaxByt
 | только регистрации (`overload.sh` в цикле) | 2,51 с (12,6 % одного ядра) | 75,3 % | нет в выводе |
 | чтение и регистрации вместе | 19,74 с (98,7 %) | 13,4 % | 34,9 % |
 
+<Run dir="messenger" cmd="go tool pprof -top -cum signup-cpu.pprof &amp;&amp; go tool pprof -top -cum cpu.pprof" needs="docker" before="снимите `signup-cpu.pprof` и `cpu.pprof` со стенда, как записано в `../labs/1-5/results/profile/signup-load.txt` и `../labs/1-5/results/profile/profile-load.txt`" />
+
 машина та же; сырые выводы этого урока лежат в `labs/1-5/results/profile/`, здесь — `signup-cpu-top-cum.txt` и `cpu-top-cum.txt`; ниже указываем только имя файла. Разработчик, который проверяет регистрацию на ноутбуке, честно получит «Argon2id — три четверти процессора» и пойдёт оптимизировать хеш. Продакшен мессенджера, где чтений намного больше, чем регистраций, скажет другое.
 
 Ноутбук отличается от продакшена не только нагрузкой. Другое число ядер и `GOMAXPROCS`, нет квоты CPU и лимита памяти, данные меньше (пустой чат против чата на миллион сообщений), другая версия ядра и процессора. Документация PGO говорит то же для компилятора: профиль должен быть «репрезентативным», и «сбор профилей прямо с продакшена — рекомендуемый способ». Отсюда требование к сервису: снимать профиль с работающего экземпляра должно быть безопасно и дёшево. Это задача служебного порта.
@@ -198,6 +202,8 @@ Content-Type: text/plain; charset=utf-8
 ...
 seconds: ожидается число от 0 до 60, получено "600"
 ```
+
+<Run dir="messenger" cmd="curl -si &quot;127.0.0.1:6060/debug/pprof/profile?seconds=600&quot;" needs="docker" before="`docker compose up -d`" />
 
 машина та же; полный вывод — `main-port-pprof.txt`.
 
@@ -311,6 +317,8 @@ Showing nodes accounting for 1.89s, 75.30% of 2.51s total
          0     0% 74.90%      0.20s  7.97%  messenger/internal/auth/adapters/argon2id.(*Hasher).Hash
 ```
 
+<Run dir="messenger" cmd="go tool pprof -top -cum signup-cpu.pprof" needs="docker" before="снимите `signup-cpu.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/signup-load.txt`" />
+
 машина та же. Здесь Argon2id занимает три четверти — ровно то, чего мы ждали до первого замера. Но процесс за 20 секунд взял всего 2,51 с процессора: при N = 1 хеши идут по одному, а 45 из 50 запросов каждой волны получают быстрый `503`.
 
 Обратите внимание на странность: `SignUp` — 10 %, `Hasher.Hash` — 8 %, а Argon2id — 75 %. Как вызываемое может стоить больше вызывающего? `argon2.IDKey` запускает вычисление блоков в **отдельных горутинах** (`processBlocks.func1`) и ждёт их на `WaitGroup`. Стек новой горутины начинается с её собственной функции, а не со стека родителя. Процессор этих горутин в `cum` обработчика не попадает, а на флейм-графе растёт от корня отдельной колонной. Это правило для любого профиля Go: работа, отданная в горутину, отделяется от того, кто её заказал.
@@ -339,6 +347,8 @@ ROUTINE ======================== messenger/internal/chat/adapters/memory.(*Store
          .          .    146:}
 ```
 
+<Run dir="messenger" cmd="go tool pprof -sample_index=alloc_space -list 'memory.\(\*Store\).ListMessagesBefore' heap.pprof" needs="docker" before="снимите `heap.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
+
 машина та же. Вся память функции — одна строка: срез страницы на 50 сообщений. Он возвращается из функции, поэтому живёт в куче (урок 1.5.8), и предвыделен ровно под нужный размер. Это правильный код, а не находка для оптимизации: копия защищает хранилище от того, что вызывающий изменит страницу.
 
 `-peek` показывает соседей функции: кто её вызвал и кого вызвала она. Он понадобится нам ниже, чтобы разобраться с флейм-графом.
@@ -362,6 +372,8 @@ $ go tool pprof -peek 'field.\(\*Element\).Multiply$' cpu.pprof
      0.01s 0.051% 0.051%      2.04s 10.33%                | crypto/internal/fips140/edwards25519/field.(*Element).Multiply
                                              2.03s 99.51% |   crypto/internal/fips140/edwards25519/field.feMul
 ```
+
+<Run dir="messenger" cmd="go tool pprof -peek 'field.\(\*Element\).Multiply$' cpu.pprof" needs="docker" before="снимите `cpu.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
 
 машина та же; в выводе 12 вызывающих, часть опущена. Умножение вызывают двенадцать разных функций, а каждая из них сама может стоять на нескольких путях, поэтому на графе у `feMul` не меньше двенадцати разных блоков. Самый широкий — над `FromP1xP1`, около 1,05 с, это 5,3 % ширины. Остальные — тоньше. Поэтому:
 
@@ -404,6 +416,8 @@ Showing nodes accounting for 5570051, 93.97% of 5927748 total
 ...
 ```
 
+<Run dir="messenger" cmd="go tool pprof -top -sample_index=alloc_objects heap.pprof" needs="docker" before="снимите `heap.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
+
 машина та же. `reflect.unsafe_New` — создание значений через рефлексию, и `-peek` показывает, что его зовёт `encoding/json/v2`. Значит, JSON и правда главный по объектам. Но с поправкой, которой гипотеза не предвидела: почти 40 % объектов выделяет **разбор токена** — `jwt.Verify`, у которого внутри тот же JSON (claims) и base64. Заголовки HTTP (`readMIMEHeader`, `Header.Clone`) и контексты со сроком (`WithDeadlineCause` — наш `Timeout`) — следующие. Итог: гипотеза подтверждена по байтам, по объектам — в основном, но главный «едок» объектов — аутентификация, а не ответ.
 
 А что живо прямо сейчас?
@@ -444,6 +458,8 @@ $ docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.St
 status=running exit=0 oom=false
 ```
 
+<Run dir="messenger" cmd="for i in $(seq 1 13); do scripts/overload.sh 50; sleep 1; done; docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' messenger-messenger-1" needs="docker" before="`MESSENGER_HASH_CONCURRENCY=14 MESSENGER_HASH_QUEUE=0 docker compose up -d --force-recreate`" />
+
 машина та же; сырой вывод — `near-limit-overload.txt` и `near-limit-load.txt`. Картина 1.5.6 повторилась: отказы по 0,05–0,6 с, пик памяти — все 256 МиБ контейнера, процесс жив.
 
 Профиль `heap` в конце прогона:
@@ -481,6 +497,8 @@ $ go tool pprof -top -cum -focus=gcAssistAlloc near-limit-cpu.pprof
          0     0%     0%      0.06s  0.73%  runtime.gcAssistAlloc
 ```
 
+<Run dir="messenger" cmd="go tool pprof -top -cum near-limit-cpu.pprof &amp;&amp; go tool pprof -top -cum -focus=gcAssistAlloc near-limit-cpu.pprof" needs="docker" before="снимите `near-limit-cpu.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/near-limit-load.txt`" />
+
 машина та же. Помощь разметке — <N>0,73 %</N> процессора, фоновая разметка — 5,6 %. По CPU-профилю сборщик почти бесплатен, и гипотезу пора отвергнуть. Но заметьте вторую строку: процесс за 20 секунд взял 8,24 с процессора — **41 %** квоты. Отказы, которые стоят микросекунды кода, длились сотни миллисекунд. Где же они были? Не на процессоре. Значит, CPU-профиль на этот вопрос ответить не может в принципе: он видит только время на процессоре.
 
 Не спешите читать 41 % как «процессора было вдоволь». Это среднее за 20 секунд, а нагрузка идёт волнами: полсекунды 50 одновременных регистраций, потом `sleep 1` и запуск новых `curl`. Внутри волны процесс хочет больше, чем ему дано, а между волнами простаивает. Ниже мы увидим это по счётчикам.
@@ -499,6 +517,8 @@ $ scripts/trace-summary.sh near-limit-trace.out
 куча (объекты): от 23.4 до 289.8 МиБ
 цель кучи: от 47.1 до 289.4 МиБ
 ```
+
+<Run dir="messenger" cmd="scripts/trace-summary.sh near-limit-trace.out" needs="docker" before="снимите `near-limit-trace.out` (`/debug/pprof/trace?seconds=5`) в прогоне из `../labs/1-5/results/profile/near-limit-load.txt`" />
 
 машина та же; полный вывод — `near-limit-trace-summary.txt`. Читаем:
 
@@ -531,6 +551,8 @@ nr_throttled 88
 throttled_usec 8044539
 nr_bursts 0
 ```
+
+<Run dir="messenger" cmd="go tool trace -pprof=sched near-limit-trace.out > sched.pprof &amp;&amp; go tool pprof -top -cum sched.pprof" needs="docker" before="снимите `near-limit-trace.out` (`/debug/pprof/trace?seconds=5`) в прогоне из `../labs/1-5/results/profile/near-limit-load.txt`" />
 
 машина та же. За 5 секунд горутины в сумме простояли готовыми к работе **31,6 секунды**: 14 хешей и обработчики делят <T id="gomaxprocs">`GOMAXPROCS`</T> = 2 (урок 1.17: `cpus: 1` даёт два P), и очередь готовых не пустеет. Из них 6,4 с ждали обработчики HTTP.
 
@@ -566,6 +588,8 @@ Showing nodes accounting for 313.69ms, 100% of 313.69ms total
          0     0%   100%   313.69ms   100%  messenger/internal/platform/middleware.AccessLog.func1.1
 ```
 
+<Run dir="messenger" cmd="go tool pprof -top mutex.pprof" needs="docker" before="снимите `mutex.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
+
 машина та же. Вся конкуренция — один замок: `slog.JSONHandler` пишет строки журнала в stdout под мьютексом, и 2400 строк доступа в секунду из разных горутин ждут друг друга. Замков хранилищ нет вовсе. Почему? Чтение истории берёт `RWMutex.RLock` (видно в `-list` выше), а читатели друг друга не ждут; пишущих запросов в этой нагрузке почти нет. Отсутствие строки в профиле — тоже результат: хранилище не узкое место. А журнал на 2400 запросов в секунду — кандидат на изменения, когда нагрузка вырастет (буферизация, выборка строк доступа, асинхронный обработчик). Сегодня это 0,3 с ожидания за всю жизнь процесса, около 23 с нагрузки (с поправкой на выборку 1/100 — `go tool pprof` уже умножил).
 
 Профиль block копится с начала процесса, и в нём много «законного» ожидания:
@@ -579,6 +603,8 @@ Showing nodes accounting for 90555.84ms, 100% of 90555.84ms total
                                         10405.26ms 34.22% |   messenger/internal/auth/adapters/hashlimit.limited[...]
 30405.39ms 33.58% 87.76% 30405.39ms 33.58%                | runtime.selectgo
 ```
+
+<Run dir="messenger" cmd="go tool pprof -peek 'runtime.chanrecv1$|runtime.selectgo$' block.pprof" needs="docker" before="снимите `block.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
 
 машина та же; вывод сокращён, полный — `block-peek.txt`. 49 секунд — `wakeableSleep` из `runtime/trace.go`: служебные горутины трассировщика, которые спят между итерациями. Это цена работающего flight recorder, а не проблема. 20 секунд — `net/http/pprof.sleep`: обработчик нашего же CPU-профиля 20 секунд ждал, пока профиль снимается. Отбросим их:
 
@@ -618,6 +644,8 @@ goroutine profile: total 30
 ...
 ```
 
+<Run dir="messenger" cmd="curl -s '127.0.0.1:6060/debug/pprof/goroutine?debug=1'" needs="docker" before="стенд под смешанной нагрузкой, как записано в `../labs/1-5/results/profile/mixed-load.txt`" />
+
 машина та же; файл — `mixed-goroutine-debug1.txt`. Группы читаются как перепись: 8 горутин соединений ждут следующего запроса в netpoller (урок 1.5.7) — это 8 клиентов `read-load.sh`; 3 регистрации стоят в очереди ограничителя; 1 хеш считается и ждёт свои горутины блоков; остальное — по одной: `lifecycle.Run`, два `httpserver.Serve` (основной и служебный порт), `Dumper.Run`, очистка идемпотентности, сигналы. Всего 30. После нагрузки — 13: горутины соединений и запросов закончились. Утечки нет, и профиль утечек это подтверждает:
 
 ```text
@@ -635,6 +663,8 @@ $ scripts/read-load.sh 8 30 & sleep 3; for i in $(seq 1 16); do scripts/overload
 $ docker compose logs --no-log-prefix | grep flight
 {"time":"2026-10-20T09:20:46.584188847Z","level":"INFO","msg":"снимок flight recorder записан","file":"/tmp/flight-20261020T092046Z.trace","bytes":1171642}
 ```
+
+<Run dir="messenger" cmd="scripts/read-load.sh 8 30 &amp; sleep 3; for i in $(seq 1 16); do scripts/overload.sh 50; sleep 1; done; docker compose logs --no-log-prefix | grep flight" needs="docker" before="`MESSENGER_FLIGHT_THRESHOLD=100ms docker compose up -d --force-recreate`" />
 
 машина та же. Снимок записан один раз, хотя медленных запросов были десятки: следующий файл — не раньше чем через минуту (`MinInterval`). Файл лежит в `/tmp` контейнера, а это `tmpfs`: `docker compose cp` его не видит. И ещё одно свойство `tmpfs`: он живёт в оперативной памяти и считается в `mem_limit` контейнера, а `GOMEMLIMIT` о нём не знает. Поэтому в `compose.yaml` у него потолок `size=32m` — два снимка по `MaxBytes` (16 МиБ): без потолка снимки, которые пишутся раз в минуту, пока запросы медленные, за десяток-другой минут перегрузки съели бы запас между `GOMEMLIMIT` (230 МиБ) и лимитом контейнера (256 МиБ) и привели бы к OOM-kill. С потолком лишний снимок получает «нет места», и `Dumper` только пишет в журнал, что снимок не записан. На учебном стенде снимок берут с эндпоинта служебного порта. В продакшене каталог снимков — том, который забирает агент сбора, а эндпоинт нужен оператору:
 
@@ -654,6 +684,8 @@ $ scripts/trace-summary.sh flight.trace
 цель кучи: от 12.6 до 52.5 МиБ
 ```
 
+<Run dir="messenger" cmd="curl -s -o flight.trace 127.0.0.1:6060/debug/flight &amp;&amp; scripts/trace-summary.sh flight.trace" needs="docker" before="опыт выше: стенд с `MESSENGER_FLIGHT_THRESHOLD=100ms` сразу после нагрузки" />
+
 машина та же; снимок снят сразу после нагрузки, файл — `flight.trace` (3,5 МБ; двоичные трассы и профили в репозиторий не положены — снимите свои командами выше). Окно — 10,69 с: рекордер держит не меньше `MinAge` = 10 с, если хватает `MaxBytes`. Видна даже остановка мира «goroutine profile» — это наш запрос `goroutine?debug=1` за секунду до снимка. Сравните со снимком у лимита памяти: при N = 1 помощь разметке вне хеша — самое большее 13,6 мс, а не 61. Паузы около 50 мс остались и здесь: смешанная нагрузка тоже упирается в квоту (`nr_throttled` 294 из 395 периодов, `mixed-trace-summary.txt`). Это ещё один довод за то, что длинные паузы делает квота, а не сборщик.
 
 Две оговорки, которые надо знать оператору:
@@ -671,6 +703,8 @@ Showing nodes accounting for 0.40s, 2.03% of 19.74s total
 $ go tool pprof -top -nodecount=100000 -focus='blockevent|mutexevent' cpu.pprof | grep 'Showing nodes'
 Showing nodes accounting for 0.01s, 0.051% of 19.74s total
 ```
+
+<Run dir="messenger" cmd="go tool pprof -top -nodecount=100000 -focus='runtime\.trace[A-Z]|runtime/trace\.' cpu.pprof | grep 'Showing nodes'; go tool pprof -top -nodecount=100000 -focus='blockevent|mutexevent' cpu.pprof | grep 'Showing nodes'" needs="docker" before="снимите `cpu.pprof` со стенда под нагрузкой, как записано в `../labs/1-5/results/profile/profile-load.txt`" />
 
 машина та же; файл — `cpu-tracer-share.txt`. `-focus` оставляет только выборки, в стеке которых есть подходящая функция, а `-nodecount` без ограничения заставляет строку «Showing nodes» показать их сумму. Трассировщик — около 2 % процессора, запись событий block и mutex — 0,05 %. Живая память — 7,6 МиБ буферов рекордера (`inuse_space` выше). Это нижняя оценка: часть работы трассировщика встроена в функции планировщика и сети и под этот фильтр не попадает. А `cputicks()`, который рантайм при включённом профиле block вызывает на каждой блокирующей операции, стоит внутри `chanrecv` и `semacquire`, а не в `blockevent`.
 
@@ -691,6 +725,8 @@ $ scripts/read-load.sh 8 20
 | порт + профили block и mutex | 2240 (1980–2520) | 1,10 мс | 53,9 мс | −18,9 % (−50,3…+2,6) |
 | порт + рекордер | 2405 (2070–2855) | 1,00 мс | 53,7 мс | −11,3 % (−41,8…−1,2) |
 | всё вместе (как в мессенджере) | 2125 (2010–2505) | 1,20 мс | 53,8 мс | −19,0 % (−57,9…+6,8) |
+
+<Run dir="messenger" cmd="scripts/read-load.sh 8 20" needs="docker" before="временная сборка с `XDBG_VARIANT` из `../labs/1-5/results/profile/cost-bench/variant-app.diff`, свежий `docker compose up -d --force-recreate` на каждый прогон" />
 
 машина та же; сырой вывод — `cost-attribution.txt` и `cost-attribution-summary.txt`. Посмотрите на вторую строку. «Только порт» — это слушатель, который за прогон получил только один проверочный запрос: скрипт замера убеждался, что порт поднят. Процессора он не тратит, а показал −9 %, и в одном раунде −35 %, в другом +24 %. Без порта в одном прогоне — 2140 запросов в секунду, в другом той же настройки — 4880. Третья серия считала не RPS, а процессорное время контейнера на запрос (`usage_usec` из `cpu.stat`): в одном и том же режиме — от 162 до 521 мкс (`cost-attribution-cpu-summary.txt`). Шум стенда больше любого эффекта, который мы пытались измерить. Поэтому честный вывод такой: **на этом стенде цена служебного порта меньше шума, и −14 % первой серии — не цена порта, а случайность.** Разложить её по компонентам этот стенд не может.
 
@@ -738,6 +774,8 @@ $ go test -c -o /dev/null -pgo=auto -gcflags=-m=1 ./1-5/pgo/ 2>&1 | grep -E 'PGO
 1-5/pgo/hot.go:91:16: inlining call to parseID
 <autogenerated>:1: inlining call to textHandler.Handle
 ```
+
+<Run dir="labs" cmd="go test -run='^$' -bench=Route -count=10 -pgo=off ./1-5/pgo/ > off.txt &amp;&amp; go test -run='^$' -bench=Route -count=10 -pgo=auto ./1-5/pgo/ > pgo.txt &amp;&amp; benchstat off.txt pgo.txt" before="`go test -run='^$' -bench=Route -benchtime=5s -cpuprofile=cpu.pprof ./1-5/pgo/ &amp;&amp; cp cpu.pprof 1-5/pgo/default.pgo`" />
 
 машина та же; сырые выводы — `labs/1-5/results/pgo-*.txt` (вывод `-m` с профилем — `pgo-m-rerun.txt`). С профилем бенчмарк быстрее на <N>7,46 %</N>, и разница значима (`p=0.000` при 10 прогонах с каждой стороны). В выводе компилятора видно, за счёт чего: `parse` (стоимость 286) теперь встроена, а вызов через интерфейс стал прямым. Программа целиком, собранная с профилем самой программы, — 44,1–46,0 млн сообщений в секунду против 42,1–43,2 без профиля в трёх парах прогонов.
 

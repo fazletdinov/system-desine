@@ -26,6 +26,8 @@ SlicePointers-12      1.000k ± 0%
 SliceValues-12         0.000 ± 0%
 ```
 
+<Run dir="labs" cmd="go test -run='^$' -bench=. -count=10 ./1-5/alloc/ > alloc-bench.txt &amp;&amp; benchstat alloc-bench.txt" />
+
 машина: Intel Core i5-12400 (6 ядер, 12 логических процессоров), Ubuntu 24.04, ядро Linux 7.0, go1.27.2. Показаны две строки из шести, полный вывод — в разделе «Цена аллокации».
 
 Версия с указателями медленнее в <N>3,1 раза</N> и делает тысячу аллокаций на прогон. Версия со значениями не делает ни одной: даже сам массив на 32 000 байт не попал в кучу. Кто это решил? Не вы — вы не писали ни `malloc`, ни `free`. Решил компилятор, а исполнил рантайм.
@@ -60,6 +62,8 @@ NumCPU: 12
 глубина 100000: стеки до    352 КиБ, на дне   8544 КиБ (+8192 КиБ)
 начальный стек: обычно 2048 байт, после GC с 200 горутинами на глубине 1000 — 131072 байт, когда они вышли — 2048 байт
 ```
+
+<Run dir="labs" cmd="go run ./1-5/alloc/stack" />
 
 машина та же. Сколько места занимает один кадр функции `dive`, видно из ассемблерного листинга:
 
@@ -163,6 +167,8 @@ $ go test -v -run TestDoesNotEscapeIsNotAlwaysStack ./1-5/alloc/escape/cases/
     --- PASS: TestDoesNotEscapeIsNotAlwaysStack/elems/values:_девятая_точка_переносит_массив_в_кучу (0.00s)
 ```
 
+<Run dir="labs" cmd="go test -v -run TestDoesNotEscapeIsNotAlwaysStack ./1-5/alloc/escape/cases/" />
+
 машина та же. Строки `=== RUN` опущены (`...`). Четыре `int` — 0 аллокаций, пять — одна. С `append` то же самое: `make([]point, 0, 8)` лежит на стеке, но на девятом `append` срез растёт, и новый массив выделяется уже в куче.
 
 **4. Слишком большой объект.** Кадр стека не безразмерный. Пороги — в `cmd/compile/internal/ir/cfg.go`: `MaxImplicitStackVarSize = 64 * 1024` для неявных выделений (`new(T)`, `&T{}`, `make([]T, n)`, `[]byte("...")`) и `MaxStackVarSize = 128 * 1024` для явных `var x T` и `x := ...`. Лаба проверяет границу с точностью до байта:
@@ -200,6 +206,8 @@ $ go build -gcflags=-m=2 . 2>&1 | grep return.go
 ./return.go:19:10: new(point) escapes to heap
 ```
 
+<Run dir="labs/1-5/alloc/escape/cases" cmd="go build -gcflags=-m=1 . 2>&amp;1 | grep return.go; go build -gcflags=-m=2 . 2>&amp;1 | grep return.go" />
+
 машина та же; команды запущены из `labs/1-5/alloc/escape/cases`. Цепочку `flow` в `-m=2` читают сверху вниз: от выделения к месту, которое нарушает инвариант:
 
 - `&{storage for new(point)}` — адрес памяти, которую выделил `new`;
@@ -234,6 +242,8 @@ $ go build -gcflags=-m=1 . 2>&1 | grep -E "return.go|inline.go"
 ./inline.go:21:15: &point{...} does not escape
 ...
 ```
+
+<Run dir="labs/1-5/alloc/escape/cases" cmd="go build -gcflags=-m=1 . 2>&amp;1 | grep -E &quot;return.go|inline.go&quot;" />
 
 машина та же; строки `return.go` опущены (`...`), они показаны выше. Строка `inline.go:7:41` — решение для самостоятельной копии `newPoint`, которая нужна, если её вызовут без встраивания. Строка `inline.go:21:15` — то же выражение, встроенное в `CaseInlineInlined`. Там указатель дальше суммы `p.x + p.y` не уходит, и объект остаётся на стеке. `newPointNoinline` с директивой `//go:noinline` вызывается по-настоящему, и её объект всегда в куче.
 
@@ -385,6 +395,8 @@ geomean                           ¹
 ¹ summaries must be >0 to compute geomean
 ```
 
+<Run dir="labs" cmd="go test -run='^$' -bench=. -count=10 ./1-5/alloc/ > alloc-bench.txt &amp;&amp; benchstat alloc-bench.txt" />
+
 машина та же; этот прогон — эталонный, по нему все числа ниже. Суффикс `-12` — `GOMAXPROCS`. Строки `geomean` в таблицах байт и аллокаций пустые: среднее геометрическое с нулём не считается.
 
 | пара | время | аллокаций | во сколько раз быстрее |
@@ -428,6 +440,8 @@ KeySprintf-12                2.000 ± 0%
 KeyAppend-12                 1.000 ± 0%
 geomean                      1.414
 ```
+
+<Run dir="labs" cmd="go test -run='^$' -bench=Key -count=10 ./1-5/alloc/ > alloc-bench-sprintf.txt &amp;&amp; benchstat alloc-bench-sprintf.txt" />
 
 машина та же; шапка (`goos`, `cpu`…) опущена. `Sprintf` в 2,5 раза медленнее и делает лишнюю аллокацию. Дело не только в аллокации: `fmt` разбирает строку формата при каждом вызове и обрабатывает аргументы через `...any` и рефлексию. В ручной версии единственная аллокация — итоговая строка, без неё никак: она возвращается наружу. 60 наносекунд — ничто для запроса, который ходит в базу. Но в цикле на миллион элементов или в обработчике на сотни тысяч запросов в секунду это заметная доля.
 
