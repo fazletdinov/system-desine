@@ -3,10 +3,27 @@
 // Перевод строки в тексте раздела («\n») — отдельная строка списка; панель показывает его как есть.
 import type { Caption } from '../core/caption'
 import type { Explain, Explanation, ExplainSection } from '../core/explain'
-import { markedCaption, need, sepS, tidS, type BtFrame } from './btree'
-import { isLeaf, LEAF_CAPACITY, parentOf, pickChild, rowAt, type BtModel, type BtNode, type InnerNode, type LeafNode, type Tid } from './btree-model'
+import { markedCaption, type BtFrame } from './btree'
+import {
+  blockOf,
+  isLeaf,
+  LEAF_CAPACITY,
+  leafOfKey,
+  need,
+  parentOf,
+  pickChild,
+  rowAt,
+  sepS,
+  tidS,
+  type BtModel,
+  type BtNode,
+  type InnerNode,
+  type LeafNode,
+} from './btree-model'
 
 const DIGITS = /^\d+$/
+const EXAMPLE_LEFT_OF_SEP = 5
+const EXAMPLE_RIGHT_OF_SEP = 3
 
 // Термин подчёркивается один раз на объяснение: следующие вхождения идут обычным текстом.
 class Builder {
@@ -32,17 +49,15 @@ class Builder {
   }
 }
 
-function blockOf(m: BtModel, id: string): number {
-  return need(m.nodes[id], `узла ${id}`).block
-}
-
 function innerExplanation(b: Builder, f: BtFrame, n: InnerNode, here: Caption | undefined): Explanation {
   const m = f.model
   const isRoot = n.id === m.root
   const second = n.entries[1]?.sep ?? 0
   const lastSep = n.entries.at(-1)?.sep ?? 0
-  const low = second - 5
-  const high = lastSep + 3
+  // Два примера на числах: ключ чуть левее второго разделителя (уходит в первую ветку)
+  // и ключ правее последнего (уходит в последнюю). Смещения любые, лишь бы ключ не совпал с разделителем.
+  const low = second - EXAMPLE_LEFT_OF_SEP
+  const high = lastSep + EXAMPLE_RIGHT_OF_SEP
   const lookup = (key: number): string => {
     const e = need(n.entries[pickChild(n, key)], 'записи')
     return `Ищем ${key}: последний разделитель ≤ ${key} — «${sepS(e)}» → блок ${blockOf(m, e.child)}.`
@@ -114,9 +129,9 @@ function nodeExplanation(b: Builder, f: BtFrame, id: string): Explanation | null
 }
 
 function entryExplanation(b: Builder, m: BtModel, key: number): Explanation | null {
-  const leaf = Object.values(m.nodes).find((n): n is LeafNode => isLeaf(n) && n.entries.some((e) => e.key === key))
-  const entry = leaf?.entries.find((e) => e.key === key)
-  if (leaf === undefined || entry === undefined) return null
+  const found = leafOfKey(m, key)
+  if (found === undefined) return null
+  const { leaf, entry } = found
   const many = entry.tids.length > 1
   const rows = entry.tids.map((t) => {
     const r = rowAt(m, t)
@@ -145,7 +160,7 @@ function entryExplanation(b: Builder, m: BtModel, key: number): Explanation | nu
 function rowExplanation(b: Builder, m: BtModel, p: number, lp: number): Explanation | null {
   const r = rowAt(m, [p, lp])
   if (r === undefined) return null
-  const leaf = Object.values(m.nodes).find((n): n is LeafNode => isLeaf(n) && n.entries.some((e) => e.key === r.user))
+  const leaf = leafOfKey(m, r.user)?.leaf
   return b.build(`Строка (${r.chat}, ${r.user})`, `heap · страница ${p} · позиция ${lp}`, [
     ['Что это', 'Строка (в PostgreSQL — [[tuple|кортеж]]) таблицы chat.members.'],
     ['Адрес', `[[tid|TID]] (${p},${lp}): страница ${p}, ${lp}-й указатель строки на странице. В базе его видно как столбец ctid.`],

@@ -157,3 +157,51 @@ function stepCaptions(s: ReturnType<typeof btreeScenario>[number]): Caption[] {
   const { card, quiz } = s
   return [...(card ? [card.what, card.uses, card.reads, card.why] : []), ...(quiz ? [quiz.question, quiz.answer] : [])]
 }
+
+// Часть итогов в текстах шагов записана числами, а не выведена из модели: так текст читается
+// проще. Тест держит эти числа в согласии со счётчиками кадра — правка модели без правки текста упадёт здесь.
+describe('числа в тексте шагов совпадают с кадром', () => {
+  const card = (id: BtScenarioId, i: number) => {
+    const s = btreeScenario(id).at(i)!
+    return { what: captionText(s.card!.what), reads: captionText(s.card!.reads), f: s.state }
+  }
+  const nums = (src: string, re: RegExp): number[] => (re.exec(src) ?? []).slice(1).map(Number)
+  const ITOG = /(\d+) страниц\S* индекса \+ (\d+) страниц\S* таблицы/
+
+  it.each(['one', 'dup'] as const)('%s: «итого» = страницы индекса и обращения к таблице', (id) => {
+    const { reads, f } = card(id, -1)
+    expect(nums(reads, ITOG)).toEqual([f.counters.index, f.counters.heapAccess])
+  })
+
+  it('ios: страницы индекса, таблицы, Heap Fetches и count', () => {
+    const { what, f } = card('ios', -1)
+    expect(nums(what, /Возвращает (\d+)\. Прочитано (\d+) страницы индекса и (\d+) страница таблицы \(Heap Fetches: (\d+)\)/)).toEqual([
+      f.result.length, f.counters.index, f.counters.heapAccess, f.counters.heapFetches,
+    ])
+  })
+
+  it('seq «Сравнение»: Seq Scan по кадру seq, Index Scan по итогу dup, одинаковый результат', () => {
+    const { what, reads, f } = card('seq', -2)
+    const rows = f.model.pages.reduce((s, p) => s + p.rows.length, 0)
+    expect(nums(what, /Seq Scan: (\d+) страниц таблицы, (\d+) проверенные строки/)).toEqual([f.counters.heapAccess, rows])
+    const d = last('dup').counters
+    expect(nums(what, ITOG)).toEqual([d.index, d.heapAccess])
+    expect(reads).toBe(`результат одинаковый: ${f.result.join(', ')}`)
+    expect(last('dup').result).toEqual(f.result)
+  })
+
+  it('intro «Без индекса»: страниц, строк, совпадений и их страницы', () => {
+    const { reads, f } = card('intro', 2)
+    const rows = f.model.pages.reduce((s, p) => s + p.rows.length, 0)
+    const hitPages = [...new Set(f.hitRows.map((r) => Number(r.split(':')[0])))]
+    expect(nums(reads, /все (\d+) страниц, (\d+) строки; совпали (\d+)/)).toEqual([f.counters.heapAccess, rows, f.hitRows.length])
+    expect(reads).toContain(`на страницах ${hitPages.slice(0, -1).join(', ')} и ${hitPages.at(-1)}`)
+  })
+
+  it('intro «Итог»: блоки пути и страницы таблицы совпадают с подсветкой кадра', () => {
+    const { reads, f } = card('intro', -1)
+    const path = [f.edges[0]![0], ...f.edges.map((e) => e[1])].map((id) => f.model.nodes[id]!.block)
+    const pages = Object.keys(f.pages).map(Number).sort((a, b) => a - b)
+    expect(reads).toBe(`путь для 42: блоки ${path.join(' → ')}, затем страницы таблицы ${pages.join(', ')}`)
+  })
+})

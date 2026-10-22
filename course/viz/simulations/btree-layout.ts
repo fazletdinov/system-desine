@@ -1,13 +1,13 @@
 // Геометрия сцены B-tree: чистые функции без Vue, чтобы рендерер только рисовал.
 // Холст 1080 единиц по ширине, как в прототипе; кегли и высоты строк увеличены под чтение во весь экран.
-import { isLeaf, leafOrder, rowAt, type BtModel, type InnerNode, type LeafNode, type Tid } from './btree-model'
+import { isLeaf, leafOfKey, leafOrder, rowAt, rowKey, type BtModel, type InnerNode, type Tid } from './btree-model'
 import type { BtView } from './btree'
 
 export interface Box { x: number; y: number; w: number; h: number }
 export interface Rows { root: number; inner: number; leaf: number; heap: number }
 export interface SceneLayout { boxes: Record<string, Box>; rows: Rows; width: number; height: number }
 
-export const SCENE_WIDTH = 1080
+const SCENE_WIDTH = 1080
 // Сцена смотрится во весь экран: на 1280 px холст рядом с панелью ≈ 880 px, масштаб ≈ 0,8.
 // Шрифты в единицах viewBox подобраны так, чтобы на экране ключи, строки и TID были ≥ 12 px,
 // а подписи — ≥ 11 px. Вся геометрия ниже рассчитана на моноширинный знак ≈ 0,6 кегля.
@@ -29,7 +29,7 @@ const ROWS: Record<BtView, Rows> = {
 }
 const BOTTOM_PAD = 24
 
-export const entryLines = (tids: number): number => Math.max(1, Math.ceil(tids / TIDS_PER_LINE))
+const entryLines = (tids: number): number => Math.max(1, Math.ceil(tids / TIDS_PER_LINE))
 // Номер строки, с которой начинается каждая запись листа (запись с длинным posting list занимает несколько).
 export function lineOffsets(tidCounts: readonly number[]): number[] {
   let line = 0
@@ -87,31 +87,23 @@ export function selectionLinks(m: BtModel, selected: string | null): Selection {
   const [kind, a, b] = (selected ?? '').split(':')
   if (kind === 'entry') {
     const key = Number(a)
-    const entry = Object.values(m.nodes).flatMap((n) => (isLeaf(n) ? n.entries : [])).find((e) => e.key === key)
+    const entry = leafOfKey(m, key)?.entry
     if (!entry) return out
     out.entries.add(key)
     for (const t of entry.tids) {
-      out.rows.add(`${t[0]}:${t[1]}`)
+      out.rows.add(rowKey(t[0], t[1]))
       out.tids.push({ key, tid: t, selected: true })
     }
   }
   if (kind === 'row') {
-    const row = rowAt(m, [Number(a), Number(b)])
+    const tid: Tid = [Number(a), Number(b)]
+    const row = rowAt(m, tid)
     if (!row) return out
-    out.rows.add(`${a}:${b}`)
+    out.rows.add(rowKey(tid[0], tid[1]))
     out.entries.add(row.user)
-    out.tids.push({ key: row.user, tid: [Number(a), Number(b)], selected: true })
+    out.tids.push({ key: row.user, tid, selected: true })
   }
   return out
-}
-
-export function leafOfKey(m: BtModel, key: number): { leaf: LeafNode; index: number } | undefined {
-  for (const n of Object.values(m.nodes)) {
-    if (!isLeaf(n)) continue
-    const index = n.entries.findIndex((e) => e.key === key)
-    if (index >= 0) return { leaf: n, index }
-  }
-  return undefined
 }
 
 // TID-стрелка идёт от низа листа (а не от записи), чтобы не пересекать текст листа.

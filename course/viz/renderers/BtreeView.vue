@@ -2,7 +2,7 @@
 import { computed, useId } from 'vue'
 import type { BtFrame, BtView, Mark } from '../simulations/btree'
 import { CELL_H, ENTRY_TOP, FONT, LINE_H, TIDS_PER_LINE, heapHeaderH, heapRowH, layoutScene, lineOffsets, selectionLinks, tidPath, type Box } from '../simulations/btree-layout'
-import { isLeaf, leafOrder, type HeapPage, type Tid } from '../simulations/btree-model'
+import { blockOf as modelBlockOf, isLeaf, leafOrder, rowKey, sepS, tidS, type HeapPage, type Tid } from '../simulations/btree-model'
 
 const props = defineProps<{ frame: BtFrame; view: BtView; selected: string | null }>()
 const emit = defineEmits<{ select: [id: string] }>()
@@ -18,17 +18,15 @@ const scene = computed(() => layoutScene(model.value, props.view))
 const box = (id: string): Box => scene.value.boxes[id] ?? { x: 0, y: 0, w: 0, h: 0 }
 const links = computed(() => selectionLinks(model.value, props.selected))
 
-const tidText = (t: Tid): string => `(${t[0]},${t[1]})`
 // Моноширинный знак ≈ 0,6 кегля: продолжение posting list встаёт ровно под первым TID.
 const MONO_CH = FONT.mono * 0.6
 function tidChunks(tids: readonly Tid[]): string[] {
   const out: string[] = []
-  for (let i = 0; i < tids.length; i += TIDS_PER_LINE) out.push(tids.slice(i, i + TIDS_PER_LINE).map(tidText).join(' '))
+  for (let i = 0; i < tids.length; i += TIDS_PER_LINE) out.push(tids.slice(i, i + TIDS_PER_LINE).map(tidS).join(' '))
   return out
 }
 const hasEdge = (list: readonly (readonly [string, string])[], a: string, b: string): boolean => list.some((e) => e[0] === a && e[1] === b)
-const sepText = (sep: number | null): string => (sep === null ? '−∞' : String(sep))
-const blockOf = (id: string): number => model.value.nodes[id]?.block ?? 0
+const blockOf = (id: string): number => modelBlockOf(model.value, id)
 
 // Клавиатура: у каждого кликабельного элемента фокус и Enter/Пробел, как у кнопки.
 function interactive(id: string, label: string): Record<string, unknown> {
@@ -68,7 +66,7 @@ const nodeViews = computed<NodeView[]>(() =>
     const count = n.entries.length
     const seps = leaf ? [] : n.entries.map((e, j) => ({
       key: e.child,
-      text: sepText(e.sep),
+      text: sepS(e),
       block: blockOf(e.child),
       x: detail.value ? b.x + 12 : b.x + (b.w / count) * (j + 0.5),
       y: detail.value ? b.y + ENTRY_TOP + j * LINE_H + 15 : b.y + ENTRY_TOP + 16,
@@ -144,9 +142,12 @@ const tidPaths = computed(() => {
 })
 
 // Подсветка «выбранной» записи приходит из selectionLinks (включая саму выбранную запись).
+// hint отдельно от hit: ключ-«стоп» (47 после 42, ключ за границей BETWEEN) условию не отвечает,
+// и зелёная заливка «совпало» на нём учила бы обратному.
 function entryClass(key: number): Record<string, boolean> {
   return {
-    hit: props.frame.hitEntries.includes(key) || props.frame.hintEntries.includes(key),
+    hit: props.frame.hitEntries.includes(key),
+    hint: props.frame.hintEntries.includes(key),
     sel: links.value.entries.has(key),
   }
 }
@@ -181,10 +182,10 @@ function pageView(p: HeapPage): PageView {
     },
     rows: p.rows.map((r, j) => ({
       lp: r.lp,
-      cls: { hit: props.frame.hitRows.includes(`${p.no}:${r.lp}`), sel: links.value.rows.has(`${p.no}:${r.lp}`) },
-      attrs: interactive(`row:${p.no}:${r.lp}`, `Строка таблицы (${p.no},${r.lp}): ${r.chat}, user_id ${r.user}`),
+      cls: { hit: props.frame.hitRows.includes(rowKey(p.no, r.lp)), sel: links.value.rows.has(rowKey(p.no, r.lp)) },
+      attrs: interactive(`row:${rowKey(p.no, r.lp)}`, `Строка таблицы (${p.no},${r.lp}): ${r.chat}, user_id ${r.user}`),
       y: b.y + heapHeaderH(detail.value) + j * heapRowH(),
-      tid: tidText([p.no, r.lp]),
+      tid: tidS([p.no, r.lp]),
       chat: r.chat,
       user: r.user,
     })),
@@ -296,6 +297,8 @@ const pageViews = computed(() => model.value.pages.map(pageView))
 .ent.hit rect, .row.hit rect { fill: var(--viz-hit-bg); }
 .ent.hit .t, .row.hit .t { fill: var(--viz-hit-text); font-weight: 700; }
 .ent.hit .addr, .row.hit .addr { fill: var(--viz-hit-text); }
+/* На запись указывает текст шага, но условию она не отвечает: пунктир без заливки, как у .box.hint. */
+.ent.hint rect { fill: transparent; stroke: var(--viz-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .ent.sel rect, .row.sel rect { fill: color-mix(in srgb, var(--viz-text) 16%, transparent); stroke: var(--viz-text); stroke-width: 1; }
 .edge { stroke: var(--viz-edge); stroke-width: 1.4; fill: none; }
 .edge.on { stroke: var(--viz-client); stroke-width: 2.6; }

@@ -11,15 +11,19 @@ import {
   isLeaf,
   LEAF_CAPACITY,
   leafInsert,
+  leafOfKey,
+  need,
   parentOf,
   pickChild,
   rowAt,
+  rowKey,
+  sepS,
   splitLeaf,
+  tidS,
   type BtModel,
   type BtNode,
   type InnerEntry,
   type InnerNode,
-  type LeafEntry,
   type LeafNode,
   type Tid,
 } from './btree-model'
@@ -181,16 +185,10 @@ function stripTerms(src: string): string {
 }
 const FIRST_SENTENCE = /^.*?[.!?](?=\s|$)/s
 
-export const need = <T>(v: T | undefined, what: string): T => {
-  if (v === undefined) throw new Error(`btree: нет ${what}`)
-  return v
-}
-export const tidS = (t: Tid): string => `(${t[0]},${t[1]})`
 const push = <T>(list: T[], v: T): void => {
   if (!list.includes(v)) list.push(v)
 }
 const entryAt = (n: InnerNode, i: number): InnerEntry => need(n.entries[i], `записи ${i} в блоке ${n.block}`)
-export const sepS = (e: InnerEntry): string => String(e.sep ?? '−∞')
 // «1 строка, 2 строки, 5 строк»
 const plural = (n: number, one: string, few: string, many: string): string => {
   const d = n % 10
@@ -323,7 +321,7 @@ class Tracer {
     }
     push(w.counters.heapPages, page)
     w.pages[page] = 'cur'
-    push(w.hitRows, `${page}:${lp}`)
+    push(w.hitRows, rowKey(page, lp))
     w.tids.push([key, page, lp])
     w.result.push(need(rowAt(this.m, t), `строки ${tidS(t)}`).chat)
   }
@@ -413,23 +411,16 @@ function planStep(t: Tracer, estimate: string, why: string, quiz?: StepInfo['qui
 
 // --- сценарии ----------------------------------------------------------------
 
-function leafKeyEntry(m: BtModel, key: number): LeafEntry | undefined {
-  return Object.values(m.nodes)
-    .filter(isLeaf)
-    .flatMap((n) => n.entries)
-    .find((e) => e.key === key)
-}
-
 function intro(): Step<BtFrame>[] {
   const t = new Tracer()
   const { m } = t
-  const key42 = need(leafKeyEntry(m, 42), 'ключа 42')
+  const key42 = need(leafOfKey(m, 42), 'ключа 42').entry
   const hintAllPages = (w: Work) => m.pages.forEach((p) => t.hintPage(w, p.no))
   t.step(
     {
       title: 'Откуда берётся запрос',
       learn: 'Какой запрос мы разбираем',
-      did: 'Пользователь открывает мессенджер → клиент шлёт GET /chats → use case вызывает ListChatsByMember → pgx отправляет в PostgreSQL запрос listChatsFirst. Первое, что нужно базе, — найти строки chat.members, где user_id = этот пользователь.',
+      did: 'Пользователь открывает мессенджер → клиент шлёт GET /v1/chats → use case вызывает ListChatsByMember → pgx отправляет в PostgreSQL запрос listChatsFirst. Первое, что нужно базе, — найти строки chat.members, где user_id = этот пользователь.',
       uses: 'таблица chat.members (chat_id, user_id): кто в каком чате',
       reads: 'пока ничего',
       why: 'Этот запрос выполняется при каждом открытии приложения у каждого пользователя. Если он медленный — медленно всё. В модели таблица маленькая: 12 чатов по 2 участника = 24 строки (внизу схемы, данные учебные).',
@@ -469,7 +460,7 @@ function intro(): Step<BtFrame>[] {
         p.rows
           .filter((r) => r.user === 42)
           .forEach((r) => {
-            push(w.hitRows, `${p.no}:${r.lp}`)
+            push(w.hitRows, rowKey(p.no, r.lp))
             w.result.push(r.chat)
           })
       })
@@ -498,7 +489,7 @@ function intro(): Step<BtFrame>[] {
       push(w.hitEntries, 42)
       key42.tids.forEach(([p, lp]) => {
         w.tids.push([42, p, lp])
-        push(w.hitRows, `${p}:${lp}`)
+        push(w.hitRows, rowKey(p, lp))
       })
     },
   )
@@ -534,7 +525,7 @@ function intro(): Step<BtFrame>[] {
       push(w.hitEntries, 42)
       key42.tids.forEach(([p, lp]) => {
         w.tids.push([42, p, lp])
-        push(w.hitRows, `${p}:${lp}`)
+        push(w.hitRows, rowKey(p, lp))
         w.pages[p] = 'read'
       })
     },
@@ -588,7 +579,7 @@ function one(): Step<BtFrame>[] {
       uses: 'страница [[heap-table|heap]]',
       reads: `строка (${chat}, 15)`,
       why: `TID — прямой адрес: страница ${tid[0]}, позиция ${tid[1]}. Никакого поиска по таблице — одно чтение страницы.`,
-      focus: `row:${tid[0]}:${tid[1]}`,
+      focus: `row:${rowKey(tid[0], tid[1])}`,
     },
     (w) => t.fetchRow(w, tid, 15),
   )
@@ -598,8 +589,8 @@ function one(): Step<BtFrame>[] {
     did: `Исполнитель возвращает chat_id = ${chat}. В настоящем listChatsFirst по этому chat_id дальше ищется сам чат: Index Scan using chats_pkey — такой же спуск, только по другому [[b-tree|B-tree]].`,
     uses: '—',
     reads: 'итого: 3 страницы индекса + 1 страница таблицы',
-    why: 'Seq Scan прочитал бы все 6 страниц таблицы, а на 2 млн строк — порядка 15 тыс. В лабе для пользователя с 20 чатами: Index Scan using members_user_id_idx, Buffers: 23 (3 страницы спуска по индексу + по странице таблицы на каждый из 20 чатов), выполнение 0,2 мс (источник: labs/2a/results/messenger-explain.txt).',
-    focus: `row:${tid[0]}:${tid[1]}`,
+    why: 'Seq Scan прочитал бы все 6 страниц таблицы, а на 2 млн строк — порядка 15 тыс. В лабе для пользователя с 20 чатами: Index Scan using members_user_id_idx, Buffers: 23 (3 страницы спуска по индексу + по странице таблицы на каждый из 20 чатов), весь запрос — 0,2 мс (источник: labs/2a/results/messenger-explain.txt).',
+    focus: `row:${rowKey(tid[0], tid[1])}`,
   })
   return t.steps
 }
@@ -650,7 +641,7 @@ function dup(): Step<BtFrame>[] {
         why: i
           ? 'Другая страница — новое чтение. Строки одного ключа разбросаны по таблице.'
           : 'Index Scan выдаёт строки по одной: адрес из индекса → страница таблицы → строка → следующий адрес.',
-        focus: `row:${tid[0]}:${tid[1]}`,
+        focus: `row:${rowKey(tid[0], tid[1])}`,
       },
       (w) => t.fetchRow(w, tid, 42),
     )
@@ -794,7 +785,7 @@ function ios(): Step<BtFrame>[] {
         w.vmChecked[tid[0]] = visible ? 'ok' : 'no'
         w.vmCur = tid[0]
         if (visible) {
-          push(w.hitRows, `${tid[0]}:${tid[1]}`)
+          push(w.hitRows, rowKey(tid[0], tid[1]))
           w.result.push('✓')
           return
         }
@@ -848,7 +839,7 @@ function seq(): Step<BtFrame>[] {
       (w) => {
         t.scanAll(w, p.no)
         hit.forEach((r) => {
-          push(w.hitRows, `${p.no}:${r.lp}`)
+          push(w.hitRows, rowKey(p.no, r.lp))
           w.result.push(r.chat)
         })
       },
@@ -866,7 +857,7 @@ function seq(): Step<BtFrame>[] {
   t.step({
     title: 'Когда индекс не помогает',
     learn: 'Когда планировщик не берёт индекс',
-    did: 'Реальные планы из лабы (2 млн строк chat.members):\n• 20 чатов → Index Scan: 23 страницы, 0,2 мс;\n• 1000 чатов → [[bitmap-scan|Bitmap Heap Scan]]: 3 страницы индекса + 960 страниц таблицы, 2 мс.',
+    did: 'Реальные планы из лабы (2 млн строк chat.members):\n• 20 чатов → Index Scan: 23 страницы, весь запрос — 0,2 мс;\n• 1000 чатов → [[bitmap-scan|Bitmap Heap Scan]]: 3 страницы индекса + 960 страниц таблицы, весь запрос — 2 мс.',
     uses: '—',
     reads: 'labs/2a/results/messenger-explain.txt',
     why: 'Индекс проигрывает, когда условие выбирает большую долю строк, когда таблица маленькая, когда статистика устарела и оценка врёт, когда условие не совпадает с индексом (функция над столбцом, другой тип, второй столбец составного индекса без первого).',
@@ -902,7 +893,7 @@ function ins(): Step<BtFrame>[] {
       if (t1[0] !== expected1[0] || t1[1] !== expected1[1]) throw new Error(`btree: ожидали TID ${tidS(expected1)}, получили ${tidS(t1)}`)
       w.result.push('(c13, 45)')
       w.pages[t1[0]] = 'cur'
-      push(w.hitRows, `${t1[0]}:${t1[1]}`)
+      push(w.hitRows, rowKey(t1[0], t1[1]))
     },
   )
   const tid1 = need(t1, 'TID строки 1')
@@ -938,7 +929,7 @@ function ins(): Step<BtFrame>[] {
       t2 = heapInsert(m, 'c13', 53)
       w.result.push('(c13, 53)')
       w.pages[t2[0]] = 'cur'
-      push(w.hitRows, `${t2[0]}:${t2[1]}`)
+      push(w.hitRows, rowKey(t2[0], t2[1]))
     },
   )
   const tid2 = need(t2, 'TID строки 2')

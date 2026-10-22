@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildModel, cloneModel, heapInsert, isLeaf, leafFor, leafInsert, leafOrder, parentOf, pickChild, rowAt, splitLeaf,
+  blockOf, buildModel, cloneModel, heapInsert, isLeaf, leafFor, leafInsert, leafOfKey, leafOrder, parentOf, pickChild, rowAt, rowKey, sepS, splitLeaf, tidS,
   type InnerNode, type LeafNode,
 } from './btree-model'
 
@@ -112,5 +112,28 @@ describe('cloneModel', () => {
     expect(leaf(m, 'b1').entries).toHaveLength(4)
     expect(leaf(m, 'b3').entries[0]?.tids).toHaveLength(3)
     expect(m.nextBlock).toBe(9)
+  })
+})
+
+describe('общие помощники модели', () => {
+  const m = buildModel()
+  it('leafOfKey находит лист, позицию и запись ключа', () => {
+    const found = leafOfKey(m, 42)
+    expect(found?.leaf.id).toBe('b3')
+    expect(found?.index).toBe(found?.leaf.entries.findIndex((e) => e.key === 42))
+    expect(found?.entry.tids).toEqual([[0, 1], [1, 3], [5, 3]])
+  })
+  it('leafOfKey для отсутствующего ключа — undefined', () => {
+    expect(leafOfKey(m, 1000)).toBeUndefined()
+  })
+  it('rowKey — тот же формат, что в id строки на схеме', () => {
+    expect(rowKey(5, 3)).toBe('5:3')
+  })
+  it('tidS, sepS и blockOf форматируют адреса', () => {
+    expect(tidS([0, 1])).toBe('(0,1)')
+    expect(sepS({ sep: null, child: 'b1' })).toBe('−∞')
+    expect(sepS({ sep: 23, child: 'b2' })).toBe('23')
+    expect(blockOf(m, 'b8')).toBe(8)
+    expect(() => blockOf(m, 'b99')).toThrow()
   })
 })

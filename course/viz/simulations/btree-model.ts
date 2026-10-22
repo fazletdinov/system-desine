@@ -19,7 +19,7 @@ export const CHATS: readonly (readonly [number, number])[] = [
   [42, 15], [27, 84], [3, 63], [42, 99], [19, 50], [8, 71],
   [63, 36], [23, 88], [27, 95], [47, 31], [56, 90], [42, 77],
 ]
-export const PER_PAGE = 4
+const PER_PAGE = 4
 export const LEAF_CAPACITY = 5
 export const BUILD_FILL = 4
 // Страница, на которой после «последнего VACUUM» были изменения, поэтому она не all-visible.
@@ -29,12 +29,31 @@ export function isLeaf(n: BtNode): n is LeafNode {
   return n.level === 0
 }
 
-function need<T>(v: T | undefined, what: string): T {
-  if (v === undefined) throw new Error(`btree-model: нет ${what}`)
+// Общие помощники сцены: модель, сценарии, объяснения, раскладка и рендерер берут их отсюда,
+// чтобы формат адресов и правило поиска ключа жили в одном месте.
+export function need<T>(v: T | undefined, what: string): T {
+  if (v === undefined) throw new Error(`btree: нет ${what}`)
   return v
 }
 
 const node = (m: BtModel, id: string): BtNode => need(m.nodes[id], `узла ${id}`)
+export const blockOf = (m: BtModel, id: string): number => node(m, id).block
+export const tidS = (t: Tid): string => `(${t[0]},${t[1]})`
+export const sepS = (e: InnerEntry): string => String(e.sep ?? '−∞')
+// Ключ строки таблицы «страница:позиция» — так строки помечены в кадре и в id элементов схемы (row:p:lp).
+export const rowKey = (page: number, lp: number): string => `${page}:${lp}`
+
+// Лист, где лежит запись ключа. В модели ключ живёт ровно в одном листе; в PostgreSQL длинный
+// posting list может продолжиться в соседнем — тогда это вернуло бы первый из них.
+export function leafOfKey(m: BtModel, key: number): { leaf: LeafNode; index: number; entry: LeafEntry } | undefined {
+  for (const n of Object.values(m.nodes)) {
+    if (!isLeaf(n)) continue
+    const index = n.entries.findIndex((e) => e.key === key)
+    const entry = n.entries[index]
+    if (entry) return { leaf: n, index, entry }
+  }
+  return undefined
+}
 
 function minKey(m: BtModel, id: string): number {
   let n = node(m, id)

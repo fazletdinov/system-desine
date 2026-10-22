@@ -23,14 +23,15 @@ describe('contrastRatio', () => {
   })
 })
 
-// Фон страницы: тёмная — --vp-c-bg из .vitepress/theme/custom.css;
-// светлая — белый, значение VitePress по умолчанию (custom.css его не переопределяет).
+// Фоны, на которых стоит текст схем. Тёмная тема — --vp-c-bg и --vp-c-bg-soft из .vitepress/theme/custom.css.
+// Светлая — значения VitePress по умолчанию (custom.css их не переопределяет): страница белая,
+// bg-soft #f6f6f7 — фон плеера (.viz-player), на нём подписи рядов сцены и текст боковой колонки.
 const themes = [
-  { name: 'light', selector: ':root', pageBg: '#ffffff' },
-  { name: 'dark', selector: '.dark', pageBg: '#0b1220' },
+  { name: 'light', selector: ':root', pageBg: '#ffffff', softBg: '#f6f6f7' },
+  { name: 'dark', selector: '.dark', pageBg: '#0b1220', softBg: '#0f172a' },
 ]
 
-describe.each(themes)('палитра текста схем, тема $name', ({ selector, pageBg }) => {
+describe.each(themes)('палитра текста схем, тема $name', ({ selector, pageBg, softBg }) => {
   const all = tokens(selector)
   const t = (name: string): string => {
     const v = all[name]
@@ -38,9 +39,10 @@ describe.each(themes)('палитра текста схем, тема $name', ({
     return v
   }
 
-  it.each(['--viz-text', '--viz-muted', '--viz-addr', '--viz-hit-text'])('%s читается на фоне узла и страницы (≥ 4,5:1)', (name) => {
+  it.each(['--viz-text', '--viz-muted', '--viz-addr', '--viz-hit-text'])('%s читается на фоне узла, страницы и плеера (≥ 4,5:1)', (name) => {
     expect(contrastRatio(t(name), t('--viz-node-bg'))).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(t(name), pageBg)).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(t(name), softBg)).toBeGreaterThanOrEqual(4.5)
   })
 
   it('--viz-hit-text читается на заливке --viz-hit-bg (≥ 4,5:1)', () => {
