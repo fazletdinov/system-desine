@@ -8,22 +8,22 @@ withDefaults(defineProps<{ explanation: Explanation | null; fallback?: string }>
 </script>
 
 <template>
-  <aside class="explain-panel" aria-live="polite">
+  <aside class="explain-panel">
     <p v-if="explanation === null" class="fallback">{{ fallback }}</p>
     <template v-else>
-      <h4 class="title">{{ explanation.title }}</h4>
+      <h4 class="title" aria-live="polite">{{ explanation.title }}</h4>
       <p class="kind">{{ explanation.kind }}</p>
-      <section v-for="s in explanation.sections" :key="s.heading" class="section">
-        <h5>{{ s.heading }}</h5>
-        <p><CaptionText :caption="s.body" /></p>
+      <section v-for="(s, i) in explanation.sections" :key="`${i}-${s.heading}`" class="section">
+        <h5 class="heading">{{ s.heading }}</h5>
+        <p class="body"><CaptionText :caption="s.body" /></p>
       </section>
       <section v-if="explanation.here !== undefined" class="box here">
-        <h5>Здесь</h5>
-        <p><CaptionText :caption="explanation.here" /></p>
+        <h5 class="heading">Здесь</h5>
+        <p class="body"><CaptionText :caption="explanation.here" /></p>
       </section>
       <section v-if="explanation.real !== undefined" class="box real">
-        <h5>В настоящей системе</h5>
-        <p><CaptionText :caption="explanation.real" /></p>
+        <h5 class="heading">В настоящей системе</h5>
+        <p class="body"><CaptionText :caption="explanation.real" /></p>
       </section>
     </template>
   </aside>
@@ -32,10 +32,10 @@ withDefaults(defineProps<{ explanation: Explanation | null; fallback?: string }>
 <style scoped>
 .explain-panel { padding: 12px 14px; border: 1px solid var(--vp-c-divider); border-radius: 8px; background: var(--vp-c-bg); font-size: 14px; line-height: 1.55; }
 .fallback { margin: 0; color: var(--vp-c-text-2); }
-.title { margin: 0; font-size: 16px; }
-.kind { margin: 2px 0 8px; color: var(--vp-c-text-2); font-size: 12px; }
-h5 { margin: 0 0 2px; color: var(--vp-c-text-2); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-p { margin: 0; white-space: pre-line; }
+.title { margin: 0; line-height: 1.4; font-size: 16px; }
+.kind { margin: 2px 0 8px; line-height: 1.4; color: var(--vp-c-text-2); font-size: 12px; }
+.heading { margin: 0 0 2px; color: var(--vp-c-text-2); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.body { margin: 0; line-height: 1.55; white-space: pre-line; }
 .section { margin-top: 10px; }
 .box { margin-top: 10px; padding: 8px 10px; border: 2px solid; border-radius: 6px; }
 .here { border-color: var(--viz-active); }

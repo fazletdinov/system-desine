@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="S">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Step } from '../core/types'
 import CaptionText from './CaptionText.vue'
 import StepCard from './StepCard.vue'
@@ -19,10 +19,16 @@ const isFirst = computed(() => state.value.index === 0)
 const isLast = computed(() => state.value.index === state.value.total - 1)
 
 // startAtEnd: песочница, где каждое действие добавляет шаг, показывает его результат, а не начало.
+// stepsGeneration сбрасывает вопрос шага: после замены шагов индекс может остаться тем же.
+const stepsGeneration = ref(0)
 watch(() => props.steps, (steps) => {
+  stepsGeneration.value++
   dispatch({ type: 'reset', total: steps.length })
   if (props.startAtEnd) dispatch({ type: 'last' })
+  // Индекс мог не измениться (0 → 0), а шаги — другие: потребитель должен узнать об этом.
+  emit('step', state.value.index)
 })
+onMounted(() => emit('step', state.value.index))
 
 // Сцены со второй колонкой (панель объяснения) следят за шагом снаружи.
 watch(() => state.value.index, (index) => emit('step', index))
@@ -66,7 +72,7 @@ function onSpeed(event: Event): void {
       <CaptionText :caption="step.caption" />
     </figcaption>
     <StepCard v-if="step.card" :card="step.card" />
-    <StepQuiz v-if="step.quiz" :key="state.index" :quiz="step.quiz" />
+    <StepQuiz v-if="step.quiz" :key="`${stepsGeneration}-${state.index}`" :quiz="step.quiz" />
     <div class="viz-controls" role="group" aria-label="Управление визуализацией">
       <button type="button" :disabled="isFirst" aria-label="В начало" @click="dispatch({ type: 'first' })">⏮</button>
       <button type="button" :disabled="isFirst" aria-label="Шаг назад" @click="dispatch({ type: 'prev' })">◀</button>
