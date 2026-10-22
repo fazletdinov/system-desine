@@ -1,18 +1,45 @@
 // Геометрия сцены B-tree: чистые функции без Vue, чтобы рендерер только рисовал.
-// Размеры взяты из утверждённого прототипа (холст 1080 px по ширине).
+// Холст 1080 единиц по ширине, как в прототипе; кегли и высоты строк увеличены под чтение во весь экран.
 import { isLeaf, leafOrder, rowAt, type BtModel, type InnerNode, type LeafNode, type Tid } from './btree-model'
 import type { BtView } from './btree'
 
 export interface Box { x: number; y: number; w: number; h: number }
-export interface SceneLayout { boxes: Record<string, Box>; width: number; height: number }
+export interface Rows { root: number; inner: number; leaf: number; heap: number }
+export interface SceneLayout { boxes: Record<string, Box>; rows: Rows; width: number; height: number }
 
 export const SCENE_WIDTH = 1080
-const ROW_Y = { root: 30, inner: 140, leaf: 262, heap: 430 }
+// Сцена смотрится во весь экран: на 1280 px холст рядом с панелью ≈ 880 px, масштаб ≈ 0,8.
+// Шрифты в единицах viewBox подобраны так, чтобы на экране ключи, строки и TID были ≥ 12 px,
+// а подписи — ≥ 11 px. Вся геометрия ниже рассчитана на моноширинный знак ≈ 0,6 кегля.
+export const FONT = { mono: 15, label: 14 }
+export const LINE_H = 21
+// Posting list из трёх TID в одну строку не помещается в лист шириной 168: переносим по два.
+export const TIDS_PER_LINE = 2
+// Верх рамки → первая строка записей; в simple — ряд ячеек с ключами.
+export const ENTRY_TOP = 28
+export const CELL_H = 22
+// Отступ строк: заголовок страницы и (в detail) подписи столбцов.
+export const heapHeaderH = (detail: boolean): number => (detail ? 48 : 28)
+export const heapRowH = (): number => 20
+
+const ROWS: Record<BtView, Rows> = {
+  simple: { root: 36, inner: 136, leaf: 240, heap: 360 },
+  // Ряды разнесены под самые высокие узлы: внутренняя страница с 4 разделителями и лист из 6 строк.
+  detail: { root: 36, inner: 156, leaf: 304, heap: 500 },
+}
 const BOTTOM_PAD = 24
 
-const nodeHeight = (detail: boolean, entries: number): number => (detail ? 32 + entries * 18 : 50)
-export const heapHeaderH = (detail: boolean): number => (detail ? 42 : 24)
-export const heapRowH = (detail: boolean): number => (detail ? 18 : 17)
+export const entryLines = (tids: number): number => Math.max(1, Math.ceil(tids / TIDS_PER_LINE))
+// Номер строки, с которой начинается каждая запись листа (запись с длинным posting list занимает несколько).
+export function lineOffsets(tidCounts: readonly number[]): number[] {
+  let line = 0
+  return tidCounts.map((n) => {
+    const at = line
+    line += entryLines(n)
+    return at
+  })
+}
+const nodeHeight = (detail: boolean, lines: number): number => (detail ? ENTRY_TOP + 8 + lines * LINE_H : ENTRY_TOP + CELL_H + 6)
 
 function placeParent(boxes: Record<string, Box>, n: InnerNode, y: number, w: number, detail: boolean): void {
   const kids = n.entries.map((e) => boxes[e.child]).filter((b): b is Box => b !== undefined)
@@ -22,31 +49,33 @@ function placeParent(boxes: Record<string, Box>, n: InnerNode, y: number, w: num
 
 export function layoutScene(m: BtModel, view: BtView): SceneLayout {
   const detail = view === 'detail'
+  const rows = ROWS[view]
   const boxes: Record<string, Box> = {}
   const leaves = leafOrder(m)
   const slot = SCENE_WIDTH / leaves.length
-  const leafW = Math.min(detail ? 184 : 156, slot - 12)
+  const leafW = Math.min(200, slot - 12)
   leaves.forEach((id, i) => {
     const n = m.nodes[id]
     if (!n || !isLeaf(n)) return
-    boxes[id] = { x: slot * (i + 0.5) - leafW / 2, y: ROW_Y.leaf, w: leafW, h: nodeHeight(detail, n.entries.length) }
+    const lines = n.entries.reduce((s, e) => s + entryLines(e.tids.length), 0)
+    boxes[id] = { x: slot * (i + 0.5) - leafW / 2, y: rows.leaf, w: leafW, h: nodeHeight(detail, lines) }
   })
-  const innerW = detail ? 160 : 150
+  const innerW = detail ? 170 : 150
   const inner = Object.values(m.nodes).filter((n): n is InnerNode => !isLeaf(n))
-  inner.filter((n) => n.level === 1).forEach((n) => placeParent(boxes, n, ROW_Y.inner, innerW, detail))
+  inner.filter((n) => n.level === 1).forEach((n) => placeParent(boxes, n, rows.inner, innerW, detail))
   const root = m.nodes[m.root]
-  if (root && !isLeaf(root)) placeParent(boxes, root, ROW_Y.root, innerW, detail)
+  if (root && !isLeaf(root)) placeParent(boxes, root, rows.root, innerW, detail)
 
   const pageSlot = SCENE_WIDTH / m.pages.length
-  const pageW = Math.min(158, pageSlot - 12)
-  let bottom = ROW_Y.heap
+  const pageW = Math.min(170, pageSlot - 8)
+  let bottom = rows.heap
   m.pages.forEach((p, i) => {
-    const h = detail ? 44 + p.rows.length * 18 : 34 + p.rows.length * 17
-    boxes[`page:${p.no}`] = { x: pageSlot * (i + 0.5) - pageW / 2, y: ROW_Y.heap, w: pageW, h }
-    bottom = Math.max(bottom, ROW_Y.heap + h)
+    const h = heapHeaderH(detail) + p.rows.length * heapRowH() + 6
+    boxes[`page:${p.no}`] = { x: pageSlot * (i + 0.5) - pageW / 2, y: rows.heap, w: pageW, h }
+    bottom = Math.max(bottom, rows.heap + h)
   })
-  boxes.meta = { x: SCENE_WIDTH - 182, y: ROW_Y.root, w: 162, h: 50 }
-  return { boxes, width: SCENE_WIDTH, height: bottom + BOTTOM_PAD }
+  boxes.meta = { x: SCENE_WIDTH - 220, y: rows.root, w: 200, h: 56 }
+  return { boxes, rows, width: SCENE_WIDTH, height: bottom + BOTTOM_PAD }
 }
 
 export interface TidLink { key: number; tid: Tid; selected: boolean }
@@ -95,7 +124,7 @@ export function tidPath(m: BtModel, boxes: Record<string, Box>, view: BtView, li
   if (!found || !page || !lb || !pb) return null
   const n = found.leaf.entries.length
   const sx = detail ? lb.x + lb.w / 2 + (found.index - (n - 1) / 2) * 14 : lb.x + 4 + ((lb.w - 8) / n) * (found.index + 0.5)
-  const sy = detail ? lb.y + lb.h : lb.y + 44
+  const sy = detail ? lb.y + lb.h : lb.y + ENTRY_TOP + CELL_H
   const ex = pb.x + pb.w / 2
   const top = pb.y - 2
   return `M${sx},${sy} C${sx},${sy + 70} ${ex},${top - 70} ${ex},${top}`

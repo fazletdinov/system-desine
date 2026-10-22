@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import type { BtFrame, BtView, Mark } from '../simulations/btree'
-import { heapHeaderH, heapRowH, layoutScene, selectionLinks, tidPath, type Box } from '../simulations/btree-layout'
+import { CELL_H, ENTRY_TOP, FONT, LINE_H, TIDS_PER_LINE, heapHeaderH, heapRowH, layoutScene, lineOffsets, selectionLinks, tidPath, type Box } from '../simulations/btree-layout'
 import { isLeaf, leafOrder, type HeapPage, type Tid } from '../simulations/btree-model'
 
 const props = defineProps<{ frame: BtFrame; view: BtView; selected: string | null }>()
@@ -19,6 +19,13 @@ const box = (id: string): Box => scene.value.boxes[id] ?? { x: 0, y: 0, w: 0, h:
 const links = computed(() => selectionLinks(model.value, props.selected))
 
 const tidText = (t: Tid): string => `(${t[0]},${t[1]})`
+// Моноширинный знак ≈ 0,6 кегля: продолжение posting list встаёт ровно под первым TID.
+const MONO_CH = FONT.mono * 0.6
+function tidChunks(tids: readonly Tid[]): string[] {
+  const out: string[] = []
+  for (let i = 0; i < tids.length; i += TIDS_PER_LINE) out.push(tids.slice(i, i + TIDS_PER_LINE).map(tidText).join(' '))
+  return out
+}
 const hasEdge = (list: readonly (readonly [string, string])[], a: string, b: string): boolean => list.some((e) => e[0] === a && e[1] === b)
 const sepText = (sep: number | null): string => (sep === null ? '−∞' : String(sep))
 const blockOf = (id: string): number => model.value.nodes[id]?.block ?? 0
@@ -47,7 +54,7 @@ interface NodeView {
   cls: (Mark | string)[]
   attrs: Record<string, unknown>
   seps: { key: string; text: string; block: number; x: number; y: number }[]
-  entries: { key: number; cls: Record<string, boolean>; attrs: Record<string, unknown>; label: string; tids: string; many: number; cell: { x: number; w: number }; y: number }[]
+  entries: { key: number; cls: Record<string, boolean>; attrs: Record<string, unknown>; label: string; tids: string[]; contX: number; many: number; cell: { x: number; w: number }; y: number }[]
 }
 
 const nodeViews = computed<NodeView[]>(() =>
@@ -64,8 +71,9 @@ const nodeViews = computed<NodeView[]>(() =>
       text: sepText(e.sep),
       block: blockOf(e.child),
       x: detail.value ? b.x + 12 : b.x + (b.w / count) * (j + 0.5),
-      y: detail.value ? b.y + 38 + j * 18 : b.y + 38,
+      y: detail.value ? b.y + ENTRY_TOP + j * LINE_H + 15 : b.y + ENTRY_TOP + 16,
     }))
+    const offsets = leaf ? lineOffsets(n.entries.map((e) => e.tids.length)) : []
     const entries = !leaf ? [] : n.entries.map((e, j) => {
       const w = (b.w - 8) / count
       return {
@@ -73,10 +81,11 @@ const nodeViews = computed<NodeView[]>(() =>
         cls: entryClass(e.key),
         attrs: interactive(`entry:${e.key}`, `Индексная запись: ключ ${e.key}`),
         label: String(e.key),
-        tids: e.tids.map(tidText).join(' '),
+        tids: tidChunks(e.tids),
+        contX: b.x + 10 + (String(e.key).length + 3) * MONO_CH,
         many: e.tids.length,
         cell: { x: b.x + 4 + w * j, w },
-        y: b.y + 24 + j * 18,
+        y: b.y + ENTRY_TOP + (offsets[j] ?? 0) * LINE_H,
       }
     })
     return [{
@@ -112,7 +121,7 @@ const sibs = computed(() => {
     const b = box(next)
     const on = hasEdge(props.frame.sibs, id, next)
     if (!detail.value && !on) return []
-    const y = a.y + 16
+    const y = a.y + 18
     return [{ key: `${id}~${next}`, on, line: `M${a.x + a.w + 2},${y}L${b.x - 2},${y}`, hit: `M${a.x + a.w},${y}L${b.x},${y}` }]
   })
 })
@@ -159,7 +168,8 @@ function pageView(p: HeapPage): PageView {
   return {
     no: p.no,
     box: b,
-    title: `стр. ${p.no}${detail.value ? ' · 8 КБ' : ''}`,
+    // «8 КБ» — в объяснении страницы: в заголовке рядом с чипом VM на 7 страницах ему нет места.
+    title: `стр. ${p.no}`,
     cls: ['heap', mark ?? '', props.selected === `page:${p.no}` ? 'sel' : '', mark === 'cur' ? 'pulse' : ''],
     attrs: interactive(`page:${p.no}`, `Страница таблицы ${p.no}`),
     vm: {
@@ -167,13 +177,13 @@ function pageView(p: HeapPage): PageView {
       chipCls: { cur: props.frame.vmCur === p.no, checked: props.frame.vmChecked[p.no] !== undefined },
       attrs: interactive(`vm:${p.no}`, `Карта видимости страницы ${p.no}: ${p.allVisible ? 'all-visible' : 'нет отметки'}`),
       text: `VM ${p.allVisible ? '✓' : '—'}`,
-      x: b.x + b.w - 58,
+      x: b.x + b.w - 52,
     },
     rows: p.rows.map((r, j) => ({
       lp: r.lp,
       cls: { hit: props.frame.hitRows.includes(`${p.no}:${r.lp}`), sel: links.value.rows.has(`${p.no}:${r.lp}`) },
       attrs: interactive(`row:${p.no}:${r.lp}`, `Строка таблицы (${p.no},${r.lp}): ${r.chat}, user_id ${r.user}`),
-      y: b.y + heapHeaderH(detail.value) + j * heapRowH(detail.value),
+      y: b.y + heapHeaderH(detail.value) + j * heapRowH(),
       tid: tidText([p.no, r.lp]),
       chat: r.chat,
       user: r.user,
@@ -190,11 +200,11 @@ const pageViews = computed(() => model.value.pages.map(pageView))
       <marker :id="sibMarker" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="head-sib" /></marker>
     </defs>
 
-    <text class="lvl" x="14" y="22">корень</text>
-    <text class="lvl" x="14" y="132">внутренние страницы</text>
-    <text class="lvl" x="14" y="254">листья — индексные записи</text>
-    <text class="lvl" x="14" y="422">таблица chat.members (heap) — строки в порядке вставки</text>
-    <text class="lvl" :x="scene.width - 14" y="22" text-anchor="end">индекс members_user_id_idx</text>
+    <text class="lvl" x="14" :y="scene.rows.root - 12">корень</text>
+    <text class="lvl" x="14" :y="scene.rows.inner - 10">внутренние страницы</text>
+    <text class="lvl" x="14" :y="scene.rows.leaf - 10">листья — индексные записи</text>
+    <text class="lvl" x="14" :y="scene.rows.heap - 10">таблица chat.members (heap) — строки в порядке вставки</text>
+    <text class="lvl" :x="scene.width - 14" :y="scene.rows.root - 12" text-anchor="end">индекс members_user_id_idx</text>
 
     <path v-for="e in edges" :key="e.key" class="edge" :class="{ on: e.on }" :d="e.d" />
 
@@ -206,8 +216,8 @@ const pageViews = computed(() => model.value.pages.map(pageView))
     <template v-if="detail">
       <g class="el" v-bind="interactive('meta', 'Метастраница')">
         <rect class="box meta" :class="[frame.nodes.meta, { sel: selected === 'meta', pulse: frame.nodes.meta === 'cur' }]" :x="box('meta').x" :y="box('meta').y" :width="box('meta').w" :height="box('meta').h" rx="9" />
-        <text class="nh" :x="box('meta').x + 10" :y="box('meta').y + 19">метастраница · блок 0</text>
-        <text class="t" :x="box('meta').x + 10" :y="box('meta').y + 38">корень → <tspan class="addr">блок {{ blockOf(model.root) }}</tspan></text>
+        <text class="nh" :x="box('meta').x + 10" :y="box('meta').y + 20">метастраница · блок 0</text>
+        <text class="t" :x="box('meta').x + 10" :y="box('meta').y + 44">корень → <tspan class="addr">блок {{ blockOf(model.root) }}</tspan></text>
       </g>
       <path class="sib" :d="metaPath" :marker-end="`url(#${sibMarker})`" />
     </template>
@@ -215,7 +225,7 @@ const pageViews = computed(() => model.value.pages.map(pageView))
     <template v-for="n in nodeViews" :key="n.id">
       <g class="el" v-bind="n.attrs">
         <rect class="box" :class="n.cls" :x="n.box.x" :y="n.box.y" :width="n.box.w" :height="n.box.h" rx="9" />
-        <text class="nh" :x="n.box.x + 10" :y="n.box.y + 18">{{ n.head }}</text>
+        <text class="nh" :x="n.box.x + 10" :y="n.box.y + 20">{{ n.head }}</text>
       </g>
 
       <template v-for="s in n.seps" :key="s.key">
@@ -225,12 +235,12 @@ const pageViews = computed(() => model.value.pages.map(pageView))
 
       <g v-for="e in n.entries" :key="e.key" class="el ent" :class="e.cls" v-bind="e.attrs">
         <template v-if="detail">
-          <rect :x="n.box.x + 4" :y="e.y" :width="n.box.w - 8" height="17" />
-          <text class="t" :x="n.box.x + 10" :y="e.y + 13">{{ e.label }}<tspan class="addr"> → {{ e.tids }}</tspan></text>
+          <rect :x="n.box.x + 4" :y="e.y" :width="n.box.w - 8" :height="e.tids.length * LINE_H - 2" />
+          <text class="t" :x="n.box.x + 10" :y="e.y + 15">{{ e.label }}<tspan class="addr"> → {{ e.tids[0] }}</tspan><tspan v-for="(more, k) in e.tids.slice(1)" :key="k" class="addr" :x="e.contX" :dy="LINE_H">{{ more }}</tspan></text>
         </template>
         <template v-else>
-          <rect :x="e.cell.x" :y="n.box.y + 24" :width="e.cell.w" height="20" />
-          <text class="t" text-anchor="middle" :x="e.cell.x + e.cell.w / 2" :y="n.box.y + 38">{{ e.label }}<tspan v-if="e.many > 1" class="addr small">×{{ e.many }}</tspan></text>
+          <rect :x="e.cell.x" :y="n.box.y + ENTRY_TOP" :width="e.cell.w" :height="CELL_H" />
+          <text class="t" text-anchor="middle" :x="e.cell.x + e.cell.w / 2" :y="n.box.y + ENTRY_TOP + 16">{{ e.label }}<tspan v-if="e.many > 1" class="addr small">×{{ e.many }}</tspan></text>
         </template>
       </g>
     </template>
@@ -238,18 +248,19 @@ const pageViews = computed(() => model.value.pages.map(pageView))
     <template v-for="p in pageViews" :key="p.no">
       <g class="el" v-bind="p.attrs">
         <rect class="box" :class="p.cls" :x="p.box.x" :y="p.box.y" :width="p.box.w" :height="p.box.h" rx="9" />
-        <text class="nh" :x="p.box.x + 10" :y="p.box.y + 18">{{ p.title }}</text>
+        <text class="nh" :x="p.box.x + 10" :y="p.box.y + 20">{{ p.title }}</text>
       </g>
       <template v-if="detail">
         <g class="el" v-bind="p.vm.attrs">
-          <rect class="chip" :class="[p.vm.cls, p.vm.chipCls]" :x="p.vm.x" :y="p.box.y + 6" width="50" height="16" />
-          <text class="vm" :class="p.vm.cls" :x="p.vm.x + 25" :y="p.box.y + 18" text-anchor="middle">{{ p.vm.text }}</text>
+          <rect class="chip" :class="[p.vm.cls, p.vm.chipCls]" :x="p.vm.x" :y="p.box.y + 6" width="46" height="20" />
+          <text class="vm" :class="p.vm.cls" :x="p.vm.x + 23" :y="p.box.y + 21" text-anchor="middle">{{ p.vm.text }}</text>
         </g>
-        <text class="t dim small" :x="p.box.x + 10" :y="p.box.y + 36">TID   chat  user_id</text>
+        <!-- Отступ 6, а не 10: на 7 страницах подпись иначе упирается в рамку. -->
+        <text class="t dim small" :x="p.box.x + 6" :y="p.box.y + 41">TID chat user_id</text>
       </template>
       <g v-for="r in p.rows" :key="r.lp" class="el row" :class="r.cls" v-bind="r.attrs">
-        <rect :x="p.box.x + 4" :y="r.y" :width="p.box.w - 8" :height="detail ? 17 : 16" />
-        <text class="t" :x="p.box.x + 10" :y="r.y + 12.5"><tspan v-if="detail" class="addr">{{ r.tid }}  </tspan>{{ r.chat }}<tspan class="addr"> · </tspan>{{ r.user }}</text>
+        <rect :x="p.box.x + 4" :y="r.y" :width="p.box.w - 8" :height="heapRowH() - 1" />
+        <text class="t" :x="p.box.x + 10" :y="r.y + 14.5"><tspan v-if="detail" class="addr">{{ r.tid }}</tspan><tspan :dx="detail ? 8 : 0">{{ r.chat }}</tspan><tspan class="addr"> · </tspan>{{ r.user }}</text>
       </g>
     </template>
 
@@ -262,7 +273,7 @@ const pageViews = computed(() => model.value.pages.map(pageView))
 
 <style scoped>
 .bt { width: 100%; height: auto; display: block; color: var(--viz-text); }
-.lvl { font: 650 10.5px var(--vp-font-family-base, system-ui); letter-spacing: 0.8px; text-transform: uppercase; fill: var(--viz-muted); }
+.lvl { font: 650 14px var(--vp-font-family-base, system-ui); letter-spacing: 0.6px; text-transform: uppercase; fill: var(--viz-muted); }
 .box { fill: var(--viz-node-bg); stroke: var(--viz-edge); stroke-width: 1.5; }
 /* Заливку не тонируем: на любом оттенке muted-текст заголовка падает ниже 4,5:1 в светлой теме. Куча отличается рамкой. */
 .box.heap { stroke: color-mix(in srgb, var(--viz-service) 55%, var(--viz-edge)); }
@@ -274,10 +285,10 @@ const pageViews = computed(() => model.value.pages.map(pageView))
 .box.cur { stroke: var(--viz-client); stroke-width: 2.5; filter: drop-shadow(0 0 6px var(--viz-client)); }
 .box.hint { stroke: var(--viz-muted); stroke-dasharray: 5 3; }
 .box.sel { stroke: var(--viz-text); stroke-width: 2.5; }
-.nh { font: 650 11px var(--vp-font-family-base, system-ui); fill: var(--viz-muted); }
-.t { font: 500 12px var(--vp-font-family-mono, ui-monospace, monospace); fill: var(--viz-text); }
+.nh { font: 650 14px var(--vp-font-family-base, system-ui); fill: var(--viz-muted); }
+.t { font: 500 15px var(--vp-font-family-mono, ui-monospace, monospace); fill: var(--viz-text); }
 .t.dim { fill: var(--viz-muted); }
-.small { font-size: 10.5px; }
+.small { font-size: 14px; }
 .addr { fill: var(--viz-addr); }
 .ent rect, .row rect { fill: transparent; rx: 4; }
 .ent:hover rect, .row:hover rect { fill: color-mix(in srgb, var(--viz-text) 10%, transparent); }
@@ -299,7 +310,7 @@ const pageViews = computed(() => model.value.pages.map(pageView))
 .chip.cur.vis { fill: var(--viz-hit-bg); stroke: var(--viz-db); }
 .chip.cur.dirty { fill: color-mix(in srgb, var(--viz-error) 25%, var(--viz-node-bg)); }
 .chip.checked:not(.cur) { stroke: var(--viz-muted); }
-.vm { font: 600 10px var(--vp-font-family-base, system-ui); }
+.vm { font: 600 14px var(--vp-font-family-base, system-ui); }
 /* Подпись чипа — токены с проверенным контрастом на обычной и «активной» заливке; цвет ошибки только в рамке. */
 .vm.vis { fill: var(--viz-hit-text); }
 .vm.dirty { fill: var(--viz-text); }
