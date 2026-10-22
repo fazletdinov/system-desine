@@ -72,6 +72,9 @@ watch(mode, (m) => {
   if (m === 'off') void nextTick(() => toggleBtn.value?.focus())
 })
 
+// Снимок экрана (Shot) открывается на весь экран кликом по картинке, а не только кнопкой.
+defineExpose({ toggle })
+
 onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
   document.addEventListener('keydown', onKeydown)
