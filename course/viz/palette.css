@@ -13,6 +13,9 @@
   --viz-edge: #cbd5e1;
   --viz-text: #1e293b;
   --viz-muted: #64748b;
+  --viz-addr: #92400e;
+  --viz-hit-bg: #d1fae5;
+  --viz-hit-text: #065f46;
   --viz-active-line-bg: rgba(245, 158, 11, 0.2);
 }
 
@@ -30,6 +33,9 @@
   --viz-node-bg: #111b2e;
   --viz-edge: #334155;
   --viz-text: #e2e8f0;
-  --viz-muted: #94a3b8;
+  --viz-muted: #a8d8bb;
+  --viz-addr: #e8c27a;
+  --viz-hit-bg: #1d5a3a;
+  --viz-hit-text: #9ff0c1;
   --viz-active-line-bg: rgba(251, 191, 36, 0.18);
 }
