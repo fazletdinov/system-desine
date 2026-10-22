@@ -1,11 +1,14 @@
 <script setup lang="ts" generic="S">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Step } from '../core/types'
-import T from '../../components/T.vue'
-import { captionSegments } from '../core/caption'
+import CaptionText from './CaptionText.vue'
+import StepCard from './StepCard.vue'
+import StepQuiz from './StepQuiz.vue'
 import { SPEEDS, initPlayer, keyToAction, playerReducer, stepDelayMs, type PlayerAction } from '../core/player'
 
 const props = defineProps<{ steps: readonly Step<S>[]; label: string; startAtEnd?: boolean }>()
+
+const emit = defineEmits<{ step: [index: number] }>()
 
 const state = ref(initPlayer(props.steps.length))
 const dispatch = (action: PlayerAction): void => {
@@ -20,6 +23,9 @@ watch(() => props.steps, (steps) => {
   dispatch({ type: 'reset', total: steps.length })
   if (props.startAtEnd) dispatch({ type: 'last' })
 })
+
+// Сцены со второй колонкой (панель объяснения) следят за шагом снаружи.
+watch(() => state.value.index, (index) => emit('step', index))
 
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(
@@ -50,14 +56,17 @@ function onSpeed(event: Event): void {
 
 <template>
   <figure class="viz-player" tabindex="0" :aria-label="label" @keydown="onKey">
-    <div class="viz-stage" :class="{ 'has-code': $slots.code }">
+    <div class="viz-stage" :class="{ 'has-code': $slots.code, 'has-side': $slots.side }">
       <div class="viz-canvas"><slot :step="step" :index="state.index" /></div>
+      <div v-if="$slots.side" class="viz-side"><slot name="side" :step="step" :index="state.index" /></div>
       <div v-if="$slots.code" class="viz-code"><slot name="code" :line="step.codeLine" /></div>
     </div>
     <figcaption class="viz-caption" aria-live="polite">
       <span class="viz-step-no">Шаг {{ state.index + 1 }} из {{ state.total }}</span>
-      <template v-for="(seg, i) in captionSegments(step.caption)" :key="i"><T v-if="seg.termId" :id="seg.termId">{{ seg.text }}</T><template v-else>{{ seg.text }}</template></template>
+      <CaptionText :caption="step.caption" />
     </figcaption>
+    <StepCard v-if="step.card" :card="step.card" />
+    <StepQuiz v-if="step.quiz" :key="state.index" :quiz="step.quiz" />
     <div class="viz-controls" role="group" aria-label="Управление визуализацией">
       <button type="button" :disabled="isFirst" aria-label="В начало" @click="dispatch({ type: 'first' })">⏮</button>
       <button type="button" :disabled="isFirst" aria-label="Шаг назад" @click="dispatch({ type: 'prev' })">◀</button>
@@ -83,7 +92,10 @@ function onSpeed(event: Event): void {
 .viz-player:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
 .viz-stage { display: grid; gap: 16px; }
 @container (min-width: 900px) { .viz-stage.has-code { grid-template-columns: 3fr 2fr; } }
-.viz-canvas, .viz-code { min-width: 0; }
+/* Ширина контейнера, а не окна: плеер бывает и в узкой колонке урока. */
+@container (min-width: 900px) { .viz-stage.has-side { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; } }
+.viz-stage.has-side .viz-code { grid-column: 1 / -1; }
+.viz-canvas, .viz-code, .viz-side { min-width: 0; }
 .viz-caption { min-height: 4.5em; margin-top: 12px; line-height: 1.6; }
 .viz-step-no { display: block; color: var(--vp-c-text-2); font-size: 13px; }
 .viz-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
