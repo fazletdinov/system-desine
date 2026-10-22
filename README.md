@@ -33,6 +33,7 @@ npm run check:go   # компилирует Go-фрагменты уроков, 
 npm run check:labs # gofmt, go vet, go test -race лабораторных и compose config
 npm run check:messenger # gofmt, свежесть go generate, go vet (и с тегом migratedemo), golangci-lint, go test -race мессенджера и ссылки <<< в уроках
 npm run check:refs      # только ссылки <<< @/../…#регион во всех уроках (файл и регион существуют)
+npm run check:run       # у каждого прогона урока есть <Run>; его каталог, пакеты Go и файлы из команды существуют
 npm run check:images    # образ мессенджера: размер, пользователь, version, trivy, smoke-тест (как джоба image в CI); варианты naive/alpine/scratch урока 1.16 (Docker, минуты и сеть)
 npm run check:workflows # actionlint по .github/workflows
 npm run check:base      # сборка курса под подпутём /check-base/, как на GitHub Pages: нет ссылок мимо базового пути
@@ -92,6 +93,8 @@ docker compose -f 2a/compose.yaml up -d --wait        # база для свои
 docker compose -f 2a/compose.yaml exec db psql
 docker compose -f 2a/compose.yaml down -v
 ```
+
+Под выводом каждого прогона в уроках стоит строка «▶ Запустить самому» (компонент `<Run>`): каталог от корня репозитория, команда, нужен ли Docker и подготовка. Числа в уроках сняты на одной машине; на вашей они будут другими — сравнивайте соотношения и форму результата, а не абсолютные значения.
 
 Проверка — из `course/`: `npm run check:labs` (gofmt, `go vet`, `go test -race` по `labs/`, `docker compose config`, сценарии 1c, 1.5 и 2a).
 
