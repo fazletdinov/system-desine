@@ -170,8 +170,8 @@ describe('runRefs', () => {
     expect(paths(r)).toEqual(['dir labs', 'file labs/x/README.md', 'package labs/nonexistent'])
   })
   it('git show ревизия:путь — путь от корня в этой ревизии', () => {
-    const r = run('go tool pprof cpu.pprof', { dir: 'messenger', before: 'рецепт — `git show main:labs/1-5/results/profile/profile-load.txt`' })
-    expect(runRefs(r, noMounts).map((ref) => `${ref.rev ?? '-'} ${ref.path}`)).toEqual(['- messenger', 'main labs/1-5/results/profile/profile-load.txt'])
+    const r = run('go tool pprof cpu.pprof', { dir: 'messenger', before: 'рецепт — `git show m02-l01:labs/1-5/results/profile/profile-load.txt`' })
+    expect(runRefs(r, noMounts).map((ref) => `${ref.rev ?? '-'} ${ref.path}`)).toEqual(['- messenger', 'm02-l01 labs/1-5/results/profile/profile-load.txt'])
   })
   it('файлы из before проверяются от каталога запуска', () => {
     const r = run('go tool pprof cpu.pprof', { dir: 'messenger', before: 'как в `../labs/1-5/results/profile/profile-load.txt`' })

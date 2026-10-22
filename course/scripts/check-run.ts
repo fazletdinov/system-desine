@@ -78,14 +78,19 @@ const git = (...args: string[]): string | null => {
   }
 }
 
-// В CI нет локальной ветки main, только origin/main; у читателя — наоборот.
+// Ревизии в уроках — теги: неподвижны, в отличие от ветки, и одинаковы у читателя и в CI.
 const revisions = new Map<string, string | null>()
 function resolveRev(rev: string): string | null {
-  if (!revisions.has(rev)) {
-    const found = [rev, `origin/${rev}`].find((r) => git('rev-parse', '--verify', '-q', `${r}^{commit}`) !== null)
-    revisions.set(rev, found ?? null)
-  }
+  if (!revisions.has(rev)) revisions.set(rev, git('rev-parse', '--verify', '-q', `${rev}^{commit}`) === null ? null : rev)
   return revisions.get(rev) ?? null
+}
+
+// Клон без тегов (git clone --no-tags, actions/checkout с малой глубиной) провалил бы
+// каждый <Run> с тегом по отдельности; причина одна, и сказать её нужно один раз.
+function exitIfNoTags(): void {
+  if ((git('tag', '-l') ?? '').trim() !== '') return
+  console.error('Блоки «Запустить самому»: в клоне нет тегов, а <Run tag="…"> проверяются в дереве тега. Загрузите их: git fetch --tags')
+  process.exit(1)
 }
 
 // Путь в ревизии: тип объекта (tree/blob) и, для каталога, имена внутри.
@@ -121,6 +126,7 @@ function missing(ref: PathRef, tag: string | undefined): string | null {
 }
 
 export function checkRunBlocks(): number {
+  exitIfNoTags()
   const problems: string[] = []
   const uncovered: UncoveredBlock[] = []
   let total = 0

@@ -7,6 +7,10 @@ import { inlineCode, runDir, runLine, worktreeAdd, worktreeRemove } from './run'
 // код которого нужен команде: тогда dir берётся в рабочем дереве этого тега.
 const props = defineProps<{ dir: string; cmd: string; needs?: 'docker'; before?: string; tag?: string }>()
 
+// В compose.yaml мессенджера задано name: messenger на всех тегах: стенд из дерева тега —
+// тот же проект compose, что и стенд основной копии, и пересоздал бы его контейнеры.
+const MAIN_STAND_DOWN = 'docker compose -f messenger/compose.yaml down'
+
 const line = computed(() => runLine(props.dir, props.cmd, props.tag))
 const beforeDir = computed(() => runDir(props.dir, props.tag))
 const beforeParts = computed(() => (props.before === undefined ? [] : inlineCode(props.before)))
@@ -58,10 +62,12 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
       <button type="button" class="run-copy" aria-label="копировать команду" @click="copy">{{ COPY_LABEL[copyState] }}</button>
       <span role="status" class="run-sr-only">{{ COPY_STATUS[copyState] }}</span>
     </div>
-    <p v-if="tag" class="run-before">
-      код урока — тег <code>{{ tag }}</code> в отдельном рабочем дереве, курс остаётся на main:
-      <code>{{ worktreeAdd(tag) }}</code>; убрать — <code>{{ worktreeRemove(tag) }}</code>
-    </p>
+    <div v-if="tag" class="run-before">
+      код урока — тег <code>{{ tag }}</code> в отдельном рабочем дереве, курс остаётся на main (команды — из корня репозитория):
+      <span class="run-hint">создать: <code>{{ worktreeAdd(tag) }}</code></span>
+      <span v-if="needs === 'docker'" class="run-hint">стенд основной копии сначала остановите: <code>{{ MAIN_STAND_DOWN }}</code></span>
+      <span class="run-hint">убрать: <code>{{ worktreeRemove(tag) }}</code></span>
+    </div>
     <p v-if="before" class="run-before">
       сначала, из <code>{{ beforeDir }}</code>:
       <template v-for="(part, i) in beforeParts" :key="i">
@@ -131,6 +137,19 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+/* Подсказка — своей строкой; её команда не рвётся (иначе «--force» читается как «--» и
+   «force»): целиком уходит на следующую строку, а слишком длинная прокручивается внутри. */
+.run-hint {
+  display: block;
+}
+.run-hint code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: bottom;
+  white-space: nowrap;
+  scrollbar-width: thin;
 }
 .run-before {
   margin: 4px 0 0;
