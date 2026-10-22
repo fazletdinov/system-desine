@@ -53,3 +53,33 @@ docker rm -f h3-shot && docker compose -f labs/0b/compose.yaml down
 ```
 
 Файл ключей — секрет: с ним расшифровывается вся запись. В git он не попадает (`labs/0b/captures/*.keys`).
+
+## 1-5-10-profiling — go tool pprof и go tool trace (Go 1.27.3)
+
+Стенд — мессенджер на теге урока, в отдельном рабочем дереве:
+
+```bash
+git worktree add ../sd-m01-5-l10 m01-5-l10 && cd ../sd-m01-5-l10/messenger
+go run ./cmd/keygen -out jwt.pem && chmod 0444 jwt.pem
+docker compose up -d --build
+# cpu.pprof — смешанная нагрузка (рецепт: git show m02-l01:labs/1-5/results/profile/profile-load.txt)
+scripts/read-load.sh 8 30 & sleep 3
+(end=$((SECONDS+27)); while [ $SECONDS -lt $end ]; do scripts/overload.sh 50; sleep 1; done) &
+curl -s -o cpu.pprof '127.0.0.1:6060/debug/pprof/profile?seconds=20'; wait
+# near-limit-trace.out — у лимита памяти (рецепт: …/near-limit-load.txt)
+MESSENGER_HASH_CONCURRENCY=14 MESSENGER_HASH_QUEUE=0 docker compose up -d --force-recreate
+(end=$((SECONDS+25)); while [ $SECONDS -lt $end ]; do scripts/overload.sh 50; sleep 1; done) &
+sleep 5; curl -s -o near-limit-trace.out '127.0.0.1:6060/debug/pprof/trace?seconds=5'; wait
+go tool pprof -http=127.0.0.1:8081 -no_browser cpu.pprof
+go tool trace -http=127.0.0.1:8082 near-limit-trace.out
+```
+
+Окно браузера — 1400×900.
+
+| файл | страница | что сделать | обрезка |
+|---|---|---|---|
+| `pprof-flame-graph.webp` | http://127.0.0.1:8081/ui/flamegraph | — | всё окно |
+| `pprof-top.webp` | http://127.0.0.1:8081/ui/top | клик по заголовку `Cum` | x 0–900 |
+| `trace-by-proc.webp` | http://127.0.0.1:8082/trace?view=proc | скрыть жёлтую плашку (Hide); навести на первую волну (≈ 1 с) и 6 раз `W`; клавиша `1` и клик по отрезку горутины `argon2.processBlocks` в строке Proc 0 | x 0–1378; y 0–360 + y 628–872 |
+
+После съёмки: `docker compose down`, `cd -`, `git worktree remove ../sd-m01-5-l10`.
