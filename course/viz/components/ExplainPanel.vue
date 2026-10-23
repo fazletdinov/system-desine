@@ -13,7 +13,7 @@ withDefaults(defineProps<{ explanation: Explanation | null; fallback?: string }>
     <p v-if="explanation === null" class="fallback">{{ fallback }}</p>
     <template v-else>
       <h4 class="title" aria-live="polite">{{ keepDigitGroups(explanation.title) }}</h4>
-      <p class="kind">{{ explanation.kind }}</p>
+      <p class="kind">{{ keepDigitGroups(explanation.kind) }}</p>
       <section v-for="(s, i) in explanation.sections" :key="`${i}-${s.heading}`" class="section">
         <h5 class="heading">{{ keepDigitGroups(s.heading) }}</h5>
         <p class="body"><CaptionText :caption="s.body" /></p>

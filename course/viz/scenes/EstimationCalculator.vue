@@ -5,8 +5,8 @@ import CaptionText from '../components/CaptionText.vue'
 import StepQuiz from '../components/StepQuiz.vue'
 import { computed, reactive, ref } from 'vue'
 import { captionText } from '../core/caption'
-import { formatNumber } from '../core/format'
-import { explainIdFromEvent } from '../core/selection'
+import { formatNumber, keepDigitGroups } from '../core/format'
+import { isExplainActivationKey, pickExplainId } from '../core/selection'
 import {
   DAU_SLIDER,
   ESTIMATION_HONESTY,
@@ -40,13 +40,10 @@ const selected = ref<string | null>(null)
 // computed от выбора и входов: двинули ползунок — числа в панели пересчитались вместе с шагами.
 const explanation = computed(() => (selected.value === null ? null : explainEstimation(selected.value, input)))
 
-const pick = (e: Event): void => {
-  const id = explainIdFromEvent(e)
-  if (id !== null) selected.value = id
-}
-// Enter и пробел — только на самой карточке шага: на ссылке-термине внутри Enter должен открыть глоссарий.
+const pick = (e: Event): void => { selected.value = pickExplainId(e, selected.value) }
 const onKey = (e: KeyboardEvent): void => {
-  if ((e.key !== 'Enter' && e.key !== ' ') || e.target !== e.currentTarget) return
+  if (!isExplainActivationKey(e)) return
+  // Пробел иначе прокрутил бы страницу.
   e.preventDefault()
   pick(e)
 }
@@ -88,7 +85,7 @@ function reset(): void {
                 <input v-model.number="input[f.key]" type="range" v-bind="NUMERIC_RANGE[f.key]" :aria-label="captionText(f.label)" />
                 <input v-model.number="input[f.key]" type="number" v-bind="NUMERIC_RANGE[f.key]" :aria-label="`${captionText(f.label)}, число`" />
               </span>
-              <span class="hint">{{ f.hint }}</span>
+              <span class="hint">{{ keepDigitGroups(f.hint) }}</span>
             </div>
             <button type="button" class="reset" @click="reset">Вернуть исходные значения</button>
           </div>
@@ -108,7 +105,7 @@ function reset(): void {
                 <span class="no" aria-hidden="true">{{ i + 1 }}</span>
                 <div class="body">
                   <p class="label"><CaptionText :caption="s.label" />: <strong class="num">{{ formatStepValue(s) }}</strong></p>
-                  <p class="formula">{{ s.formula }}</p>
+                  <p class="formula">{{ keepDigitGroups(s.formula) }}</p>
                   <p class="expr">{{ s.expression }}</p>
                 </div>
               </div>

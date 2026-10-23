@@ -237,6 +237,7 @@ Compare file sync methods using one 8kB write:
   у локального NVMe. Локальный NVMe инстанса ближе к числам выше.
 - **macOS и Windows (Docker Desktop).** Bind mount идёт через файловую систему виртуальной машины Docker,
   а не прямо на ваш диск, поэтому `fio` и `pg_test_fsync` измерят этот слой. Числа памяти честные, если
-  запускать `go run` на хосте.
+  запускать `go run` на хосте. `scenario.sh` работает только на Linux; на macOS и Windows можно запустить
+  только `go run ./0-4/mem -mode latency` и `-mode seq` (без `taskset`: его там нет).
 - **Сеть.** Редкий режим почти целиком зависит от энергосбережения процессора: с `performance` и без
   глубоких C-state он приближается к плотному.

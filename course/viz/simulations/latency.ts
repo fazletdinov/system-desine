@@ -45,7 +45,7 @@ const AUTHOR = 'у автора, лаба 0.4'
 
 // Каждый URL открыт и сверен с числом в тексте диапазона (2026-10-23).
 const CHIPS_GOLDEN_COVE: SourceLink = {
-  title: 'Chips and Cheese, «Going Armchair Quarterback on Golden Cove’s Caches»: L1D — 5 тактов, L2 — около 15 тактов (2,94 нс)',
+  title: 'Chips and Cheese, «Going Armchair Quarterback on Golden Cove’s Caches»: L1D — 5 тактов, L2 — около 15 тактов (≈2,9 нс на 5,2 ГГц)',
   url: 'https://old.chipsandcheese.com/2022/02/11/going-armchair-quarterback-on-golden-coves-caches/',
 }
 const SAMSUNG_990: SourceLink = {
@@ -101,7 +101,7 @@ export const LATENCIES: readonly LatencyItem[] = [
     messenger: 'тот же разбор JSON и проверка токена: данные, которые не поместились в L1',
     kind: 'cpu',
     modelNs: 4,
-    range: { lo: 2.94, hi: 5, source: 'около 15 тактов: 2,94 нс на 5,2 ГГц, 5 нс на 3 ГГц, ядро Golden Cove (Chips and Cheese)', links: [CHIPS_GOLDEN_COVE] },
+    range: { lo: 2.9, hi: 5, source: '≈2,9 нс (15 тактов на 5,2 ГГц) и 5 нс (на 3 ГГц), ядро Golden Cove (по Chips and Cheese)', links: [CHIPS_GOLDEN_COVE] },
     author: LAB_04.l2,
   }),
   row({

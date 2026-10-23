@@ -82,3 +82,18 @@ describe.each(themes)('калькулятор оценки, тема $name', ({ 
     expect(contrastRatio(all['--viz-text']!, softBg)).toBeGreaterThanOrEqual(3)
   })
 })
+
+// «Что в модели упрощено» (ExplainAside): кнопка на фоне страницы стоит в песочнице на bg-soft.
+// Рамка нажатой кнопки — --viz-active-border, кольцо фокуса — --viz-text (--viz-active давал ~2:1 на светлом bg-soft).
+describe.each(themes)('кнопка «Что упрощено», тема $name', ({ selector, pageBg, softBg }) => {
+  const all = tokens(selector)
+
+  it('--viz-active-border — рамка нажатой кнопки на её фоне и на bg-soft ≥ 3:1', () => {
+    expect(contrastRatio(all['--viz-active-border']!, pageBg)).toBeGreaterThanOrEqual(3)
+    expect(contrastRatio(all['--viz-active-border']!, softBg)).toBeGreaterThanOrEqual(3)
+  })
+
+  it('--viz-text — кольцо фокуса на bg-soft ≥ 3:1', () => {
+    expect(contrastRatio(all['--viz-text']!, softBg)).toBeGreaterThanOrEqual(3)
+  })
+})

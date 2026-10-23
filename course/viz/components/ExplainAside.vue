@@ -37,6 +37,7 @@ watch(() => props.explanation, (e) => { if (e !== null) showSimplifications.valu
 @container (min-width: 900px) { .aside-grid { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; } }
 .aside-main, .aside-panel { min-width: 0; }
 .simplify { margin-top: 8px; min-height: 40px; padding: 0 12px; border: 1px solid var(--vp-c-divider); border-radius: 8px; background: var(--vp-c-bg); color: var(--vp-c-text-1); cursor: pointer; }
-.simplify[aria-pressed='true'] { border-color: var(--viz-active); }
-.simplify:focus-visible { outline: 2px solid var(--viz-active); outline-offset: 2px; }
+.simplify[aria-pressed='true'] { border-color: var(--viz-active-border); }
+/* --viz-active на светлом bg-soft давал ~2:1 — кольцо фокуса не видно; --viz-text проходит 3:1 в обеих темах. */
+.simplify:focus-visible { outline: 2px solid var(--viz-text); outline-offset: 2px; }
 </style>

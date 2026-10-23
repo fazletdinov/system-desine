@@ -67,12 +67,35 @@
 
 ### Песочница
 
-Песочница (шкала задержек, калькулятор) кладёт свою сцену в `ExplainAside` и сама держит выбранный элемент. Рендерер помечает кликабельное `data-explain="id"`, обработчик клика берёт id через `explainIdFromEvent(e)` (`core/selection.ts`, ближайший `[data-explain]`, вложенные узлы не мешают) и по нему собирает `Explanation`:
+Песочница (шкала задержек, калькулятор) кладёт свою сцену в `ExplainAside` и сама держит выбранный элемент. Кликабельный элемент — `role="button"`, `tabindex="0"`, `aria-pressed` и метка `data-explain="id"`. Выбор — общие функции из `core/selection.ts`: `pickExplainId(e, current)` берёт id ближайшего `[data-explain]` (вложенные узлы не мешают), а клик мимо разметки оставляет прежний выбор; `isExplainActivationKey(e)` пропускает Enter и пробел только на самом элементе, чтобы Enter на вложенной ссылке-термине открыл глоссарий. Объяснение — `computed` от выбора и входов песочницы: двинули ползунок — числа в панели пересчитались.
 
 ```vue
-<ExplainAside :explanation="selected === null ? null : explain(selected)" :simplifications="simplifications" fallback="Нажмите на строку, чтобы увидеть объяснение">
-  <MySandbox @click="(e) => (selected = explainIdFromEvent(e))" />
-</ExplainAside>
+<script setup lang="ts">
+const selected = ref<string | null>(null)
+const explanation = computed(() => (selected.value === null ? null : explain(selected.value, input)))
+
+const pick = (e: Event): void => { selected.value = pickExplainId(e, selected.value) }
+const onKey = (e: KeyboardEvent): void => {
+  if (!isExplainActivationKey(e)) return
+  e.preventDefault() // пробел иначе прокрутил бы страницу
+  pick(e)
+}
+</script>
+
+<template>
+  <ExplainAside :explanation="explanation" :simplifications="simplifications" fallback="Нажмите на строку, чтобы увидеть объяснение">
+    <div
+      v-for="row in rows"
+      :key="row.id"
+      role="button"
+      tabindex="0"
+      :aria-pressed="selected === `row:${row.id}`"
+      :data-explain="`row:${row.id}`"
+      @click="pick"
+      @keydown="onKey"
+    >…</div>
+  </ExplainAside>
+</template>
 ```
 
 Кнопка «Что в модели упрощено» (настоящая `<button>`, `aria-pressed`) появляется, если передан `simplifications`: переключает панель на этот текст, выбор элемента возвращает объяснение элемента. Без выбора показывается `fallback`. Раскладка как у `side` в `Player`: контейнер шире 900 px — панель справа (340 px), уже — под песочницей.

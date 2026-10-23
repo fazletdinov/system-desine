@@ -1,7 +1,9 @@
 #!/bin/sh
 # Один замер fio по файлу в /data (bind mount каталога на диске хоста).
 #   lab-fio <ключ> <rw> <bs> <размер файла> <секунд>
-# Печатает сводку по задержке завершения (clat) и строки RESULT <ключ>_p50_us …;
+# Печатает сводку по lat (slat + clat, время, которое видит программа) и по clat
+# (только завершение) и строки RESULT: <ключ>_lat_p50_us/_lat_p99_us/_lat_mean_us по lat,
+# <ключ>_p50_us/_p99_us/_mean_us по clat. Шкала урока берёт lat, clat — для сравнения;
 # полный JSON fio — в /data/<ключ>.json, scenario.sh забирает его в results/.
 set -eu
 

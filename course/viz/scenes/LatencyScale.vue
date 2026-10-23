@@ -6,7 +6,8 @@ import CaptionText from '../components/CaptionText.vue'
 import StepQuiz from '../components/StepQuiz.vue'
 import { computed, ref } from 'vue'
 import { captionText } from '../core/caption'
-import { explainIdFromEvent } from '../core/selection'
+import { keepDigitGroups } from '../core/format'
+import { isExplainActivationKey, pickExplainId } from '../core/selection'
 import {
   KIND_LABEL,
   LATENCIES,
@@ -52,13 +53,10 @@ const realLine = (l: LatencyItem): string => {
   return parts.join(' · ')
 }
 
-const pick = (e: Event): void => {
-  const id = explainIdFromEvent(e)
-  if (id !== null) selected.value = id
-}
-// Enter и пробел — только на самой строке: на ссылке-термине внутри Enter должен открыть глоссарий.
+const pick = (e: Event): void => { selected.value = pickExplainId(e, selected.value) }
 const onKey = (e: KeyboardEvent): void => {
-  if ((e.key !== 'Enter' && e.key !== ' ') || e.target !== e.currentTarget) return
+  if (!isExplainActivationKey(e)) return
+  // Пробел иначе прокрутил бы страницу.
   e.preventDefault()
   pick(e)
 }
@@ -100,20 +98,20 @@ const onKey = (e: KeyboardEvent): void => {
               </div>
               <div class="meta">
                 <span>{{ KIND_LABEL[l.kind] }} · {{ compare(l, baseline) }}</span>
-                <span>{{ realLine(l) }}</span>
+                <span>{{ keepDigitGroups(realLine(l)) }}</span>
               </div>
-              <span class="meta messenger">В мессенджере: {{ l.messenger }}</span>
+              <span class="meta messenger">В мессенджере: {{ keepDigitGroups(l.messenger) }}</span>
             </div>
           </li>
         </ol>
         <p class="note">
           <CaptionText :caption="LATENCY_NOTE" /> «У автора» — лаба 0.4 (labs/0-4/results/). Модель:
-          <a :href="LATENCY_SOURCE.url" target="_blank" rel="noopener">{{ LATENCY_SOURCE.title }}</a>.
+          <a :href="LATENCY_SOURCE.url" target="_blank" rel="noopener">{{ keepDigitGroups(LATENCY_SOURCE.title) }}</a>.
         </p>
         <details class="sources">
           <summary>Источники диапазонов</summary>
           <ul>
-            <li v-for="k in RANGE_LINKS" :key="k.url"><a :href="k.url" target="_blank" rel="noopener">{{ k.title }}</a></li>
+            <li v-for="k in RANGE_LINKS" :key="k.url"><a :href="k.url" target="_blank" rel="noopener">{{ keepDigitGroups(k.title) }}</a></li>
           </ul>
         </details>
       </ExplainAside>
