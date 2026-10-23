@@ -65,6 +65,18 @@
 
 Без клика панель объясняет то, о чём шаг (`focus` в состоянии кадра). Со слотом `side` и контейнером шире 900 px панель встаёт справа от холста, уже — под ним. Термины в карточках, вопросах и объяснениях тесты сцены сверяют с глоссарием (`stepTermIds`, `explanationTermIds`).
 
+### Песочница
+
+Песочница (шкала задержек, калькулятор) кладёт свою сцену в `ExplainAside` и сама держит выбранный элемент. Рендерер помечает кликабельное `data-explain="id"`, обработчик клика берёт id через `explainIdFromEvent(e)` (`core/selection.ts`, ближайший `[data-explain]`, вложенные узлы не мешают) и по нему собирает `Explanation`:
+
+```vue
+<ExplainAside :explanation="selected === null ? null : explain(selected)" :simplifications="simplifications" fallback="Нажмите на строку, чтобы увидеть объяснение">
+  <MySandbox @click="(e) => (selected = explainIdFromEvent(e))" />
+</ExplainAside>
+```
+
+Кнопка «Что в модели упрощено» (настоящая `<button>`, `aria-pressed`) появляется, если передан `simplifications`: переключает панель на этот текст, выбор элемента возвращает объяснение элемента. Без выбора показывается `fallback`. Раскладка как у `side` в `Player`: контейнер шире 900 px — панель справа (340 px), уже — под песочницей.
+
 ## Классы Mermaid
 
 В блоках ```` ```mermaid ```` с `flowchart`/`graph` доступны классы узлов. Пример: `A[Телефон]:::client --> B[Go-сервис]:::service`.
