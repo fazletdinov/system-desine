@@ -50,4 +50,12 @@ if (scenario2a.trim().split('\n').at(-1) !== 'Лаба 2a: все проверк
   console.error(`Сценарий лабы 2a:\n${scenario2a}`)
   process.exit(1)
 }
-console.log('Лабораторные: gofmt, go vet, go test -race, compose config и сценарии 1c, 1.5 и 2a — без ошибок.')
+// Сценарий лабы 0.4 в коротком режиме: память, fio, pg_test_fsync и ping — только порядок величины;
+// results/ не трогает (полный прогон — bash 0-4/scenario.sh без флага).
+run('docker', ['compose', '-f', '0-4/compose.yaml', 'config', '-q'])
+const scenario04 = run('bash', ['0-4/scenario.sh', '--check'], 300_000)
+if (scenario04.trim().split('\n').at(-1) !== 'Лаба 0.4: все проверки прошли.') {
+  console.error(`Сценарий лабы 0.4:\n${scenario04}`)
+  process.exit(1)
+}
+console.log('Лабораторные: gofmt, go vet, go test -race, compose config и сценарии 0.4, 1c, 1.5 и 2a — без ошибок.')

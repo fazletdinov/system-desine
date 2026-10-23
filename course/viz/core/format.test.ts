@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatBytes, formatMs, formatNs, formatNumber, formatSeconds, plural } from './format'
+import { formatBytes, formatMs, formatNs, formatNumber, formatSeconds, keepDigitGroups, plural } from './format'
 
 const NBSP = '\u00A0'
 
@@ -74,5 +74,23 @@ describe('plural', () => {
     [112, 'листьев'],
   ])('%s → %s', (n, expected) => {
     expect(plural(n, 'лист', 'листа', 'листьев')).toBe(expected)
+  })
+})
+
+// CaptionText применяет keepDigitGroups к каждому сегменту отдельно, поэтому число, разрезанное
+// границей термина («1 [[x|000]]»), не склеивается: так авторские тексты не пишут, и склейка через
+// сегменты не делается намеренно.
+describe('keepDigitGroups', () => {
+  it.each([
+    ['Те же 16 384 строки', 'Те же 16\u00A0384 строки'],
+    ['≈8 800 км и 200 000 км/с', '≈8\u00A0800 км и 200\u00A0000 км/с'],
+    ['1 и 400 — чата 2', '1 и 400 — чата 2'],
+    ['шаг 1 из 15', 'шаг 1 из 15'],
+    ['число 12 3456', 'число 12 3456'],
+    // Два года подряд — не разряды одного числа: группа после пробела из четырёх цифр не склеивается.
+    ['2009 2014', '2009 2014'],
+    ['сообщений в день ÷ 86 400 секунд', 'сообщений в день ÷ 86\u00A0400 секунд'],
+  ])('«%s» → без переноса внутри числа', (src, expected) => {
+    expect(keepDigitGroups(src)).toBe(expected)
   })
 })

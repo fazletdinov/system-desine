@@ -13,3 +13,5 @@
 /st2.txt
 /cpu.pprof
 /mutex.out
+# Лаба 0.4: тестовые файлы fio и pg_test_fsync (гигабайты; scenario.sh удаляет их сам).
+/0-4/data/

@@ -1,8 +1,29 @@
 <script setup lang="ts">
 import VizFrame from '../components/VizFrame.vue'
-import { computed, reactive } from 'vue'
-import { DAU_SLIDER, PRESETS, dauToSlider, estimate, formatStepValue, sanitizeInput, sliderToDau, type EstimationInput, type PresetId } from '../simulations/estimation'
-import { formatNumber } from '../core/format'
+import ExplainAside from '../components/ExplainAside.vue'
+import CaptionText from '../components/CaptionText.vue'
+import StepQuiz from '../components/StepQuiz.vue'
+import { computed, reactive, ref } from 'vue'
+import { captionText } from '../core/caption'
+import { formatNumber, keepDigitGroups } from '../core/format'
+import { isExplainActivationKey, pickExplainId } from '../core/selection'
+import {
+  DAU_SLIDER,
+  ESTIMATION_HONESTY,
+  ESTIMATION_QUIZ,
+  INPUT_FIELDS,
+  NUMERIC_RANGE,
+  PRESETS,
+  dauToSlider,
+  estimate,
+  estimationContext,
+  formatStepValue,
+  sanitizeInput,
+  sliderToDau,
+  type EstimationInput,
+  type PresetId,
+} from '../simulations/estimation'
+import { ESTIMATION_SIMPLIFICATIONS, explainEstimation } from '../simulations/estimation-explain'
 
 const props = withDefaults(defineProps<{ preset?: PresetId }>(), { preset: 'default' })
 const input = reactive<EstimationInput>({ ...PRESETS[props.preset] })
@@ -13,15 +34,19 @@ const dauPosition = computed({
   get: () => dauToSlider(input.dau),
   set: (pos: number) => { input.dau = sliderToDau(pos) },
 })
+const context = computed(() => estimationContext(props.preset))
 
-type NumericField = Exclude<keyof EstimationInput, 'dau'>
-const FIELDS: readonly { key: NumericField; label: string; min: number; max: number; step: number; hint: string }[] = [
-  { key: 'messagesPerUser', label: 'Сообщений на пользователя в день', min: 1, max: 200, step: 1, hint: 'Сколько сообщений в среднем отправляет один активный пользователь.' },
-  { key: 'messageBytes', label: 'Размер сообщения с метаданными, байт', min: 10, max: 5_000, step: 10, hint: 'Текст плюс id, автор, чат, время, статус.' },
-  { key: 'peakFactor', label: 'Коэффициент пика', min: 1, max: 10, step: 0.5, hint: 'Во сколько раз пик выше среднего.' },
-  { key: 'retentionDays', label: 'Срок хранения, дней', min: 1, max: 3_650, step: 1, hint: '365 — год, 1825 — пять лет.' },
-  { key: 'replicationFactor', label: 'Коэффициент репликации', min: 1, max: 5, step: 1, hint: 'Сколько копий данных храним.' },
-]
+const selected = ref<string | null>(null)
+// computed от выбора и входов: двинули ползунок — числа в панели пересчитались вместе с шагами.
+const explanation = computed(() => (selected.value === null ? null : explainEstimation(selected.value, input)))
+
+const pick = (e: Event): void => { selected.value = pickExplainId(e, selected.value) }
+const onKey = (e: KeyboardEvent): void => {
+  if (!isExplainActivationKey(e)) return
+  // Пробел иначе прокрутил бы страницу.
+  e.preventDefault()
+  pick(e)
+}
 
 function reset(): void {
   Object.assign(input, PRESETS[props.preset])
@@ -31,52 +56,101 @@ function reset(): void {
 <template>
   <VizFrame label="Калькулятор оценки нагрузки">
     <section class="calc" aria-label="Калькулятор оценки нагрузки">
-      <div class="inputs">
-        <label class="field">
-          <span class="name">Активных пользователей в день (DAU): <strong>{{ formatNumber(input.dau) }}</strong></span>
-          <input v-model.number="dauPosition" type="range" :min="DAU_SLIDER.min" :max="DAU_SLIDER.max" :step="DAU_SLIDER.step" />
-          <span class="hint">Шкала логарифмическая: от тысячи до миллиарда.</span>
-        </label>
-        <label v-for="f in FIELDS" :key="f.key" class="field">
-          <span class="name">{{ f.label }}: <strong>{{ formatNumber(effective[f.key], 1) }}</strong></span>
-          <span class="pair">
-            <input v-model.number="input[f.key]" type="range" :min="f.min" :max="f.max" :step="f.step" />
-            <input v-model.number="input[f.key]" type="number" :min="f.min" :max="f.max" :step="f.step" :aria-label="f.label" />
-          </span>
-          <span class="hint">{{ f.hint }}</span>
-        </label>
-        <button type="button" class="reset" @click="reset">Вернуть исходные значения</button>
-      </div>
-      <ol class="steps">
-        <li v-for="(s, i) in steps" :key="s.id">
-          <span class="no">{{ i + 1 }}</span>
-          <div>
-            <p class="label">{{ s.label }}: <strong>{{ formatStepValue(s) }}</strong></p>
-            <p class="formula">{{ s.formula }}</p>
-            <p class="expr">{{ s.expression }}</p>
+      <p class="context"><CaptionText :caption="context" /></p>
+      <p class="honesty"><CaptionText :caption="ESTIMATION_HONESTY" /></p>
+      <ExplainAside :explanation="explanation" :simplifications="ESTIMATION_SIMPLIFICATIONS" fallback="Нажмите на вход или результат, чтобы увидеть объяснение">
+        <div class="grid">
+          <!-- Вход объясняется при любом касании: клик по подписи, ползунку или полю, фокус с клавиатуры. -->
+          <div class="inputs">
+            <div
+              v-for="f in INPUT_FIELDS"
+              :key="f.key"
+              class="field"
+              :class="{ picked: selected === `in:${f.key}` }"
+              :data-explain="`in:${f.key}`"
+              @click="pick"
+              @focusin="pick"
+            >
+              <span class="name"><CaptionText :caption="f.label" />: <strong class="num">{{ formatNumber(effective[f.key], f.key === 'dau' ? 0 : 1) }}</strong></span>
+              <input
+                v-if="f.key === 'dau'"
+                v-model.number="dauPosition"
+                type="range"
+                :min="DAU_SLIDER.min"
+                :max="DAU_SLIDER.max"
+                :step="DAU_SLIDER.step"
+                :aria-label="captionText(f.label)"
+              />
+              <span v-else class="pair">
+                <input v-model.number="input[f.key]" type="range" v-bind="NUMERIC_RANGE[f.key]" :aria-label="captionText(f.label)" />
+                <input v-model.number="input[f.key]" type="number" v-bind="NUMERIC_RANGE[f.key]" :aria-label="`${captionText(f.label)}, число`" />
+              </span>
+              <span class="hint">{{ keepDigitGroups(f.hint) }}</span>
+            </div>
+            <button type="button" class="reset" @click="reset">Вернуть исходные значения</button>
           </div>
-        </li>
-      </ol>
+          <ol class="steps">
+            <li v-for="(s, i) in steps" :key="s.id">
+              <div
+                class="step"
+                :class="{ picked: selected === `step:${s.id}` }"
+                role="button"
+                tabindex="0"
+                :aria-label="`Шаг ${i + 1}, ${captionText(s.label)}: объяснение`"
+                :aria-pressed="selected === `step:${s.id}`"
+                :data-explain="`step:${s.id}`"
+                @click="pick"
+                @keydown="onKey"
+              >
+                <span class="no" aria-hidden="true">{{ i + 1 }}</span>
+                <div class="body">
+                  <p class="label"><CaptionText :caption="s.label" />: <strong class="num">{{ formatStepValue(s) }}</strong></p>
+                  <p class="formula">{{ keepDigitGroups(s.formula) }}</p>
+                  <p class="expr">{{ s.expression }}</p>
+                </div>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </ExplainAside>
+      <StepQuiz :quiz="ESTIMATION_QUIZ" />
     </section>
   </VizFrame>
 </template>
 
 <style scoped>
-.calc { display: grid; min-width: 0; gap: 20px; margin: 24px 0; padding: 16px; border: 1px solid var(--vp-c-divider); border-radius: 12px; background: var(--vp-c-bg-soft); }
-@media (min-width: 960px) { .calc { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; font-size: 14px; }
+/* Именованный контейнер: две колонки зависят от ширины самой сцены (колонка урока ≈ 690 px — одна, полный экран — две), а не окна. */
+.calc { container: estimation / inline-size; min-width: 0; margin: 24px 0; padding: 16px; border: 1px solid var(--vp-c-divider); border-radius: 12px; background: var(--vp-c-bg-soft); color: var(--viz-text); }
+.context { margin: 0 0 4px; font-size: 14px; line-height: 1.5; }
+.honesty { margin: 0 0 12px; color: var(--viz-muted); font-size: 13px; }
+.grid { display: grid; gap: 12px 20px; min-width: 0; }
+/* 1100, а не 900: с 900 px справа встаёт ещё и панель объяснения (340 px), и три колонки по ~250 px тесны. */
+@container estimation (min-width: 1100px) { .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.inputs, .steps { min-width: 0; }
+/* Рамка той же толщины у всех: выбор меняет только цвет и стиль, раскладка не прыгает. */
+.field, .step { border: 2px solid transparent; border-radius: 8px; cursor: pointer; }
+.field:hover, .step:hover { border-color: var(--vp-c-divider); }
+.field.picked, .step.picked { border-style: dashed; border-color: var(--viz-text); }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; padding: 4px 6px; font-size: 14px; }
 .pair { display: flex; gap: 8px; align-items: center; }
 .pair input[type='range'], .field > input[type='range'] { flex: 1; min-width: 0; }
-.pair input[type='number'] { flex: none; width: 96px; padding: 4px 6px; border: 1px solid var(--vp-c-divider); border-radius: 6px; background: var(--vp-c-bg); color: var(--vp-c-text-1); }
-.hint { color: var(--vp-c-text-3); font-size: 12px; }
-.reset { padding: 6px 12px; border: 1px solid var(--vp-c-divider); border-radius: 8px; background: var(--vp-c-bg); color: var(--vp-c-text-1); font-size: 14px; cursor: pointer; }
+.pair input[type='number'] { flex: none; width: 96px; padding: 4px 6px; border: 1px solid var(--vp-c-divider); border-radius: 6px; background: var(--vp-c-bg); color: var(--viz-text); }
+.field input:focus-visible { outline: 2px solid var(--viz-text); outline-offset: 2px; }
+.hint { color: var(--viz-muted); font-size: 12px; }
+.reset { margin: 4px 0 0 6px; padding: 6px 12px; border: 1px solid var(--vp-c-divider); border-radius: 8px; background: var(--vp-c-bg); color: var(--viz-text); font-size: 14px; cursor: pointer; }
 .reset:hover { border-color: var(--vp-c-brand-1); }
+.reset:focus-visible { outline: 2px solid var(--viz-text); outline-offset: 2px; }
 .steps { list-style: none; margin: 0; padding: 0; }
-.steps li { display: flex; gap: 12px; margin-bottom: 14px; }
-.no { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--vp-c-brand-soft); color: var(--vp-c-brand-1); font-weight: 600; }
+.steps li { margin: 0 0 6px; }
+.step { display: flex; gap: 12px; padding: 4px 6px; }
+.step:focus-visible { outline: 2px solid var(--viz-text); outline-offset: 2px; }
+.body { min-width: 0; }
+/* Номер — текст на нейтральном фоне с рамкой: синий на синеватом читался плохо (инвентаризация 1.4, M7). */
+.no { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--vp-c-divider); border-radius: 50%; background: var(--vp-c-bg); color: var(--viz-text); font-weight: 600; }
 .steps p { margin: 0; }
-/* inline-block переносит короткое значение целиком («28 МБ/с» не рвётся после «/»), а слишком длинное — разрывает. */
-.label strong { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
-.formula { color: var(--vp-c-text-2); font-size: 13px; }
-.expr { font-family: var(--vp-font-family-mono); font-size: 13px; overflow-wrap: anywhere; }
+/* Число целиком: разряды разделены неразрывным пробелом, nowrap не даёт рвать «4 000 000 000» и «28 МБ/с». */
+.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.formula { color: var(--viz-muted); font-size: 13px; }
+/* Перенос только по обычным пробелам вокруг «×», «÷», «=»; break-word рвёт слово, лишь если оно шире строки. */
+.expr { font-family: var(--vp-font-family-mono); font-size: 13px; overflow-wrap: break-word; }
 </style>

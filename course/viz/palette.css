@@ -17,6 +17,8 @@
   --viz-hit-bg: #d1fae5;
   --viz-hit-text: #065f46;
   --viz-active-line-bg: rgba(245, 158, 11, 0.2);
+  /* Рамка-выделение (точка отсчёта шкалы задержек): --viz-active на светлом фоне даёт ~2:1, а рамке нужно ≥ 3:1. */
+  --viz-active-border: #b45309;
 }
 
 .dark {
@@ -38,4 +40,5 @@
   --viz-hit-bg: #1d5a3a;
   --viz-hit-text: #9ff0c1;
   --viz-active-line-bg: rgba(251, 191, 36, 0.18);
+  --viz-active-border: #fbbf24;
 }
