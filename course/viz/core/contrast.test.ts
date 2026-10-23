@@ -64,3 +64,21 @@ describe.each(themes)('шкала задержек, тема $name', ({ selector
     expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(3)
   })
 })
+
+// Калькулятор оценки: подсказки и формулы — --viz-muted на bg-soft; номер шага — --viz-text на --vp-c-bg
+// (раньше синий --vp-c-brand-1 на --vp-c-brand-soft, инвентаризация 1.4, M7); рамка выбора и кольцо фокуса — --viz-text.
+describe.each(themes)('калькулятор оценки, тема $name', ({ selector, pageBg, softBg }) => {
+  const all = tokens(selector)
+
+  it.each(['--viz-text', '--viz-muted'])('%s — подписи, подсказки и формулы на bg-soft ≥ 4,5:1', (name) => {
+    expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('--viz-text — номер шага и числовое поле на фоне страницы ≥ 4,5:1', () => {
+    expect(contrastRatio(all['--viz-text']!, pageBg)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('--viz-text — рамка выбранного элемента и кольцо фокуса на bg-soft ≥ 3:1', () => {
+    expect(contrastRatio(all['--viz-text']!, softBg)).toBeGreaterThanOrEqual(3)
+  })
+})
