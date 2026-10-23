@@ -1,0 +1,39 @@
+# Лаба 0.4: контейнеры для замеров диска и сети. Запускает их scenario.sh (docker compose run);
+# руками — из labs/: docker compose -f 0-4/compose.yaml run --rm fio ssd_rand4k randread 4k 4g 20
+name: lab04
+
+services:
+  # fio и pg_test_fsync пишут в каталог на ДИСКЕ хоста: файл внутри слоя контейнера лежал бы на
+  # overlayfs, а в tmpfs — в памяти, и замер показал бы не SSD. По умолчанию 0-4/data (в .gitignore).
+  # Пользователь — ваш (LAB04_UID/LAB04_GID ставит scenario.sh): тестовые файлы можно удалить без sudo.
+  fio:
+    build: ./fio
+    image: lab04-fio:local
+    user: "${LAB04_UID:-1000}:${LAB04_GID:-1000}"
+    volumes:
+      - ${LAB04_DATA:-./data}:/data
+    network_mode: none
+
+  fsync:
+    # Тот же образ, что в лабе 2a: pg_test_fsync той версии PostgreSQL, о которой уроки.
+    image: postgres:18.6-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    entrypoint: ["pg_test_fsync"]
+    user: "${LAB04_UID:-1000}:${LAB04_GID:-1000}"
+    volumes:
+      - ${LAB04_DATA:-./data}:/data
+    network_mode: none
+
+  # Два контейнера в одной bridge-сети: ping от pinger до peer проходит veth → мост → veth
+  # внутри одного ядра. Это не ЦОД, а нижняя граница сетевого стека одной машины.
+  peer:
+    image: busybox:1.38@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+    command: ["sleep", "3600"]
+    networks: [lab]
+  pinger:
+    image: busybox:1.38@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+    depends_on: [peer]
+    networks: [lab]
+
+networks:
+  lab:
+    driver: bridge

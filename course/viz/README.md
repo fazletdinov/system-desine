@@ -65,6 +65,41 @@
 
 Без клика панель объясняет то, о чём шаг (`focus` в состоянии кадра). Со слотом `side` и контейнером шире 900 px панель встаёт справа от холста, уже — под ним. Термины в карточках, вопросах и объяснениях тесты сцены сверяют с глоссарием (`stepTermIds`, `explanationTermIds`).
 
+### Песочница
+
+Песочница (шкала задержек, калькулятор) кладёт свою сцену в `ExplainAside` и сама держит выбранный элемент. Кликабельный элемент — `role="button"`, `tabindex="0"`, `aria-pressed` и метка `data-explain="id"`. Выбор — общие функции из `core/selection.ts`: `pickExplainId(e, current)` берёт id ближайшего `[data-explain]` (вложенные узлы не мешают), а клик мимо разметки оставляет прежний выбор; `isExplainActivationKey(e)` пропускает Enter и пробел только на самом элементе, чтобы Enter на вложенной ссылке-термине открыл глоссарий. Объяснение — `computed` от выбора и входов песочницы: двинули ползунок — числа в панели пересчитались.
+
+```vue
+<script setup lang="ts">
+const selected = ref<string | null>(null)
+const explanation = computed(() => (selected.value === null ? null : explain(selected.value, input)))
+
+const pick = (e: Event): void => { selected.value = pickExplainId(e, selected.value) }
+const onKey = (e: KeyboardEvent): void => {
+  if (!isExplainActivationKey(e)) return
+  e.preventDefault() // пробел иначе прокрутил бы страницу
+  pick(e)
+}
+</script>
+
+<template>
+  <ExplainAside :explanation="explanation" :simplifications="simplifications" fallback="Нажмите на строку, чтобы увидеть объяснение">
+    <div
+      v-for="row in rows"
+      :key="row.id"
+      role="button"
+      tabindex="0"
+      :aria-pressed="selected === `row:${row.id}`"
+      :data-explain="`row:${row.id}`"
+      @click="pick"
+      @keydown="onKey"
+    >…</div>
+  </ExplainAside>
+</template>
+```
+
+Кнопка «Что в модели упрощено» (настоящая `<button>`, `aria-pressed`) появляется, если передан `simplifications`: переключает панель на этот текст, выбор элемента возвращает объяснение элемента. Без выбора показывается `fallback`. Раскладка как у `side` в `Player`: контейнер шире 900 px — панель справа (340 px), уже — под песочницей.
+
 ## Классы Mermaid
 
 В блоках ```` ```mermaid ```` с `flowchart`/`graph` доступны классы узлов. Пример: `A[Телефон]:::client --> B[Go-сервис]:::service`.
@@ -91,6 +126,12 @@
 | `network` | `--viz-network` |
 
 Здесь цвет означает уровень иерархии памяти, а не тип узла: диск окрашен как БД, потому что обычно именно там живут данные, но это не «база данных» на схеме.
+
+У строки: `typical` — главное число (замер лабы 0.4, где он есть; у HDD и сети — модель), по нему полосы и «в N раз»; `model` — число модели Scott для сравнения; `range` — диапазон на настоящем железе, со ссылками на документы (`links`, сцена выводит их под шкалой) или с пометкой `estimate` — тогда в строке «оценка», а не «реально»; `author` — замер (`simulations/latency-lab.ts`). Тест `latency.test.ts` сверяет каждое число автора со строкой `RESULT` в `labs/0-4/results/*.txt`: после перепрогона лабы поправьте константы. Точка отсчёта — рамка `--viz-active-border` (≥ 3:1 к фону), не заливка.
+
+## Калькулятор оценки
+
+Кликабельны 6 входов (`data-explain="in:<ключ EstimationInput>"`, объяснение открывает и фокус на ползунке) и 6 результатов (`step:<StepId>`); `explainEstimation(id, input)` в `simulations/estimation-explain.ts` пересчитывает «Здесь» от текущих входов и даёт ориентир для архитектуры (пороги — оценки уроков 0.4–0.6, константы `ORIENT`). Замер строки сообщения — `LAB_2A_MESSAGES` (`labs/2a/results/messenger-explain.txt`, §8): тест сверяет байты таблицы и индексов с файлом, после перепрогона лабы поправьте константы. Две колонки (входы | шаги) — по ширине самой сцены (`@container estimation`, ≥ 900 px), а не окна.
 
 ## Флейм-граф
 

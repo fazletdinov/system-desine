@@ -1,5 +1,23 @@
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PRESETS, dauToSlider, estimate, formatStepValue, sanitizeInput, sliderToDau, type EstimationInput } from './estimation'
+import { loadGlossaryFile } from '../../glossary/load'
+import { captionTermIds, captionText } from '../core/caption'
+import {
+  ESTIMATION_HONESTY,
+  ESTIMATION_QUIZ,
+  INPUT_FIELDS,
+  NUMERIC_RANGE,
+  PRESETS,
+  dauToSlider,
+  estimate,
+  estimationContext,
+  formatStepValue,
+  sanitizeInput,
+  sliderToDau,
+  type EstimationInput,
+} from './estimation'
+
+const glossary = new Set(Object.keys(loadGlossaryFile(fileURLToPath(new URL('../../glossary/terms.yaml', import.meta.url)))))
 
 const valueOf = (input: EstimationInput, id: string) => estimate(input).find((s) => s.id === id)!.value
 
@@ -92,5 +110,45 @@ describe('formatStepValue', () => {
   ])('%s → %s', (id, expected) => {
     const step = estimate(PRESETS.messenger).find((s) => s.id === id)!
     expect(formatStepValue(step)).toBe(expected)
+  })
+})
+
+describe('подписи калькулятора по мерке', () => {
+  it('шесть входов в порядке расчёта, у числовых — пределы ползунка', () => {
+    expect(INPUT_FIELDS.map((f) => f.key)).toEqual(['dau', 'messagesPerUser', 'messageBytes', 'peakFactor', 'retentionDays', 'replicationFactor'])
+    expect(Object.keys(NUMERIC_RANGE).sort()).toEqual(['messageBytes', 'messagesPerUser', 'peakFactor', 'replicationFactor', 'retentionDays'])
+  })
+
+  it('термины подписей (M4): DAU, метаданные, пик, срок хранения, репликация, RPS, салфетка — и все в глоссарии', () => {
+    const captions = [
+      estimationContext('default'),
+      estimationContext('messenger'),
+      ESTIMATION_HONESTY,
+      ESTIMATION_QUIZ.question,
+      ESTIMATION_QUIZ.answer,
+      ...INPUT_FIELDS.map((f) => f.label),
+      ...estimate(PRESETS.default).map((s) => s.label),
+    ]
+    const ids = captions.flatMap(captionTermIds)
+    for (const t of ids) expect(glossary.has(t), t).toBe(true)
+    for (const t of ['dau', 'metadata', 'peak-factor', 'retention', 'replication-factor', 'rps', 'back-of-envelope']) expect(ids, t).toContain(t)
+    for (const c of captions) expect(captionText(c)).not.toMatch(/\[\[|\]\]/)
+  })
+
+  it('строка контекста (M1): что считаем и что не входит; у пресета мессенджера — отсылка к уроку 0.6', () => {
+    const base = captionText(estimationContext('default'))
+    expect(base).toContain('INSERT')
+    expect(base).toMatch(/Чтение, статусы «доставлено\/прочитано» и вложения не входят/)
+    expect(base).not.toContain('Пресет')
+    expect(captionText(estimationContext('messenger'))).toMatch(/^Пресет: требования урока 0\.6\./)
+  })
+
+  it('честность (M5): входы — допущения, результат — оценка', () => {
+    expect(captionText(ESTIMATION_HONESTY)).toBe('Входные числа — допущения (уроки 0.5, 0.6), результат — оценка порядка величины.')
+  })
+
+  it('вопрос (M6) — про коэффициент репликации 1', () => {
+    expect(captionText(ESTIMATION_QUIZ.question)).toContain('коэффициент репликации 1')
+    expect(captionText(ESTIMATION_QUIZ.answer)).toMatch(/реплик/)
   })
 })

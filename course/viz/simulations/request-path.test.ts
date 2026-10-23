@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { loadGlossaryFile } from '../../glossary/load'
 import { captionTermIds, captionText } from '../core/caption'
-import { CODE_LINE, LATENCY_MS, NODES, TOTAL_MS, requestPathScenario } from './request-path'
+import { CODE_LINE, LATENCY_MS, NODES, REQUEST_PATH_CONTEXT, REQUEST_PATH_HONESTY, REQUEST_PATH_REQUEST, TOTAL_MS, requestPathScenario } from './request-path'
 
 const steps = requestPathScenario()
 const nodeIds = new Set(NODES.map((n) => n.id))
@@ -59,6 +59,34 @@ it('все термины в подписях есть в глоссарии, и
   const ids = steps.flatMap((s) => captionTermIds(s.caption))
   expect(ids.length).toBeGreaterThanOrEqual(5)
   for (const id of ids) expect(known.has(id)).toBe(true)
+})
+
+it.each([
+  [2, 'ttl'],
+  [7, 'certificate'],
+  [9, 'data-center'],
+  [10, 'bearer-token'],
+])('шаг %i объясняет термин %s', (no, id) => {
+  expect(captionTermIds(steps[no - 1]!.caption)).toContain(id)
+})
+
+describe('строки контекста и честности', () => {
+  const lesson = readFileSync(new URL('../../modules/00-foundation/03-request-path.md', import.meta.url), 'utf8')
+
+  it('запрос над схемой совпадает с HTTP-запросом урока 0.3', () => {
+    const httpBlock = /```http\n([\s\S]*?)\n```/.exec(lesson)?.[1] ?? ''
+    const [requestLine = ''] = httpBlock.split('\n')
+    const body = httpBlock.split('\n').at(-1) ?? ''
+    const [method = '', path = ''] = requestLine.split(' ')
+    expect(REQUEST_PATH_REQUEST).toBe(`${method} ${path} ${body}`)
+    expect(REQUEST_PATH_CONTEXT).toContain('соединения ещё нет')
+  })
+
+  it('подпись честности называет все модельные задержки и не выдаёт их за замер', () => {
+    for (const ms of ['20', '40', '0,5', '2']) expect(REQUEST_PATH_HONESTY).toContain(`${ms}\u00A0мс`)
+    expect(REQUEST_PATH_HONESTY).toContain('модель')
+    expect(REQUEST_PATH_HONESTY).toContain('не замер')
+  })
 })
 
 describe('CODE_LINE и Go-код урока 0.3', () => {

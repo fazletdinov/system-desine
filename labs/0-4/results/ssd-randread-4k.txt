@@ -1,0 +1,20 @@
+машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, ОЗУ 31Gi, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic
+go: go version go1.27.3 linux/amd64
+docker: 29.9.2
+каталог данных: ФС ext4 на /dev/nvme0n1p2, диск: nvme0n1 Samsung SSD 990 PRO 1TB, ROTA=0, TRAN=nvme
+диски (lsblk -d -o NAME,MODEL,ROTA,TRAN):
+  NAME    MODEL                   ROTA TRAN
+  nvme0n1 Samsung SSD 990 PRO 1TB    0 nvme
+transparent hugepages: always [madvise] never
+дата: 2026-10-23T06:54Z
+fio: fio-3.39, --rw=randread --bs=4k --size=4g --runtime=20 --direct=1 --ioengine=libaio --iodepth=1 --clat_percentiles=1 --lat_percentiles=1
+операций: 329475, IOPS: 16472, полоса: 67 МБ/с
+slat мкс: среднее 5.9
+lat  мкс: min 35.4, среднее 59.3, p50 63.744, p90 67.072, p99 85.504, p99.9 138.24, max 4183.5
+clat мкс: min 1.2, среднее 53.4, p50 57.088, p90 59.136, p99 71.168, p99.9 118.272, max 4176.1
+RESULT ssd_rand4k_p50_us 57.088 us
+RESULT ssd_rand4k_p99_us 71.168 us
+RESULT ssd_rand4k_mean_us 53.4 us
+RESULT ssd_rand4k_lat_p50_us 63.744 us
+RESULT ssd_rand4k_lat_p99_us 85.504 us
+RESULT ssd_rand4k_lat_mean_us 59.3 us

@@ -1,9 +1,9 @@
 // Объяснения элементов сцены B-tree: что нажатый элемент такое, зачем он и что в нём сейчас.
 // Тексты — из утверждённого прототипа; чистая функция от кадра, Vue-панель только рисует результат.
 // Перевод строки в тексте раздела («\n») — отдельная строка списка; панель показывает его как есть.
-import type { Caption } from '../core/caption'
+import { markedCaption, type Caption } from '../core/caption'
 import type { Explain, Explanation, ExplainSection } from '../core/explain'
-import { markedCaption, type BtFrame } from './btree'
+import type { BtFrame } from './btree'
 import {
   blockOf,
   isLeaf,

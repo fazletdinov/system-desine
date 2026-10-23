@@ -1,0 +1,17 @@
+машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, ОЗУ 31Gi, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic
+go: go version go1.27.3 linux/amd64
+docker: 29.9.2
+каталог данных: ФС ext4 на /dev/nvme0n1p2, диск: nvme0n1 Samsung SSD 990 PRO 1TB, ROTA=0, TRAN=nvme
+диски (lsblk -d -o NAME,MODEL,ROTA,TRAN):
+  NAME    MODEL                   ROTA TRAN
+  nvme0n1 Samsung SSD 990 PRO 1TB    0 nvme
+transparent hugepages: always [madvise] never
+дата: 2026-10-23T06:54Z
+случайное обращение, L1 (16 КиБ)        1.54 нс (медиана 7 замеров по 200000000 переходов)
+случайное обращение, L2 (256 КиБ)       4.08 нс (медиана 7 замеров по 200000000 переходов)
+случайное обращение, L2 (512 КиБ)       4.58 нс (медиана 7 замеров по 200000000 переходов)
+случайное обращение, RAM (256 МиБ)    100.17 нс (медиана 7 замеров по 20000000 переходов)
+RESULT l1_random_ns 1.54 ns
+RESULT l2_random_ns 4.08 ns
+RESULT l2_512k_random_ns 4.58 ns
+RESULT ram_random_ns 100.17 ns

@@ -49,3 +49,51 @@ describe.each(themes)('палитра текста схем, тема $name', ({
     expect(contrastRatio(t('--viz-hit-text'), t('--viz-hit-bg'))).toBeGreaterThanOrEqual(4.5)
   })
 })
+
+// Шкала задержек: точка отсчёта выделена рамкой --viz-active-border, фон строки остаётся фоном песочницы (bg-soft).
+// Поэтому текст в ней — те же --viz-text и --viz-muted на bg-soft; заливка --viz-active-line-bg давала 4,33:1.
+describe.each(themes)('шкала задержек, тема $name', ({ selector, softBg }) => {
+  const all = tokens(selector)
+
+  it.each(['--viz-text', '--viz-muted'])('%s в строке точки отсчёта и под полосами (фон bg-soft) ≥ 4,5:1', (name) => {
+    expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  // WCAG 1.4.11: рамка и кольцо фокуса — неконтрастный элемент, порог 3:1.
+  it.each(['--viz-active-border', '--viz-text'])('%s — рамка точки отсчёта и кольцо фокуса на bg-soft ≥ 3:1', (name) => {
+    expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(3)
+  })
+})
+
+// Калькулятор оценки: подсказки и формулы — --viz-muted на bg-soft; номер шага — --viz-text на --vp-c-bg
+// (раньше синий --vp-c-brand-1 на --vp-c-brand-soft, инвентаризация 1.4, M7); рамка выбора и кольцо фокуса — --viz-text.
+describe.each(themes)('калькулятор оценки, тема $name', ({ selector, pageBg, softBg }) => {
+  const all = tokens(selector)
+
+  it.each(['--viz-text', '--viz-muted'])('%s — подписи, подсказки и формулы на bg-soft ≥ 4,5:1', (name) => {
+    expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('--viz-text — номер шага и числовое поле на фоне страницы ≥ 4,5:1', () => {
+    expect(contrastRatio(all['--viz-text']!, pageBg)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('--viz-text — рамка выбранного элемента и кольцо фокуса на bg-soft ≥ 3:1', () => {
+    expect(contrastRatio(all['--viz-text']!, softBg)).toBeGreaterThanOrEqual(3)
+  })
+})
+
+// «Что в модели упрощено» (ExplainAside): кнопка на фоне страницы стоит в песочнице на bg-soft.
+// Рамка нажатой кнопки — --viz-active-border, кольцо фокуса — --viz-text (--viz-active давал ~2:1 на светлом bg-soft).
+describe.each(themes)('кнопка «Что упрощено», тема $name', ({ selector, pageBg, softBg }) => {
+  const all = tokens(selector)
+
+  it('--viz-active-border — рамка нажатой кнопки на её фоне и на bg-soft ≥ 3:1', () => {
+    expect(contrastRatio(all['--viz-active-border']!, pageBg)).toBeGreaterThanOrEqual(3)
+    expect(contrastRatio(all['--viz-active-border']!, softBg)).toBeGreaterThanOrEqual(3)
+  })
+
+  it('--viz-text — кольцо фокуса на bg-soft ≥ 3:1', () => {
+    expect(contrastRatio(all['--viz-text']!, softBg)).toBeGreaterThanOrEqual(3)
+  })
+})
