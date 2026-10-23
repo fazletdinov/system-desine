@@ -49,3 +49,13 @@ describe.each(themes)('палитра текста схем, тема $name', ({
     expect(contrastRatio(t('--viz-hit-text'), t('--viz-hit-bg'))).toBeGreaterThanOrEqual(4.5)
   })
 })
+
+// Шкала задержек: точка отсчёта выделена рамкой --viz-active, фон строки остаётся фоном песочницы (bg-soft).
+// Поэтому текст в ней — те же --viz-text и --viz-muted на bg-soft; заливка --viz-active-line-bg давала 4,33:1.
+describe.each(themes)('шкала задержек, тема $name', ({ selector, softBg }) => {
+  const all = tokens(selector)
+
+  it.each(['--viz-text', '--viz-muted'])('%s в строке точки отсчёта и под полосами (фон bg-soft) ≥ 4,5:1', (name) => {
+    expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(4.5)
+  })
+})

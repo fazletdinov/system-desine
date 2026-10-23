@@ -1,7 +1,7 @@
 // Сценарии сцены 2.5: как PostgreSQL ищет и вставляет строки через индекс B-tree.
 // Тексты и порядок шагов — из утверждённого прототипа. Каждый шаг — полный снимок кадра
 // вместе с копией модели, поэтому переход назад и прыжок на любой шаг не требуют пересчёта.
-import { term, type Caption, type CaptionSegment } from '../core/caption'
+import { markedCaption, stripTerms, type Caption } from '../core/caption'
 import type { Step } from '../core/types'
 import {
   buildModel,
@@ -176,13 +176,6 @@ interface StepInfo {
 
 type Edit = (w: Work, m: BtModel) => void
 
-const MARKER = /\[\[([a-z0-9-]+)\|([^\]]+)\]\]/g
-// Разметка, не распознанная как термин (опечатка в id, нет «|»), — ошибка автора, а не текст.
-function stripTerms(src: string): string {
-  const plain = src.replace(MARKER, '$2')
-  if (plain.includes('[[') || plain.includes(']]')) throw new Error(`btree: битая разметка термина в «${src}»`)
-  return plain
-}
 const FIRST_SENTENCE = /^.*?[.!?](?=\s|$)/s
 
 const push = <T>(list: T[], v: T): void => {
@@ -194,26 +187,6 @@ const plural = (n: number, one: string, few: string, many: string): string => {
   const d = n % 10
   if (n % 100 >= 11 && n % 100 <= 14) return many
   return d === 1 ? one : d >= 2 && d <= 4 ? few : many
-}
-
-// «[[id|текст]]» → сегменты-термины. Термин из seen уже подчёркивали — он остаётся обычным текстом.
-// Вынесено из Tracer, чтобы объяснения элементов разбирали разметку тем же кодом.
-export function markedCaption(src: string, seen: Set<string>): Caption {
-  const out: CaptionSegment[] = []
-  let from = 0
-  for (const m of src.matchAll(MARKER)) {
-    const [whole, id, text] = [m[0], need(m[1], 'id термина'), need(m[2], 'текст термина')]
-    if (m.index > from) out.push({ text: src.slice(from, m.index) })
-    if (seen.has(id)) out.push({ text })
-    else {
-      seen.add(id)
-      out.push(term(text, id))
-    }
-    from = m.index + whole.length
-  }
-  if (from < src.length) out.push({ text: src.slice(from) })
-  stripTerms(src)
-  return out.length === 1 && out[0]?.termId === undefined ? need(out[0], 'сегмента').text : out
 }
 
 function leafById(m: BtModel, id: string): LeafNode {
