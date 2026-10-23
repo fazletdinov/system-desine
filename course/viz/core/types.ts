@@ -1,5 +1,19 @@
 import type { Caption } from './caption'
 
+// Карточка шага: четыре вопроса, на которые шаг отвечает читателю.
+export interface StepCard {
+  what: Caption
+  uses: Caption
+  reads: Caption
+  why: Caption
+}
+
+// Вопрос на понимание: ответ показывается по запросу.
+export interface StepQuiz {
+  question: Caption
+  answer: Caption
+}
+
 // Один кадр визуализации. state — полный снимок, а не дельта:
 // так переход назад и прыжок на любой шаг не требуют пересчёта.
 export interface Step<S> {
@@ -7,6 +21,9 @@ export interface Step<S> {
   caption: Caption
   highlight?: readonly string[]
   codeLine?: number
+  // Необязательны: схемы без карточки и вопроса работают как раньше.
+  card?: StepCard
+  quiz?: StepQuiz
 }
 
 export type Scenario<S> = () => readonly Step<S>[]

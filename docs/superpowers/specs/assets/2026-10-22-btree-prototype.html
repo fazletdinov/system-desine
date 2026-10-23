@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>B-tree индекс изнутри — урок-черновик</title>
+<style>
+:root{--bg:#0b1020;--card:#121a2e;--card2:#18223b;--line:#25324f;--line2:#34446a;--text:#e4eaf6;--muted:#a8d8bb;--dim:#86bf9c;
+ --blue:#5aa8ff;--blue-bg:#14294a;--green:#5fd38d;--green-bg:#113021;--amber:#f0b35a;--amber-bg:#33260f;--violet:#b49cff;--violet-bg:#221a3d;--red:#ff7b72;
+ --mono:ui-monospace,"JetBrains Mono",Menlo,monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,sans-serif}
+button{font:inherit;color:inherit;cursor:pointer}:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+code,.mono{font-family:var(--mono);font-size:.92em}
+code{background:#0a0f1d;border:1px solid var(--line);border-radius:5px;padding:0 4px}
+.app{display:grid;grid-template-rows:auto auto 1fr 262px 52px;height:100vh}
+.top{display:flex;align-items:center;gap:24px;padding:10px 20px;border-bottom:1px solid var(--line);background:#0a0f1e}
+.ttl b{display:block;font-size:16px}.ttl span{color:var(--muted);font-size:12.5px}
+.now{flex:1;display:flex;flex-direction:column;border-left:1px solid var(--line);padding-left:18px}
+.now .l{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}.now #learn{font-weight:600}
+.prog{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.bar{width:180px;height:6px;border-radius:6px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--green);transition:width .25s}
+.tabs{display:flex;align-items:center;gap:8px;padding:10px 20px;border-bottom:1px solid var(--line)}
+#scen{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.tab{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:6px 11px;font-size:13px;white-space:nowrap}
+.tab:hover{border-color:var(--line2)}.tab.on{border-color:var(--blue);background:var(--blue-bg)}
+.tab small{color:var(--dim);margin-right:5px}
+.views{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px}
+.views button,.views a{background:none;border:0;border-radius:7px;padding:5px 10px;font-size:13px;color:var(--muted);text-decoration:none}
+.views .on{background:var(--card2);color:var(--text)}.views a:hover,.views button:hover{color:var(--text)}
+.main{display:grid;grid-template-columns:1fr 390px;min-height:0}
+.viz{display:flex;flex-direction:column;min-height:0;padding:10px 0 8px 20px}
+.cnt{display:flex;gap:18px;align-items:center;font-size:13px;color:var(--muted);padding:0 4px 6px;flex-wrap:wrap}
+.cnt b{color:var(--text);font-family:var(--mono)}.cnt .sep{width:1px;height:16px;background:var(--line)}
+.cnt .real{margin-left:auto;color:var(--dim);font-size:12px}
+.svgbox{flex:1;min-height:0;border:1px solid var(--line);border-radius:14px;background:radial-gradient(ellipse at 50% 0%,#121d38 0%,#0b1020 65%);position:relative}
+svg{width:100%;height:100%;display:block}
+.side{overflow:auto;padding:10px 20px 8px 14px}
+.side .card{margin-bottom:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px}
+.card h3{margin:0 0 6px;font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);font-weight:650}
+.ex h2{margin:0 0 2px;font-size:16px}.ex .kind{color:var(--muted);font-size:12.5px;margin-bottom:8px}
+.ex dl{margin:0}.ex dt{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin-top:9px;font-weight:650}
+.ex dd{margin:2px 0 0;font-size:13.5px}
+.ex .here{border-left:3px solid var(--blue);background:var(--blue-bg);padding:6px 9px;border-radius:0 8px 8px 0}
+.ex .real{border-left:3px solid var(--amber);background:var(--amber-bg);padding:6px 9px;border-radius:0 8px 8px 0}
+.hint{font-size:12.5px;color:var(--dim)}
+.legend div{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);padding:1px 0}
+.legend i{width:13px;height:13px;border-radius:3px;flex:none;border:2px solid}
+.bottom{display:grid;grid-template-columns:330px 1fr 430px;gap:12px;padding:0 20px 10px;min-height:0}
+.bottom .card{overflow:auto;min-height:0}
+#steps{margin:0;padding:0;list-style:none;font-size:13px}
+#steps li{display:flex;gap:8px;padding:3px 4px;color:var(--dim);border-radius:6px;cursor:pointer}
+#steps li:hover{background:var(--card2)}
+#steps li .n{flex:none;width:20px;height:20px;border-radius:50%;border:1px solid var(--line2);font-size:11px;display:flex;align-items:center;justify-content:center}
+#steps li.done{color:var(--muted)}#steps li.done .n{color:var(--green);border-color:#28513f}
+#steps li.cur{color:var(--text);background:var(--blue-bg)}#steps li.cur .n{background:var(--blue);border-color:var(--blue);color:#06142a}
+.sc h2{margin:0 0 8px;font-size:15.5px}
+.sc .rows{display:grid;grid-template-columns:150px 1fr;gap:5px 14px;font-size:13.5px}
+.sc .rows span:nth-child(odd){color:var(--dim);font-size:12.5px}
+pre#sql{margin:0 0 6px;font:12.5px/1.45 var(--mono);white-space:pre-wrap;color:#eef2fa}
+pre#sql .k{color:#ff9bd2}pre#sql .c{color:var(--dim)}pre#sql .h{background:#4a3410;color:#ffd58a;border-radius:3px;outline:1px solid #f0b35a66}
+#sqlNote{font-size:12.5px;color:var(--muted)}
+.res{margin-top:8px;font-size:13px;border-top:1px dashed var(--line);padding-top:6px}
+.quiz{margin-top:10px;border:1px solid #4a3c7c;background:var(--violet-bg);border-radius:10px;padding:9px 11px;font-size:13.5px}
+.quiz b{color:var(--violet)}.quiz .ans{margin-top:7px;border-top:1px dashed #4a3c7c;padding-top:7px}
+.quiz button{margin-top:7px;background:#2e2456;border:1px solid #5a4a9a;border-radius:7px;padding:4px 10px;font-size:12.5px}
+.foot{display:flex;align-items:center;gap:10px;padding:0 20px;border-top:1px solid var(--line);background:#0a0f1e}
+.foot #msg{flex:1;color:var(--muted);font-size:13px}
+.btn{background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:6px 13px}
+.btn:hover{border-color:var(--blue)}.btn.pri{background:#1d4ed8;border-color:#2b5fe6}.btn:disabled{opacity:.4;cursor:default}
+/* svg */
+.lvl{font:650 10.5px Inter,system-ui;letter-spacing:.8px;fill:#86bf9c;text-transform:uppercase}
+.box{fill:#16213c;stroke:#2c3b62;stroke-width:1.5}
+.box.idx{fill:#162544}.box.heap{fill:#1d1838;stroke:#3a2f63}.box.meta{fill:#141c30;stroke-dasharray:4 3}
+.el{cursor:pointer}.el:hover .box{stroke:#7f9bd6}
+.box.read{stroke:var(--amber);stroke-width:2}.box.cur{stroke:var(--blue);stroke-width:2.5;filter:drop-shadow(0 0 7px #5aa8ffaa)}
+.box.hint{stroke:#4b6aa8;stroke-dasharray:5 3}.box.sel{stroke:#fff;stroke-width:2}
+.nh{font:650 11px Inter,system-ui;fill:#a8d8bb}
+.t{font:500 12px var(--mono);fill:#dbe4f5}.t.dim{fill:#a8d8bb}
+.ent rect{fill:transparent;rx:4}.ent:hover rect{fill:#ffffff10}
+.ent.hit rect{fill:#1d5a3a}.ent.hit .t{fill:#9ff0c1;font-weight:700}
+.ent.sel rect{fill:#ffffff22;stroke:#fff;stroke-width:1}
+.row rect{fill:transparent;rx:3}.row:hover rect{fill:#ffffff10}
+.row.hit rect{fill:#1d5a3a}.row.hit .t{fill:#9ff0c1}.row.sel rect{fill:#ffffff22;stroke:#fff;stroke-width:1}
+.edge{stroke:#2a3a5f;stroke-width:1.4;fill:none}.edge.on{stroke:var(--blue);stroke-width:2.6}
+.sib{stroke:#4a6fae;stroke-width:1.3;stroke-dasharray:4 3;fill:none}.sib.on{stroke:var(--blue);stroke-width:2.4;stroke-dasharray:none}
+.tid{stroke:var(--green);stroke-width:1.8;fill:none;opacity:.85}.tid.sel{stroke:#fff}
+.vm{font:600 10px Inter,system-ui}
+.chip{rx:5}
+.pulse{animation:pl 1.4s ease-in-out infinite}@keyframes pl{50%{opacity:.35}}
+</style></head><body><div class="app">
+<header class="top">
+ <div class="ttl"><b>B-tree индекс изнутри</b><span>на примере мессенджера: <code>chat.members</code> и <code>members_user_id_idx</code></span></div>
+ <div class="now"><span class="l">Сейчас изучаю</span><span id="learn"></span></div>
+ <div class="prog"><span id="progT"></span><span class="bar"><i id="progF"></i></span></div>
+</header>
+<nav class="tabs"><div id="scen"></div>
+ <div class="views"><button data-v="simple">Схема</button><button data-v="detail">Страницы</button></div>
+ <button class="btn" id="simplBtn">Что в модели упрощено</button></nav>
+<main class="main">
+ <div class="viz"><div class="cnt" id="cnt"></div><div class="svgbox"><svg id="svg" viewBox="0 0 1080 560" preserveAspectRatio="xMidYMid meet"></svg></div></div>
+ <aside class="side"><div class="card ex" id="ex"></div>
+  <div class="card legend"><h3>Цвета</h3>
+   <div><i style="border-color:var(--blue);background:var(--blue-bg)"></i>PostgreSQL читает это сейчас</div>
+   <div><i style="border-color:var(--amber)"></i>уже прочитано в этом запросе</div>
+   <div><i style="border-color:#1d5a3a;background:#1d5a3a"></i>подходит под условие</div>
+   <div><i style="border-color:var(--green);border-width:0;height:3px;background:var(--green)"></i>TID: адрес строки, записанный в индексе</div>
+   <div><i style="border-color:var(--blue);border-width:0;height:3px;background:var(--blue)"></i>путь спуска по дереву</div>
+   <div class="hint" style="margin-top:4px">Кликните на любой элемент схемы — здесь появится объяснение. Клик по записи индекса подсветит её строку в таблице, и наоборот.</div></div>
+ </aside>
+</main>
+<section class="bottom">
+ <div class="card"><h3>Шаги PostgreSQL в этом сценарии</h3><ol id="steps"></ol></div>
+ <div class="card sc" id="sc"></div>
+ <div class="card"><h3>Текущий SQL</h3><pre id="sql"></pre><div id="sqlNote"></div><div class="res" id="res"></div><div id="quiz"></div></div>
+</section>
+<footer class="foot"><span id="msg">← → — шаги</span><button class="btn" id="again">↺ Повторить</button><button class="btn" id="back">← Назад</button><button class="btn pri" id="next">Далее →</button></footer>
+</div>
+<script>
+/* ================= модель: одна правда для всех сценариев =================
+   Учебные данные: 12 чатов по 2 участника → 24 строки chat.members.
+   user_id — маленькие числа вместо uuid, чтобы читалось. */
+const CHATS=[[42,15],[27,84],[3,63],[42,99],[19,50],[8,71],[63,36],[23,88],[27,95],[47,31],[56,90],[42,77]];
+const PER_PAGE=4,LEAF_CAP=5,BUILD_FILL=4;
+function buildModel(){
+ const pages=[];let i=0;
+ CHATS.forEach(([a,b],ci)=>[a,b].forEach(u=>{const p=Math.floor(i/PER_PAGE);(pages[p]??={no:p,rows:[],vis:p!==5}).rows.push({lp:i%PER_PAGE+1,chat:'c'+(ci+1),user:u});i++}));
+ const post=new Map();pages.forEach(p=>p.rows.forEach(r=>{if(!post.has(r.user))post.set(r.user,[]);post.get(r.user).push([p.no,r.lp])}));
+ const keys=[...post.keys()].sort((a,b)=>a-b);
+ const nodes={},leaves=[];
+ for(let j=0;j<keys.length;j+=BUILD_FILL){const b=leaves.length+1,id='b'+b;nodes[id]={id,block:b,level:0,entries:keys.slice(j,j+BUILD_FILL).map(k=>({key:k,tids:post.get(k)})),left:null,right:null};leaves.push(id)}
+ leaves.forEach((id,j)=>{nodes[id].left=leaves[j-1]??null;nodes[id].right=leaves[j+1]??null});
+ const m={pages,nodes,root:'b8',next:9};
+ const mk=(b,level,kids)=>{nodes['b'+b]={id:'b'+b,block:b,level,entries:kids.map((c,j)=>({sep:j?minKey(m,c):null,child:c})),left:null,right:null}};
+ mk(6,1,leaves.slice(0,3));mk(7,1,leaves.slice(3));nodes.b6.right='b7';nodes.b7.left='b6';mk(8,2,['b6','b7']);
+ return m}
+function minKey(m,id){let n=m.nodes[id];while(n.level)n=m.nodes[n.entries[0].child];return n.entries[0].key}
+// последний разделитель ≤ key; у первой записи разделитель −∞
+const pick=(n,k)=>{let i=0;n.entries.forEach((e,j)=>{if(j&&e.sep<=k)i=j});return i};
+const parentOf=(m,id)=>Object.values(m.nodes).find(n=>n.level&&n.entries.some(e=>e.child===id));
+function leafOrder(m){let id=Object.values(m.nodes).find(n=>n.level===0&&!n.left).id;const out=[];while(id){out.push(id);id=m.nodes[id].right}return out}
+const rowAt=(m,p,lp)=>m.pages[p].rows.find(r=>r.lp===lp);
+const tidS=t=>`(${t[0]},${t[1]})`;
+function heapInsert(m,chat,user){let p=m.pages.at(-1);if(p.rows.length>=PER_PAGE){p={no:m.pages.length,rows:[],vis:false};m.pages.push(p)}const lp=p.rows.length+1;p.rows.push({lp,chat,user});p.vis=false;return[p.no,lp]}
+function leafInsert(leaf,k,tid){const e=leaf.entries.find(e=>e.key===k);if(e){e.tids.push(tid);return}leaf.entries.push({key:k,tids:[tid]});leaf.entries.sort((a,b)=>a.key-b.key)}
+function splitLeaf(m,leaf){const b=m.next++,id='b'+b;const right=leaf.entries.splice(Math.ceil(leaf.entries.length/2));
+ m.nodes[id]={id,block:b,level:0,entries:right,left:leaf.id,right:leaf.right};if(leaf.right)m.nodes[leaf.right].left=id;leaf.right=id;return m.nodes[id]}
+
+/* ================= трассировка шагов ================= */
+class Tr{constructor(){this.m=buildModel();this.s={nodes:{},ents:{},rows:{},pages:{},tids:[],edges:[],sibs:[],vm:{},notes:{},hint:[],idx:0,heap:0,heapPages:[],last:null,fetch:0,res:[]};this.steps=[]}
+ step(info,fn){const s=structuredClone(this.s);for(const g of['nodes','pages'])for(const k in s[g])if(s[g][k]==='cur')s[g][k]='read';s.hint=[];s.vmCur=null;
+  fn&&fn(s,this.m);this.s=s;this.steps.push({...info,st:s,m:structuredClone(this.m)})}}
+const H={node(s,id,note){s.nodes[id]='cur';s.idx++;if(note)s.notes[id]=note},
+ fetch(s,m,p,lp,key){if(s.last!==p){s.heap++;s.last=p}if(!s.heapPages.includes(p))s.heapPages.push(p);s.pages[p]='cur';s.rows[p+':'+lp]='hit';s.tids.push([key,p,lp]);s.res.push(rowAt(m,p,lp).chat)}};
+function descend(T,key,meta=true){
+ const r=T.m.nodes[T.m.root];
+ if(meta)T.step({title:'Метастраница: где корень',learn:'Метастраница индекса',
+  did:`Открывает индекс <code>members_user_id_idx</code> и смотрит в метастраницу (блок 0): корень сейчас — блок ${r.block}, в дереве ${r.level+1} уровня.`,
+  uses:'метастраница индекса — блок 0 его файла',reads:`адрес корня: блок ${r.block}`,
+  why:'Корень не прибит к одному месту: когда расщепляется сам корень, появляется новый, и его адрес переписывают в метастранице. Её копию PostgreSQL держит в памяти, поэтому в EXPLAIN это чтение обычно не видно.',focus:'meta'},s=>{s.nodes.meta='cur'});
+ let n=r;
+ while(n.level){const i=pick(n,key),c=T.m.nodes[n.entries[i].child],isRoot=n.id===T.m.root;
+  const cmp=i===0?`${key} < ${n.entries[1].sep}`:`${key} ≥ ${n.entries[i].sep}`+(i+1<n.entries.length?` и ${key} < ${n.entries[i+1].sep}`:'');
+  const list=n.entries.map(e=>`${e.sep??'−∞'} → ${T.m.nodes[e.child].block}`).join(' · ');
+  T.step({title:`${isRoot?'Корень':'Внутренняя страница'} (блок ${n.block}): куда спускаться`,learn:isRoot?'Корень B-tree: выбор ветки':'Внутренняя страница: сужение поиска',
+   did:`Читает страницу и ищет последний разделитель, который ≤ ${key}: ${cmp} → идёт в блок ${c.block}.`,
+   uses:isRoot?'корень индекса':'внутренняя страница индекса',reads:`записи «разделитель → блок»: ${list}`,
+   why:isRoot?`Одна страница отсекает часть дерева: всё, что ≥ ${n.entries[1].sep}, лежит в правой ветке, всё, что меньше, — в левой. В настоящем индексе в корне сотни разделителей, и один шаг отбрасывает почти всё дерево.`
+    :`Внутренняя страница делит свою часть ключей ещё мельче. Разделитель — наименьший ключ поддерева справа от него, поэтому в блоке ${c.block} лежат ключи ${i?'от '+n.entries[i].sep:'меньше '+n.entries[1].sep}${i&&i+1<n.entries.length?' до '+n.entries[i+1].sep+' (не включая)':''}.`,
+   focus:'node:'+n.id},s=>{H.node(s,n.id,`${cmp} → блок ${c.block}`);s.edges.push([n.id,c.id])});
+  n=c}
+ return n}
+const planStep=(T,est,extra)=>T.step({title:'Разбор запроса и план',learn:'Как PostgreSQL выбирает план',
+ did:'Парсер разбирает SQL, анализатор находит в системном каталоге таблицу <code>chat.members</code> и её индексы: <code>members_pkey (chat_id, user_id)</code> и <code>members_user_id_idx (user_id)</code>. Планировщик перебирает способы достать строки и оценивает стоимость каждого.',
+ uses:'системный каталог и статистика <code>pg_stats</code>',reads:est,why:extra,focus:'plan'});
+
+/* ================= сценарии ================= */
+const SC=[];
+// 0. Введение
+SC.push({id:'intro',name:'Введение',learn:'Что вообще происходит',view:'simple',
+ sql:'<span class="c">-- listChatsFirst (store.go): список чатов при открытии приложения</span>\n<span class="k">SELECT</span> c.id, c.title, …\n<span class="k">FROM</span> chat.chats c\n<span class="k">JOIN</span> chat.members me <span class="k">ON</span> me.chat_id = c.id\n<span class="k">WHERE</span> <span class="h">me.user_id = $1</span>\n<span class="k">ORDER BY</span> c.last_activity_at <span class="k">DESC</span>, c.id <span class="k">DESC</span>\n<span class="k">LIMIT</span> $2;',
+ note:'Разбираем подсвеченную часть: найти строки <code>chat.members</code> данного пользователя. В мессенджере <code>user_id</code> — uuid, в модели — числа: B-tree сравнивает uuid так же, просто это 16 байт.',
+ build(){const T=new Tr(),m=T.m;
+ T.step({title:'Откуда берётся запрос',learn:'Какой запрос мы разбираем',
+  did:'Пользователь открывает мессенджер → клиент шлёт <code>GET /chats</code> → use case вызывает <code>ListChatsByMember</code> → pgx отправляет в PostgreSQL запрос <code>listChatsFirst</code>. Первое, что нужно базе, — найти строки <code>chat.members</code>, где <code>user_id</code> = этот пользователь.',
+  uses:'таблица <code>chat.members (chat_id, user_id)</code>: кто в каком чате',reads:'пока ничего',
+  why:'Этот запрос выполняется при каждом открытии приложения у каждого пользователя. Если он медленный — медленно всё. В модели таблица маленькая: 12 чатов по 2 участника = 24 строки (внизу схемы).',focus:'table'},s=>{m.pages.forEach(p=>s.hint.push('page:'+p.no))});
+ T.step({title:'Таблица лежит страницами',learn:'Страница и heap',
+  did:'Таблица хранится в файле, нарезанном на <b>страницы</b> по 8 КБ. Читает и кэширует PostgreSQL тоже страницами: чтобы получить одну строку, надо прочитать её страницу целиком.',
+  uses:'<b>heap</b> — так называется файл страниц таблицы',reads:'—',
+  why:'Диск и ОС отдают данные блоками, буферный кэш (<code>shared_buffers</code>) хранит страницы. Поэтому стоимость запроса меряют в страницах. Heap («куча») здесь — не двоичная куча из алгоритмов, а файл, где строки лежат без порядка: куда нашлось место. У нас — в порядке создания чатов.',focus:'page:0'},s=>{m.pages.forEach(p=>s.hint.push('page:'+p.no))});
+ T.step({title:'Без индекса: прочитать всё',learn:'Seq Scan',
+  did:'Чтобы найти строки с <code>user_id = 42</code> без индекса, остаётся прочитать все страницы подряд и проверить каждую строку. Это <b>Seq Scan</b> (последовательное сканирование).',
+  uses:'heap',reads:'все 6 страниц, 24 строки; совпали 3 — на страницах 0, 1 и 5',
+  why:'Строки не отсортированы по <code>user_id</code>. Остановиться раньше нельзя: дальше может найтись ещё одна. В лабе в <code>chat.members</code> 2 млн строк — это порядка 15 тыс. страниц (оценка: ~60 байт на строку).',focus:'page:5',
+  quiz:{q:'Почему нельзя найти 42 бинарным поиском прямо по таблице?',a:'Бинарный поиск работает только по упорядоченным данным. В heap строки лежат в порядке вставки (здесь — по мере создания чатов): 42 есть на страницах 0, 1 и 5 вперемешку с другими. Упорядоченная по user_id копия есть только в индексе — ради этого он и нужен.'}},
+  s=>{m.pages.forEach(p=>{s.pages[p.no]='read';p.rows.forEach(r=>{if(r.user===42)s.rows[p.no+':'+r.lp]='hit'})});s.heap=6;s.heapPages=[0,1,2,3,4,5];s.res=['c1','c4','c12']});
+ T.step({title:'Идея индекса: отсортированные пары',learn:'Индексная запись: ключ + TID',
+  did:'Индекс <code>members_user_id_idx</code> — отдельный файл. В нём лежат <b>индексные записи</b>: <b>ключ</b> (значение <code>user_id</code>) и <b>TID</b> — адрес строки в таблице: номер страницы и номер позиции на ней, например <code>(0,1)</code>. Записи отсортированы по ключу.',
+  uses:'листовые страницы индекса (нижний ряд дерева)',reads:'—',
+  why:'В отсортированном списке ключ находится быстро, а TID сразу говорит, какую страницу таблицы читать — одну, а не все. Индекс НЕ хранит строку целиком: только ключ и адрес. <code>chat_id</code> в нём нет.',focus:'entry:42'},
+  s=>{s.pages={};s.rows={};s.heap=0;s.heapPages=[];s.res=[];Object.values(m.nodes).filter(n=>!n.level).forEach(n=>s.hint.push('node:'+n.id));s.ents[42]='hit';m.nodes.b3.entries[0].tids.forEach(([p,lp])=>{s.tids.push([42,p,lp]);s.rows[p+':'+lp]='hit'})});
+ T.step({title:'Как не листать сам список: B-дерево',learn:'Зачем корень и внутренние страницы',
+  did:'Отсортированные записи сами занимают много страниц. Чтобы не листать их по одной, над листьями строят «оглавление»: <b>внутренние страницы</b>, а над ними — <b>корень</b>. Каждая запись оглавления — «разделитель → номер страницы уровнем ниже».',
+  uses:'B-tree: корень → внутренние страницы → листья',reads:'—',
+  why:'Страница оглавления вмещает сотни разделителей, поэтому каждый уровень сужает поиск в сотни раз. Миллионы записей — это всего 3 уровня. В лабе на 2 млн строк спуск по этому индексу читает ровно 3 страницы: в EXPLAIN <code>Bitmap Index Scan … Buffers: shared hit=3</code>.',focus:'node:b8'},
+  s=>{['b8','b6','b7'].forEach(id=>s.hint.push('node:'+id))});
+ T.step({title:'Итог: кто что хранит',learn:'Путь поиска целиком',
+  did:'Поиск по индексу: корень → внутренняя страница → лист → TID → страница таблицы. Индекс отвечает на вопрос «где лежит», таблица хранит «что лежит».',
+  uses:'индекс и heap вместе',reads:'путь для 42: блоки 8 → 6 → 3, затем страницы таблицы 0, 1, 5',
+  why:'Индекс — отсортированная копия одного столбца с адресами. Он ускоряет чтение, но его обновляют при каждой вставке, и он занимает место (сценарий «Вставка»). Дальше — по шагам, как это делает PostgreSQL.',focus:'tid',
+  quiz:{q:'Есть ли в индексе members_user_id_idx значение chat_id?',a:'Нет. В индексной записи только ключ user_id и TID. За chat_id приходится идти в таблицу по TID. Обойтись без таблицы можно, только если запросу хватает самого ключа (сценарий «Index Only Scan») или если столбец добавить в индекс через INCLUDE.'}},
+  s=>{['b8','b6','b3'].forEach(id=>s.nodes[id]='read');s.edges.push(['b8','b6'],['b6','b3']);s.ents[42]='hit';m.nodes.b3.entries[0].tids.forEach(([p,lp])=>{s.tids.push([42,p,lp]);s.rows[p+':'+lp]='hit';s.pages[p]='read'})});
+ return T.steps}});
+
+// 1. Один чат
+SC.push({id:'one',name:'Один чат пользователя',learn:'Index Scan по одному ключу',view:'detail',
+ sql:'<span class="c">-- чаты пользователя 15 (часть listChatsFirst)</span>\n<span class="k">SELECT</span> chat_id\n<span class="k">FROM</span> chat.members\n<span class="k">WHERE</span> <span class="h">user_id = 15</span>;',
+ note:'План: <code>Index Scan using members_user_id_idx</code>.',
+ build(){const T=new Tr(),m=T.m;
+ planStep(T,'оценка: строк с user_id = 15 ≈ 1',`Оценка селективности: по <code>pg_stats</code> значение 15 редкое, строк ≈ 1. Seq Scan — 6 страниц подряд. Index Scan — 3 страницы индекса + 1 страница таблицы, но вразброс (<code>random_page_cost = 4</code> против <code>seq_page_cost = 1</code>). План зависит от статистики, селективности, индексов и настроек. Честно: на нашей игрушечной таблице из 6 страниц реальный PostgreSQL выбрал бы Seq Scan — она меньше самого индекса. Модель изображает масштаб лабы (2 млн строк), где для такого пользователя план — Index Scan.`);
+ T.steps.at(-1).quiz={q:'Что изменится в плане, если у пользователя не 1, а 1000 чатов?',a:'Строк много → много случайных чтений таблицы. В лабе для «тяжёлого» пользователя (1000 чатов) план стал другим: Bitmap Index Scan собирает все TID из индекса (3 страницы), сортирует их по страницам, и Bitmap Heap Scan читает 960 страниц таблицы по порядку, каждую один раз. Для «лёгкого» (20 чатов) — обычный Index Scan.'};
+ const leaf=descend(T,15);const e=leaf.entries.find(e=>e.key===15),t=e.tids[0];
+ T.step({title:`Лист (блок ${leaf.block}): поиск ключа`,learn:'Листовая страница и TID',
+  did:`Записи в листе отсортированы, PostgreSQL находит 15 двоичным поиском по записям страницы. Рядом с ключом — TID <code>${tidS(t)}</code>.`,
+  uses:'листовая страница индекса',reads:`индексная запись 15 → ${tidS(t)}`,
+  why:'В листе лежит не строка, а её адрес. Следующий ключ — 19 > 15, значит других строк с 15 нет и дальше искать не нужно.',focus:'entry:15',
+  quiz:{q:'Мы нашли ключ в листовой странице. Почему этого недостаточно, чтобы получить всю строку таблицы?',a:'В индексной записи только ключ и TID. Запросу нужен chat_id — он есть только в строке таблицы. Кроме того, индекс не знает, видна ли строка нашей транзакции: версии строк и их xmin/xmax (MVCC, урок 2.2) хранятся в heap. Поэтому Index Scan обязан сходить в таблицу.'}},
+  s=>{H.node(s,leaf.id,'15 найден → '+tidS(t));s.ents[15]='hit'});
+ T.step({title:`Таблица: строка по TID ${tidS(t)}`,learn:'Heap и TID',
+  did:`Читает страницу ${t[0]} таблицы, берёт ${t[1]}-й указатель строки (line pointer) и по нему — саму строку. Проверяет, видна ли эта версия строки текущей транзакции.`,
+  uses:'страница heap',reads:`строка (${rowAt(m,...t).chat}, 15)`,
+  why:`TID — прямой адрес: страница ${t[0]}, позиция ${t[1]}. Никакого поиска по таблице — одно чтение страницы.`,focus:`row:${t[0]}:${t[1]}`},
+  s=>{H.fetch(s,m,t[0],t[1],15)});
+ T.step({title:'Результат',learn:'Сколько это стоило',
+  did:`Исполнитель возвращает <code>chat_id = ${rowAt(m,...t).chat}</code>. В настоящем <code>listChatsFirst</code> по этому chat_id дальше ищется сам чат: <code>Index Scan using chats_pkey</code> — такой же спуск, только по другому B-tree.`,
+  uses:'—',reads:'итого: 3 страницы индекса + 1 страница таблицы',
+  why:'Seq Scan прочитал бы все 6 страниц таблицы, а на 2 млн строк — порядка 15 тыс. В лабе для пользователя с 20 чатами: <code>Index Scan using members_user_id_idx</code>, <code>Buffers: 23</code> (3 страницы спуска по индексу + по странице таблицы на каждый из 20 чатов), выполнение 0,2 мс.',focus:`row:${t[0]}:${t[1]}`});
+ return T.steps}});
+
+// 2. Повторяющиеся ключи
+SC.push({id:'dup',name:'Все чаты пользователя',learn:'Повторяющиеся ключи: posting list',view:'detail',
+ sql:'<span class="c">-- пользователь 42 состоит в трёх чатах</span>\n<span class="k">SELECT</span> chat_id\n<span class="k">FROM</span> chat.members\n<span class="k">WHERE</span> <span class="h">user_id = 42</span>;',
+ note:'Один ключ — несколько строк таблицы. Так у любого пользователя мессенджера.',
+ build(){const T=new Tr(),m=T.m;
+ planStep(T,'оценка: строк с user_id = 42 ≈ 3','Ожидается несколько строк — всё ещё мало по сравнению с размером таблицы, поэтому в масштабе лабы выбирается Index Scan. Чем больше строк ожидается, тем ближе выбор к Bitmap Heap Scan или Seq Scan.');
+ const leaf=descend(T,42);const e=leaf.entries.find(e=>e.key===42);
+ T.steps.at(-1).why+=' Разделитель 42 означает «в этом поддереве ключи ≥ 42», поэтому поиск 42 идёт именно сюда.';
+ T.step({title:`Лист (блок ${leaf.block}): один ключ — три адреса`,learn:'Дедупликация: posting list',
+  did:`Ключ 42 записан в листе один раз со списком из трёх TID: ${e.tids.map(t=>'<code>'+tidS(t)+'</code>').join(' ')}. Это <b>posting list</b> — дедупликация B-tree (PostgreSQL 13+): одинаковые ключи хранятся одной записью, адреса внутри отсортированы.`,
+  uses:'листовая страница индекса',reads:`42 → ${e.tids.map(tidS).join(' ')}`,
+  why:'Пользователь мессенджера состоит во многих чатах — user_id повторяется постоянно. Без дедупликации на каждую пару была бы отдельная запись с копией ключа; с ней индекс заметно меньше. Если повторов больше, чем помещается в странице, они продолжаются в соседнем листе — тогда поиск идёт вправо по ссылке между листьями.',focus:'entry:42',
+  quiz:{q:'Три строки пользователя 42 стоят в индексе рядом. Будут ли они рядом в таблице?',a:'Нет: TID указывают на страницы 0, 1 и 5. Пользователь вступал в чаты в разное время, и строки ложились туда, где тогда было место. Поэтому 3 строки = 3 разные страницы таблицы = 3 случайных чтения.'}},
+  s=>{H.node(s,leaf.id,'42 → posting list из '+e.tids.length+' TID');s.ents[42]='hit'});
+ e.tids.forEach((t,i)=>T.step({title:`Таблица: TID ${tidS(t)}`,learn:'Переход по TID в heap',
+  did:`Берёт ${i+1}-й адрес из списка и читает страницу ${t[0]} таблицы, позицию ${t[1]}: строка (${rowAt(m,...t).chat}, 42).`,
+  uses:'страница heap',reads:`строка (${rowAt(m,...t).chat}, 42)`,
+  why:i?`Другая страница — новое чтение. Строки одного ключа разбросаны по таблице.`:'Index Scan выдаёт строки по одной: адрес из индекса → страница таблицы → строка → следующий адрес.',focus:`row:${t[0]}:${t[1]}`},s=>{H.fetch(s,m,t[0],t[1],42)}));
+ T.step({title:'Конец: следующий ключ больше',learn:'Когда поиск останавливается',
+  did:'После списка 42 в листе идёт ключ 47 > 42. Индекс отсортирован, значит строк с 42 больше нет — поиск закончен.',uses:'та же листовая страница',reads:'итого: 3 страницы индекса + 3 страницы таблицы',
+  why:'Остановка — заслуга сортировки: в таблице так рано остановиться нельзя.',focus:'entry:47'},s=>{s.hint.push('entry:47')});
+ return T.steps}});
+
+// 3. Диапазон
+SC.push({id:'range',name:'Диапазон BETWEEN',learn:'Диапазонный поиск по цепочке листьев',view:'detail',
+ sql:'<span class="k">SELECT</span> chat_id, user_id\n<span class="k">FROM</span> chat.members\n<span class="k">WHERE</span> <span class="h">user_id BETWEEN 20 AND 50</span>;',
+ note:'Учебный запрос: по user_id мессенджер диапазоном не ищет. Диапазоном по индексу он читает ленту: <code>WHERE chat_id = $1 AND seq &lt; $2</code> по <code>messages_pkey</code> (урок 2.5).',
+ build(){const T=new Tr(),m=T.m,lo=20,hi=50;
+ planStep(T,'оценка: ≈ 10 строк из 24 — почти половина',`Честно: при такой доле строк планировщик выбрал бы Bitmap Heap Scan или Seq Scan. Здесь мы проходим Index Scan, чтобы увидеть механику диапазона.`);
+ let leaf=descend(T,lo),prev=null;
+ while(leaf){const hits=leaf.entries.filter(e=>e.key>=lo&&e.key<=hi),beyond=leaf.entries.find(e=>e.key>hi),lf=leaf,pv=prev;
+  T.step({title:`Лист (блок ${lf.block})${pv?' — по ссылке вправо':''}`,learn:pv?'Цепочка листьев':'Начало диапазона',
+   did:!hits.length?`Поиск пришёл в лист, где стоял бы ключ ${lo}: после ${lf.entries.at(-1).key}. Ключей ≥ ${lo} здесь нет — PostgreSQL переходит по ссылке на правого соседа, не поднимаясь к корню.`
+    :`${pv?`Перешёл по ссылке из блока ${m.nodes[pv].block}. `:''}В диапазон попали ${hits.map(e=>e.key).join(', ')}${beyond?`; ключ ${beyond.key} > ${hi} — дальше идти не нужно`:''}.`,
+   uses:'листовая страница и ссылка на соседний лист',reads:hits.length?hits.map(e=>`${e.key} → ${e.tids.map(tidS).join(' ')}`).join('; '):'совпадений нет',
+   why:pv||!hits.length?'Листья связаны в цепочку в порядке ключей (ссылки влево и вправо). Поэтому диапазон читается проходом по листьям слева направо, а не новым спуском для каждого ключа.':'Спуск нашёл начало диапазона, дальше — только вправо по листьям.',focus:'node:'+lf.id},
+   s=>{H.node(s,lf.id);hits.forEach(e=>s.ents[e.key]='hit');if(pv)s.sibs.push([pv,lf.id]);if(beyond)s.hint.push('entry:'+beyond.key)});
+  if(hits.length){const list=hits.flatMap(e=>e.tids.map(t=>[e.key,...t]));
+   T.step({title:`Таблица: ${list.length} строк${list.length<5?'и':''} по TID`,learn:'Случайные чтения таблицы',
+    did:`По очереди проходит адреса: ${list.map(x=>`${x[0]}→(${x[1]},${x[2]})`).join(', ')}. Страницы таблицы: ${list.map(x=>x[1]).join(', ')}.`,
+    uses:'страницы heap',reads:`строки ${list.map(x=>rowAt(m,x[1],x[2]).chat+'/'+x[0]).join(', ')}`,
+    why:'Ключи в индексе идут подряд, а их строки лежат вразброс: Index Scan скачет по страницам таблицы. Если подряд идут два адреса на одной странице, повторно её не читают.',focus:`page:${list[0][1]}`},
+    s=>{list.forEach(([k,p,lp])=>H.fetch(s,m,p,lp,k))})}
+  if(beyond||!leaf.right)break;prev=leaf.id;leaf=m.nodes[leaf.right]}
+ const last=T.steps.at(-1).st;
+ T.step({title:'Результат',learn:'Узкий и широкий диапазон',
+  did:`Вернул ${last.res.length} строк. Индекс: ${last.idx} страниц. Таблица: ${last.heap} обращений к ${last.heapPages.length} разным страницам из ${m.pages.length}.`,uses:'—',reads:`chat_id: ${last.res.join(', ')}`,
+  why:'Для узкого диапазона это быстро. Для широкого — почти каждая строка стоит случайного чтения, и полный проход по таблице подряд оказывается дешевле.',focus:'sib',
+  quiz:{q:'Почему индекс выгоден для узкого диапазона и может проиграть на широком?',a:`Каждый TID — чтение какой-то страницы таблицы, причём в случайном порядке. Здесь ${last.res.length} строк дали ${last.heap} обращений к ${last.heapPages.length} страницам из ${m.pages.length} — почти вся таблица, плюс страницы индекса. Если диапазон захватывает заметную долю таблицы, дешевле Seq Scan (подряд) или Bitmap Heap Scan (собрать TID, отсортировать по страницам, прочитать каждую один раз).`}});
+ return T.steps}});
+
+// 4. Index Only Scan
+SC.push({id:'ios',name:'Index Only Scan',learn:'Когда таблица не нужна',view:'detail',
+ sql:'<span class="c">-- нужен только факт строки: сколько чатов у пользователя</span>\n<span class="k">SELECT</span> count(*)\n<span class="k">FROM</span> chat.members\n<span class="k">WHERE</span> <span class="h">user_id = 42</span>;',
+ note:'План: <code>Index Only Scan using members_user_id_idx</code>. На странице «Страницы» видна карта видимости (VM) у каждой страницы таблицы.',
+ build(){const T=new Tr(),m=T.m;
+ planStep(T,'запросу не нужны столбцы кроме user_id','Всё, что нужно запросу, есть в самом индексе: ключ user_id. Поэтому возможен <b>Index Only Scan</b> — читать индекс и по возможности не ходить в таблицу. В отличие от Index Scan, которому за chat_id таблица нужна всегда.');
+ const leaf=descend(T,42);const e=leaf.entries.find(e=>e.key===42);
+ T.step({title:`Лист (блок ${leaf.block}): три адреса`,learn:'Index Only Scan: что ещё нужно проверить',
+  did:`Находит 42 → ${e.tids.map(tidS).join(' ')}. Значения брать из таблицы не нужно — но нужно знать, видны ли эти строки нашей транзакции.`,
+  uses:'листовая страница',reads:`42 → ${e.tids.map(tidS).join(' ')}`,
+  why:'Индекс не хранит информации о видимости (xmin/xmax живут в строке таблицы). Строка могла быть удалена или ещё не закоммичена. Вместо похода в таблицу PostgreSQL сначала смотрит в карту видимости.',focus:'entry:42'},s=>{H.node(s,leaf.id);s.ents[42]='hit'});
+ e.tids.forEach(t=>{const vis=m.pages[t[0]].vis;
+  T.step({title:`Карта видимости: страница ${t[0]} — ${vis?'all-visible':'нет отметки'}`,learn:'Visibility map',
+   did:vis?`Бит all-visible у страницы ${t[0]} стоит: все строки на ней видны всем транзакциям. В таблицу не идёт — строка ${tidS(t)} засчитана.`
+    :`Бит all-visible у страницы ${t[0]} не стоит (на ней недавно меняли строки, VACUUM ещё не отметил). Приходится прочитать страницу ${t[0]} и проверить версию строки ${tidS(t)}: это <code>Heap Fetches</code>.`,
+   uses:'карта видимости (visibility map): 2 бита на страницу таблицы',reads:vis?'1 бит карты видимости':`бит карты + страница таблицы ${t[0]}`,
+   why:'Карту видимости обновляет VACUUM, любая запись на страницу сбрасывает бит. Чем свежее VACUUM, тем меньше Index Only Scan ходит в таблицу.',focus:'vm:'+t[0]},
+   s=>{s.vm[t[0]]=vis?'ok':'no';s.vmCur=t[0];if(vis){s.rows[t[0]+':'+t[1]]='hit';s.res.push('✓')}else{H.fetch(s,m,t[0],t[1],42);s.fetch++;s.res[s.res.length-1]='✓'}})});
+ T.step({title:'Результат: count = 3',learn:'Index Only Scan против Index Scan',
+  did:'Возвращает 3. Прочитано 3 страницы индекса и 1 страница таблицы (<code>Heap Fetches: 1</code>). Обычный Index Scan прочитал бы 3 страницы таблицы.',uses:'—',reads:'count = 3',
+  why:'В лабе подзапрос «участники чата» идёт как <code>Index Only Scan using members_pkey … Heap Fetches: 0</code>: таблица после VACUUM, все страницы all-visible, в heap не пошли ни разу.',focus:'vm:5',
+  quiz:{q:'Будет ли Index Only Scan по members_user_id_idx для SELECT chat_id FROM chat.members WHERE user_id = 42?',a:'Нет: chat_id в этом индексе нет, взять его можно только из строки таблицы. Сделать индекс «покрывающим» можно так: CREATE INDEX … ON chat.members (user_id) INCLUDE (chat_id) — ценой размера индекса и стоимости записи.'}});
+ return T.steps}});
+
+// 5. Seq Scan и когда индекс не помогает
+SC.push({id:'seq',name:'Seq Scan и сравнение',learn:'Seq Scan и когда индекс не помогает',view:'simple',
+ sql:'<span class="c">-- как увидеть Seq Scan на настоящей базе</span>\n<span class="k">SET</span> enable_indexscan = off;\n<span class="k">SET</span> enable_bitmapscan = off;\n<span class="k">SELECT</span> chat_id <span class="k">FROM</span> chat.members\n<span class="k">WHERE</span> <span class="h">user_id = 42</span>;',
+ note:'Настройки enable_* не запрещают план, а делают его очень дорогим в оценке — для экспериментов, не для продакшена.',
+ build(){const T=new Tr(),m=T.m;
+ T.step({title:'План: Seq Scan',learn:'Последовательное сканирование',did:'Индексные способы выключены (или индекса нет) — остаётся читать таблицу целиком, страницу за страницей, и проверять условие у каждой строки.',uses:'heap',reads:'—',why:'Seq Scan читает страницы подряд, а последовательное чтение дешевле случайного. Поэтому на большой доле строк он выигрывает.',focus:'plan'});
+ m.pages.forEach(p=>{const hit=p.rows.filter(r=>r.user===42);
+  T.step({title:`Страница ${p.no}: ${hit.length?'есть совпадение':'нет совпадений'}`,learn:'Seq Scan: каждая страница',
+   did:`Читает страницу ${p.no} и проверяет все ${p.rows.length} строки: user_id ${p.rows.map(r=>r.user).join(', ')}.${hit.length?' 42 нашлась — но читаем дальше: без индекса неизвестно, есть ли ещё.':''}`,
+   uses:'страница heap',reads:`${p.rows.length} строки`,why:'Проверяется каждая строка таблицы, даже если ответ — одна строка.',focus:'page:'+p.no},
+   s=>{s.pages[p.no]='cur';s.heap++;s.heapPages.push(p.no);hit.forEach(r=>{s.rows[p.no+':'+r.lp]='hit';s.res.push(r.chat)})})});
+ T.step({title:'Сравнение',learn:'Index Scan против Seq Scan',
+  did:'Seq Scan: 6 страниц таблицы, 24 проверенные строки. Index Scan (сценарий «Все чаты пользователя»): 3 страницы индекса + 3 страницы таблицы.',uses:'—',reads:'результат одинаковый: c1, c4, c12',
+  why:'На 6 страницах разница копеечная — и реальный PostgreSQL здесь выбрал бы Seq Scan. Разница появляется с ростом таблицы: спуск по индексу почти не растёт (3–4 страницы на миллионы строк), а Seq Scan растёт вместе с таблицей.',focus:'plan'});
+ T.step({title:'Когда индекс не помогает',learn:'Когда планировщик не берёт индекс',
+  did:'Реальные планы из лабы (2 млн строк <code>chat.members</code>):<br>• 20 чатов → <code>Index Scan</code>: 23 страницы, 0,2 мс;<br>• 1000 чатов → <code>Bitmap Heap Scan</code>: 3 страницы индекса + 960 страниц таблицы, 2 мс.',
+  uses:'—',reads:'labs/2a/results/messenger-explain.txt',
+  why:'Индекс проигрывает, когда условие выбирает большую долю строк, когда таблица маленькая, когда статистика устарела и оценка врёт, когда условие не совпадает с индексом (функция над столбцом, другой тип, второй столбец составного индекса без первого).',focus:'plan',
+  quiz:{q:'Когда планировщик выберет Seq Scan, хотя индекс есть?',a:'Когда по оценке это дешевле: условие выбирает заметную долю таблицы (случайных чтений больше, чем страниц в таблице), таблица крошечная, или индекс к условию не подходит — например WHERE lower(x) = … при индексе по x. Между ними есть Bitmap Heap Scan: TID из индекса, но таблица читается по порядку страниц — его и выбрал план для пользователя с 1000 чатов.'}});
+ return T.steps}});
+
+// 6. Вставка
+SC.push({id:'ins',name:'Вставка и сплит',learn:'Как запись меняет индекс',view:'detail',
+ sql:'<span class="c">-- новый личный чат c13 между пользователями 45 и 53</span>\n<span class="k">INSERT INTO</span> chat.members (chat_id, user_id)\n<span class="k">VALUES</span> (<span class="h">\'c13\', 45</span>), (<span class="h">\'c13\', 53</span>);',
+ note:'Тот же INSERT, что делает store.go при создании чата. Сплит здесь — учебная симуляция: точку раздела PostgreSQL выбирает по свободному месту, а не «пополам по числу записей».',
+ build(){const T=new Tr(),m=T.m;let t1,t2;
+ T.step({title:'Строка 1 → таблица',learn:'Вставка в heap',
+  did:'Сначала строка (c13, 45) кладётся в таблицу. Страницы 0–5 заполнены, поэтому таблица растёт на страницу 6, и строка получает TID <code>(6,1)</code>.',
+  uses:'heap и карта свободного места (FSM)',reads:'FSM: свободного места на страницах 0–5 нет',
+  why:'Место для новой строки PostgreSQL ищет по карте свободного места, а не в конце по порядку ключа. Поэтому строки одного пользователя оказываются на разных страницах.',focus:'page:6'},
+  s=>{t1=heapInsert(m,'c13',45);s.res.push('(c13, 45)');s.pages[t1[0]]='cur';s.rows[t1.join(':')]='hit'});
+ let leaf=descend(T,45,false);
+ T.step({title:`Лист (блок ${leaf.block}): запись 45 помещается`,learn:'Вставка в лист',
+  did:`Спуск привёл в блок ${leaf.block}. Там 4 записи из 5 возможных — PostgreSQL вставляет 45 → <code>(6,1)</code> на своё место по порядку.`,
+  uses:'листовая страница',reads:'есть место: 4 из 5',
+  why:`При <code>CREATE INDEX</code> листья заполняются не до конца (fillfactor 90%), чтобы осталось место под вставки. В модели это 4 записи из 5. Индекс <code>members_pkey</code> получает свою запись так же — на схеме его нет.`,focus:'entry:45'},
+  s=>{leafInsert(m.nodes[leaf.id],45,t1);H.node(s,leaf.id);s.ents[45]='hit';s.tids.push([45,...t1])});
+ T.step({title:'Строка 2 → таблица',learn:'Вставка в heap',did:'Вторая строка (c13, 53) ложится на ту же новую страницу 6: TID <code>(6,2)</code>.',uses:'heap',reads:'на странице 6 есть место',why:'Обе строки одного INSERT вставляются по очереди: строка в heap, затем запись в каждый индекс таблицы.',focus:'page:6'},
+  s=>{t2=heapInsert(m,'c13',53);s.res.push('(c13, 53)');s.pages[t2[0]]='cur';s.rows[t2.join(':')]='hit'});
+ leaf=descend(T,53,false);
+ T.step({title:`Лист (блок ${leaf.block}) полон: сплит`,learn:'Расщепление страницы',
+  did:`В блоке ${leaf.block} уже 5 записей из 5 — для 53 нет места. Сначала PostgreSQL пробует освободить место (убрать мёртвые записи, дедуплицировать) — здесь не помогает. Тогда он расщепляет страницу: берёт новую (блок ${m.next}), переносит туда правую половину и перевязывает соседей.`,
+  uses:'две листовые страницы',reads:'—',
+  why:'Страница фиксированного размера, поэтому расти «вширь» нельзя — только делиться. После сплита обе половины наполовину пусты: следующие вставки сюда снова пройдут без сплита.',focus:'node:b'+m.next},
+  s=>{const lf=m.nodes[leaf.id];leafInsert(lf,53,t2);const nr=splitLeaf(m,lf);s.nodes[lf.id]='cur';s.nodes[nr.id]='cur';s.idx++;s.ents[53]='hit';s.tids.push([53,...t2]);s.sibs.push([lf.id,nr.id])});
+ const nr=m.nodes['b'+(m.next-1)],par=parentOf(m,leaf.id);
+ T.step({title:`Разделитель ${nr.entries[0].key} уходит в родителя`,learn:'Как дерево растёт',
+  did:`Родитель (блок ${par.block}) получает новую запись «${nr.entries[0].key} → блок ${nr.block}». Теперь поиск ключей ≥ ${nr.entries[0].key} из блока ${par.block} идёт в новый лист.`,
+  uses:'внутренняя страница',reads:`место в блоке ${par.block} есть`,
+  why:'Если бы в родителе не хватило места, расщепился бы и он, и так вверх до корня. Когда расщепляется корень, над ним появляется новый — только так B-tree растёт в высоту, поэтому все листья всегда на одной глубине.',focus:'node:'+par.id},
+  s=>{const p=parentOf(m,leaf.id),pos=p.entries.findIndex(e=>e.child===leaf.id);p.entries.splice(pos+1,0,{sep:nr.entries[0].key,child:nr.id});s.nodes[p.id]='cur';s.edges.push([p.id,nr.id])});
+ T.step({title:'Цена записи',learn:'Индексы ускоряют чтение, но удорожают запись',
+  did:'Каждая вставленная строка <code>chat.members</code> трогает: страницу heap, лист <code>members_pkey</code>, лист <code>members_user_id_idx</code> (иногда со сплитом), проверки внешних ключей (поиск по <code>chats_pkey</code> и <code>users_pkey</code>), и всё это пишется в WAL до COMMIT.',
+  uses:'heap, все индексы таблицы, WAL',reads:'—',
+  why:'Каждый новый индекс — ещё одна запись на каждую вставку и место на диске и в кэше. В мессенджере индекс по <code>chat.chats (last_activity_at)</code> не завели именно поэтому: планировщик его не брал, а обновление чата потеряло бы HOT (урок 2.2, labs/2a).',focus:'node:'+nr.id,
+  quiz:{q:'Почему индекс ускоряет SELECT, но замедляет INSERT?',a:'SELECT читает 3–4 страницы индекса вместо всей таблицы. INSERT же обязан добавить запись в КАЖДЫЙ индекс таблицы: найти лист спуском, вставить, иногда расщепить страницу и обновить родителя — и всё это записать в WAL. Индексов больше — запись дороже, а места на диске и в shared_buffers они тоже занимают.'}});
+ return T.steps}});
+
+/* ================= объяснения элементов ================= */
+const SIMPL=`<h2>Что в модели упрощено</h2><div class="kind">чтобы отличать учебную модель от настоящего PostgreSQL</div><dl>
+<dt>Данные придуманы</dt><dd>12 чатов по 2 участника, 24 строки. user_id — числа вместо uuid. Номера блоков и TID учебные, но устроены как настоящие: TID = (страница, позиция), позиции с 1; в базе их видно через <code>SELECT ctid, * FROM chat.members</code>.</dd>
+<dt>Размеры</dt><dd>Страница — 8 КБ: в ней сотни индексных записей и порядка 130 строк members. В модели — 4–5. Зато высота дерева та же, что в лабе на 2 млн строк: 3 уровня.</dd>
+<dt>Логика ≠ файл</dt><dd>Блоки индекса лежат в файле подряд по номерам: 0 — метастраница, затем листья и верхние уровни в порядке записи при CREATE INDEX. «Уровни» на схеме — логическая связь по номерам блоков, а не расположение на диске.</dd>
+<dt>Опущено</dt><dd>верхняя граница страницы (high key); заголовок страницы и массив указателей; усечение разделителей и TID как часть ключа (PG 12+); алгоритм выбора точки сплита; блокировки и «шаг вправо» при параллельных вставках; WAL.</dd>
+<dt>Видимость</dt><dd>MVCC только упомянута: у каждой строки в heap есть xmin/xmax (урок 2.2), в индексе их нет.</dd>
+<dt>План</dt><dd>Выбор плана описан словами. На деле его считает формула стоимости с <code>seq_page_cost</code>, <code>random_page_cost</code>, <code>effective_cache_size</code> и статистикой. На нашей крошечной таблице реальный PostgreSQL почти всегда выбрал бы Seq Scan.</dd></dl>`;
+function explain(id,step){const m=step.m,s=step.st,[kind,a,b]=id.split(':');
+ const here=s.notes[a]?`<dt>В этом запросе</dt><dd class="here">${s.notes[a]}</dd>`:'';
+ const sec=(t,k,rows,extra='')=>`<h2>${t}</h2><div class="kind">${k}</div><dl>${rows.map(([h,v])=>`<dt>${h}</dt><dd>${v}</dd>`).join('')}${here}${extra}</dl>`;
+ if(kind==='simpl')return SIMPL;
+ if(kind==='table')return sec('Таблица chat.members','таблица мессенджера (миграция 00001_init.sql)',[['Что это','Связь «многие ко многим» чатов и пользователей: строка (chat_id, user_id) = «пользователь состоит в чате».'],['Роль','По ней мессенджер отвечает на два вопроса: «кто в чате» (индекс <code>members_pkey (chat_id, user_id)</code>) и «в каких чатах пользователь» (индекс <code>members_user_id_idx (user_id)</code>).'],['Что хранит','В модели 24 строки на 6 страницах. В лабе — 2 млн строк.'],['Связи','Строки лежат в heap (внизу схемы). Индексы ссылаются на них по TID.']]);
+ if(kind==='plan')return sec('Планировщик','часть PostgreSQL, которая решает, КАК выполнить запрос',[['Что это','SQL говорит, ЧТО нужно. План — как это достать: читать таблицу целиком, спускаться по индексу или собрать TID и читать таблицу по порядку.'],['Роль','Оценивает число строк по статистике (<code>pg_stats</code>: число различных значений, частые значения, гистограмма) и считает стоимость каждого способа в «страницах».'],['Что важно','Индекс — не приказ, а возможность. План зависит от селективности условия, размера таблицы, свежести статистики и настроек. Посмотреть выбор: <code>EXPLAIN (ANALYZE, BUFFERS)</code>.']],`<dt>В реальности</dt><dd class="real">Лаба 2a: один и тот же запрос дал Index Scan для пользователя с 20 чатами и Bitmap Heap Scan для пользователя с 1000 чатов.</dd>`);
+ if(kind==='meta'){const r=m.nodes[m.root];return sec('Метастраница','блок 0 файла индекса',[['Что это','Служебная страница в начале файла индекса.'],['Роль в PostgreSQL','Хранит адрес корня и высоту дерева. Поиск начинается с неё: «где корень?».'],['Что хранит',`корень — блок ${r.block}, уровень корня — ${r.level} (листья — уровень 0)`],['Связи','→ корень. Сама не хранит ключей.'],['Зачем отдельно','Корень может смениться: когда расщепляется корень, сверху появляется новый. Тогда переписывают только метастраницу.']])}
+ if(kind==='node'){const n=m.nodes[a];if(!n)return'';const isRoot=n.id===m.root;
+  if(n.level){const ex1=n.entries[1].sep-5,ex2=n.entries.at(-1).sep+3;const ch=k=>m.nodes[n.entries[pick(n,k)].child].block;
+   return sec(isRoot?'Корень':'Внутренняя страница',`страница индекса · блок ${n.block} · уровень ${n.level}`,[
+    ['Что это',isRoot?'Верхняя страница B-tree индекса. Любой поиск по индексу начинается с неё.':'Промежуточный уровень дерева между корнем и листьями — «оглавление» для своей части ключей.'],
+    ['Роль в PostgreSQL',isRoot?'Делит весь диапазон ключей на части и говорит, на какую страницу уровнем ниже идти.':'Сужает поиск: из диапазона, который ей отдал родитель, выбирает одну дочернюю страницу.'],
+    ['Что хранит',`Записи «разделитель → номер дочерней страницы»:<br><code>${n.entries.map(e=>`${e.sep??'−∞'} → блок ${m.nodes[e.child].block}`).join('</code><br><code>')}</code><br>«−∞» у первой записи значит «всё, что меньше следующего разделителя». Разделитель — наименьший ключ своего поддерева.`],
+    ['Связи',`Вниз: ${n.entries.map(e=>'блок '+m.nodes[e.child].block).join(', ')}. ${isRoot?'На неё указывает метастраница.':`Вверх: блок ${parentOf(m,n.id)?.block}.`} Соседние страницы одного уровня тоже связаны ссылками.`],
+    ['Пример на числах',`Ищем ${ex1}: последний разделитель ≤ ${ex1} — «${n.entries[pick(n,ex1)].sep??'−∞'}» → блок ${ch(ex1)}.<br>Ищем ${ex2}: последний разделитель ≤ ${ex2} — «${n.entries[pick(n,ex2)].sep}» → блок ${ch(ex2)}.`]],
+    `<dt>В реальности</dt><dd class="real">В странице 8 КБ сотни разделителей, поэтому 3 уровня покрывают миллионы записей. В лабе спуск по members_user_id_idx — 3 страницы.</dd>`)}
+  return sec('Листовая страница',`страница индекса · блок ${n.block} · уровень 0`,[
+   ['Что это','Нижний уровень B-tree. Только здесь лежат индексные записи.'],
+   ['Роль в PostgreSQL','Хранит пары «ключ → адрес строки». Поиск заканчивается здесь, дальше — в таблицу по TID.'],
+   ['Что хранит',`${n.entries.length} записей из ${LEAF_CAP} (в модели):<br>${n.entries.map(e=>`<code>${e.key} → ${e.tids.map(tidS).join(' ')}</code>`).join('<br>')}`],
+   ['Связи',`Соседи: ${n.left?'блок '+m.nodes[n.left].block:'нет (самый левый)'} ← → ${n.right?'блок '+m.nodes[n.right].block:'нет (самый правый)'}. Родитель: блок ${parentOf(m,n.id)?.block??'— (ещё не привязан)'}. TID ведут в heap.`],
+   ['Почему ссылки на соседей','Диапазон (BETWEEN, ORDER BY) читается проходом по листьям слева направо без возврата к корню.']])}
+ if(kind==='entry'){const k=+a;const n=Object.values(m.nodes).find(n=>!n.level&&n.entries.some(e=>e.key===k));if(!n)return'';const e=n.entries.find(e=>e.key===k);
+  return sec(`Индексная запись ${k}`,`лист · блок ${n.block}`,[
+   ['Что это','Ключ индекса + адрес строки таблицы (TID).'],
+   ['Что хранит',`ключ <code>user_id = ${k}</code> и ${e.tids.length>1?`posting list из ${e.tids.length} TID`:'один TID'}: <code>${e.tids.map(tidS).join(' ')}</code>. Не хранит chat_id и не знает, видна ли строка транзакции.`],
+   ['Откуда взялась','Когда INSERT положил строку в heap и она получила адрес, PostgreSQL добавил в каждый индекс таблицы запись с этим адресом.'],
+   ['Связи',`Строки таблицы: ${e.tids.map(t=>`стр. ${t[0]}, поз. ${t[1]} (${rowAt(m,...t).chat})`).join('; ')} — подсвечены на схеме.`],
+   ...(e.tids.length>1?[['Повторы ключа','Одинаковые ключи PostgreSQL 13+ хранит одной записью со списком адресов (posting list, дедупликация). Адреса в списке отсортированы.']]:[])])}
+ if(kind==='row'){const p=+a,lp=+b,r=rowAt(m,p,lp);if(!r)return'';const n=Object.values(m.nodes).find(n=>!n.level&&n.entries.some(e=>e.key===r.user));
+  return sec(`Строка (${r.chat}, ${r.user})`,`heap · страница ${p} · позиция ${lp}`,[
+   ['Что это','Строка (в PostgreSQL — кортеж) таблицы chat.members.'],
+   ['Адрес',`TID <code>(${p},${lp})</code>: страница ${p}, ${lp}-й указатель строки на странице. В базе его видно как столбец <code>ctid</code>.`],
+   ['Что хранит',`chat_id = ${r.chat}, user_id = ${r.user} и служебный заголовок: xmin/xmax — какие транзакции видят эту версию (MVCC, урок 2.2).`],
+   ['Откуда на неё ссылка',`Из индексной записи ${r.user} в листе блок ${n?.block??'?'} (подсвечена). Без этой ссылки найти строку можно только перебором всей таблицы.`]])}
+ if(kind==='page'||kind==='vm'){const p=m.pages[+a];if(!p)return'';
+  return sec(`Страница таблицы ${p.no}`,'heap · 8 КБ',[
+   ['Что это','Кусок файла таблицы фиксированного размера (8 КБ). Единица чтения, записи и кэширования.'],
+   ['Heap','«Куча» здесь — не структура данных из алгоритмов, а файл, где строки лежат без порядка, туда, где было место.'],
+   ['Что хранит',`заголовок, массив указателей строк и сами строки. Здесь ${p.rows.length}: ${p.rows.map(r=>`(${r.chat}, ${r.user})`).join(', ')}.`],
+   ['Карта видимости',`${p.vis?'all-visible ✓ — все строки видны всем транзакциям; Index Only Scan сюда не пойдёт':'отметки нет — на странице недавно меняли строки; Index Only Scan будет её читать'}. Отметку ставит VACUUM, любое изменение страницы её снимает.`],
+   ['Связи','На строки ссылаются TID из листьев всех индексов таблицы.']])}
+ if(kind==='tid')return sec('TID — ссылка из индекса на строку','tuple identifier · ctid',[['Что это','Адрес строки в таблице: (номер страницы, номер позиции на ней).'],['Зачем','Индекс хранит только ключ. Чтобы получить остальные столбцы и проверить видимость, PostgreSQL идёт по TID прямо на нужную страницу heap — одно чтение вместо перебора.'],['Цена','Каждый TID — отдельное (обычно случайное) чтение страницы таблицы. Поэтому индекс выгоден, когда строк мало.'],['На схеме','Зелёные линии из листа вниз, в таблицу.']]);
+ if(kind==='sib')return sec('Ссылки между листьями','right-link / left-link',[['Что это','Каждый лист знает номер блока соседа слева и справа.'],['Зачем','Диапазонный поиск и ORDER BY читают листья подряд, не поднимаясь к корню. Ещё они помогают поиску при параллельном сплите (алгоритм Lehman–Yao).'],['На схеме','Пунктир между листьями; синий — по нему шли в текущем запросе.']]);
+ return''}
+
+/* ================= рисование ================= */
+const svg=document.getElementById('svg'),W=1080;
+let view='simple',sel=null,cur=0,sc=SC[0],steps=[],revealed=false;
+function layout(m,detail){const L={};const lv=leafOrder(m),slot=W/lv.length,lw=Math.min(detail?184:156,slot-12);
+ lv.forEach((id,i)=>{const n=m.nodes[id];L[id]={x:slot*(i+.5)-lw/2,y:262,w:lw,h:detail?32+n.entries.length*18:50}});
+ const place=(n,y,w)=>{const xs=n.entries.map(e=>L[e.child]).filter(Boolean).map(b=>b.x+b.w/2);const cx=xs.reduce((a,b)=>a+b,0)/xs.length;L[n.id]={x:cx-w/2,y,w,h:detail?32+n.entries.length*18:50}};
+ Object.values(m.nodes).filter(n=>n.level===1).forEach(n=>place(n,140,detail?160:150));place(m.nodes[m.root],30,detail?160:150);
+ const ps=m.pages,hs=W/ps.length,pw=Math.min(158,hs-12);ps.forEach((p,i)=>{L['page:'+p.no]={x:hs*(i+.5)-pw/2,y:430,w:pw,h:detail?44+p.rows.length*18:34+p.rows.length*17}});
+ L.meta={x:W-182,y:30,w:162,h:50};return L}
+const esc=s=>String(s);
+function render(){const step=steps[cur],m=step.m,s=step.st,detail=view==='detail',L=layout(m,detail);let o='';
+ o+=`<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#5fd38d"/></marker><marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#4a6fae"/></marker></defs>`;
+ o+=`<text class="lvl" x="14" y="22">корень</text><text class="lvl" x="14" y="132">внутренние страницы</text><text class="lvl" x="14" y="254">листья — индексные записи</text><text class="lvl" x="14" y="422">таблица chat.members (heap) — строки в порядке вставки</text>`;
+ o+=`<text class="lvl" x="${W-14}" y="22" text-anchor="end" style="fill:#86bf9c">индекс members_user_id_idx</text>`;
+ const on=(a,b)=>s.edges.some(e=>e[0]===a&&e[1]===b);
+ // рёбра дерева
+ Object.values(m.nodes).filter(n=>n.level).forEach(n=>{const b=L[n.id];n.entries.forEach((e,j)=>{const c=L[e.child];if(!c)return;const x=b.x+(j+.5)*b.w/n.entries.length;
+  o+=`<path class="edge ${on(n.id,e.child)?'on':''}" d="M${x},${b.y+b.h} C${x},${b.y+b.h+30} ${c.x+c.w/2},${c.y-30} ${c.x+c.w/2},${c.y}"/>`})});
+ // ссылки между листьями
+ if(detail||s.sibs.length){const lv=leafOrder(m);lv.slice(0,-1).forEach((id,i)=>{const a=L[id],b=L[lv[i+1]],y=a.y+16;const act=s.sibs.some(x=>x[0]===id&&x[1]===lv[i+1]);
+  if(detail||act)o+=`<g class="el" data-el="sib"><path class="sib ${act?'on':''}" d="M${a.x+a.w+2},${y}L${b.x-2},${y}" marker-end="url(#ab)" marker-start="url(#ab)"/><path d="M${a.x+a.w},${y}L${b.x},${y}" stroke="transparent" stroke-width="12"/></g>`})}
+ // метастраница
+ if(detail){const b=L.meta,st=s.nodes.meta||'',r=L[m.root];o+=`<g class="el" data-el="meta"><rect class="box meta ${st} ${sel==='meta'?'sel':''}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="9"/><text class="nh" x="${b.x+10}" y="${b.y+19}">метастраница · блок 0</text><text class="t" x="${b.x+10}" y="${b.y+38}">корень → блок ${m.nodes[m.root].block}</text></g>`;
+  o+=`<path class="sib" d="M${b.x},${b.y+30}L${r.x+r.w+4},${r.y+20}" marker-end="url(#ab)"/>`}
+ // узлы
+ Object.values(m.nodes).forEach(n=>{const b=L[n.id];if(!b)return;const st=s.nodes[n.id]||(s.hint.includes('node:'+n.id)?'hint':''),isRoot=n.id===m.root;
+  const head=n.level?(isRoot?'корень':'внутренняя'):'лист';
+  o+=`<g class="el" data-el="node:${n.id}"><rect class="box idx ${st} ${sel==='node:'+n.id?'sel':''} ${st==='cur'?'pulse':''}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="9"/><text class="nh" x="${b.x+10}" y="${b.y+18}">${head}${detail?' · блок '+n.block:''}</text>`;
+  if(!detail&&!n.level){const sl=b.w/n.entries.length;}
+  o+='</g>';
+  if(n.level){if(detail)n.entries.forEach((e,j)=>{o+=`<text class="t" x="${b.x+12}" y="${b.y+38+j*18}">${e.sep??'−∞'}<tspan class="dim" fill="#e8c27a"> → блок ${m.nodes[e.child].block}</tspan></text>`});
+   else{const sl=b.w/n.entries.length;n.entries.forEach((e,j)=>{o+=`<text class="t" text-anchor="middle" x="${b.x+sl*(j+.5)}" y="${b.y+38}">${e.sep??'−∞'}</text>`})}}
+  else n.entries.forEach((e,j)=>{const es=s.ents[e.key]==='hit'||s.hint.includes('entry:'+e.key)?'hit':'',isSel=sel==='entry:'+e.key;
+   if(detail){const y=b.y+24+j*18;o+=`<g class="el ent ${es} ${isSel?'sel':''}" data-el="entry:${e.key}"><rect x="${b.x+4}" y="${y}" width="${b.w-8}" height="17"/><text class="t" x="${b.x+10}" y="${y+13}">${e.key}<tspan fill="#e8c27a"> → ${e.tids.map(tidS).join(' ')}</tspan></text></g>`}
+   else{const sl=(b.w-8)/n.entries.length,x=b.x+4+sl*j;o+=`<g class="el ent ${es} ${isSel?'sel':''}" data-el="entry:${e.key}"><rect x="${x}" y="${b.y+24}" width="${sl}" height="20"/><text class="t" text-anchor="middle" x="${x+sl/2}" y="${b.y+38}">${e.key}${e.tids.length>1?'<tspan fill="#f0b35a" font-size="10">×'+e.tids.length+'</tspan>':''}</text></g>`}})});
+ // страницы таблицы
+ m.pages.forEach(p=>{const b=L['page:'+p.no],st=s.pages[p.no]||(s.hint.includes('page:'+p.no)?'hint':'');
+  o+=`<g class="el" data-el="page:${p.no}"><rect class="box heap ${st} ${sel==='page:'+p.no?'sel':''} ${st==='cur'?'pulse':''}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="9"/><text class="nh" x="${b.x+10}" y="${b.y+18}">стр. ${p.no}${detail?' · 8 КБ':''}</text></g>`;
+  if(detail){const vs=s.vm[p.no],vc=s.vmCur===p.no;const col=p.vis?'#5fd38d':'#ff7b72';
+   o+=`<g class="el" data-el="vm:${p.no}"><rect class="chip" x="${b.x+b.w-58}" y="${b.y+6}" width="50" height="16" fill="${vc?(p.vis?'#1d5a3a':'#5a1d1d'):'#0f1529'}" stroke="${vc?col:'#2c3b62'}"/><text class="vm" x="${b.x+b.w-33}" y="${b.y+18}" text-anchor="middle" fill="${col}">VM ${p.vis?'✓':'—'}</text></g>`;
+   o+=`<text class="t dim" x="${b.x+10}" y="${b.y+36}" font-size="10.5">TID   chat  user_id</text>`}
+  p.rows.forEach((r,j)=>{const rs=s.rows[p.no+':'+r.lp]?'hit':'',y=b.y+(detail?42:24)+j*(detail?18:17),isSel=sel==='row:'+p.no+':'+r.lp;
+   o+=`<g class="el row ${rs} ${isSel?'sel':''}" data-el="row:${p.no}:${r.lp}"><rect x="${b.x+4}" y="${y}" width="${b.w-8}" height="${detail?17:16}"/><text class="t" x="${b.x+10}" y="${y+12.5}">${detail?`<tspan fill="#e8c27a">(${p.no},${r.lp})</tspan>  `:''}${r.chat}<tspan fill="#e8c27a"> · </tspan>${r.user}</text></g>`})});
+ // TID-стрелки
+ const tids=[...s.tids];if(sel){const[k,a,b]=sel.split(':');
+  if(k==='entry'){const n=Object.values(m.nodes).find(n=>!n.level&&n.entries.some(e=>e.key===+a));n?.entries.find(e=>e.key===+a).tids.forEach(t=>tids.push([+a,...t,'sel']))}
+  if(k==='row'){const r=rowAt(m,+a,+b);if(r)tids.push([r.user,+a,+b,'sel'])}}
+ tids.forEach(([key,p,lp,flag])=>{const n=Object.values(m.nodes).find(n=>!n.level&&n.entries.some(e=>e.key===key));if(!n)return;const lb=L[n.id],j=n.entries.findIndex(e=>e.key===key);
+  const sx=detail?lb.x+lb.w/2+(j-(n.entries.length-1)/2)*14:lb.x+4+(lb.w-8)/n.entries.length*(j+.5),sy=detail?lb.y+lb.h:lb.y+44;const pb=L['page:'+p],ri=m.pages[p].rows.findIndex(r=>r.lp===lp);
+  const ex=pb.x+pb.w/2,ey=pb.y+(detail?42:24)+ri*(detail?18:17)+8,top=pb.y-2;
+  o+=`<path class="tid ${flag?'sel':''}" d="M${sx},${sy} C${sx},${sy+70} ${ex},${top-70} ${ex},${top}" marker-end="url(#ar)"/>`});
+ svg.innerHTML=o;
+ // выделенные строки/записи по клику
+ if(sel){const[k,a,b]=sel.split(':');if(k==='entry'){const n=Object.values(m.nodes).find(n=>!n.level&&n.entries.some(e=>e.key===+a));n?.entries.find(e=>e.key===+a).tids.forEach(t=>svg.querySelector(`[data-el="row:${t[0]}:${t[1]}"]`)?.classList.add('sel'))}
+  if(k==='row'){const r=rowAt(m,+a,+b);r&&svg.querySelector(`[data-el="entry:${r.user}"]`)?.classList.add('sel')}}}
+svg.addEventListener('click',e=>{const g=e.target.closest('[data-el]');if(!g)return;sel=g.dataset.el;render();side(sel)});
+
+/* ================= панели ================= */
+const $=id=>document.getElementById(id);
+function side(id){const h=explain(id||steps[cur].focus,steps[cur]);$('ex').innerHTML=h||'<span class="hint">Нет объяснения для этого элемента.</span>'}
+function curNames(s,m){const out=[];for(const k in s.nodes)if(s.nodes[k]==='cur')out.push(k==='meta'?'метастраница':(m.nodes[k]?.level?(k===m.root?'корень':'внутренняя страница'):'лист')+' (блок '+m.nodes[k]?.block+')');for(const k in s.pages)if(s.pages[k]==='cur')out.push('страница таблицы '+k);if(s.vmCur!=null)out.push('бит карты видимости страницы '+s.vmCur);return out}
+function show(){const step=steps[cur],s=step.st;sel=null;revealed=false;
+ $('learn').textContent=step.learn||sc.learn;$('progT').textContent=`${sc.name} · шаг ${cur+1} / ${steps.length}`;$('progF').style.width=((cur+1)/steps.length*100)+'%';
+ document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.s===sc.id));
+ $('steps').innerHTML=steps.map((x,i)=>`<li class="${i<cur?'done':i===cur?'cur':''}" data-i="${i}"><span class="n">${i<cur?'✓':i+1}</span><span>${x.title}</span></li>`).join('');
+ $('steps').querySelector('.cur')?.scrollIntoView({block:'nearest'});
+ const names=curNames(s,step.m);
+ $('sc').innerHTML=`<h2>${cur+1}. ${step.title}</h2><div class="rows"><span>Что делает PostgreSQL</span><span>${step.did}</span><span>Какую структуру использует</span><span>${step.uses}</span><span>Что читает / получает</span><span>${step.reads}</span><span>Почему так</span><span>${step.why}</span><span>Что изменилось на схеме</span><span>${names.length?'синим — '+names.join(', '):'выделены элементы, о которых идёт речь'}${s.tids.length?'; зелёные линии — TID':''}</span></div>`;
+ $('sql').innerHTML=sc.sql;$('sqlNote').innerHTML=sc.note;
+ $('res').innerHTML=`<b>Результат на этом шаге:</b> ${s.res.length?(sc.id==='ios'?'насчитано '+s.res.length:sc.id==='ins'?'вставлены '+s.res.join(', '):'строки '+s.res.join(', ')):'строк пока нет'}`;
+ quiz();
+ $('cnt').innerHTML=`<span>Страниц индекса прочитано: <b>${s.idx}</b></span><span class="sep"></span><span>Обращений к таблице: <b>${s.heap}</b>${s.heapPages.length?` (разных страниц: <b>${s.heapPages.length}</b> из ${step.m.pages.length})`:''}</span>${sc.id==='ios'?`<span class="sep"></span><span>Heap Fetches: <b>${s.fetch}</b></span>`:''}<span class="real">данные и номера страниц — учебные</span>`;
+ $('back').disabled=cur<=0;$('next').disabled=cur>=steps.length-1;
+ render();side(step.focus)}
+function quiz(){const q=steps[cur].quiz;if(!q){$('quiz').innerHTML='';return}
+ $('quiz').innerHTML=`<div class="quiz"><b>Проверь себя.</b> ${q.q}${revealed?`<div class="ans">${q.a}</div>`:'<br><button id="rev">Подумал — показать ответ</button>'}</div>`;
+ $('rev')&&($('rev').onclick=()=>{revealed=true;quiz()})}
+function setView(v){view=v;document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));render()}
+function start(id){sc=SC.find(x=>x.id===id);steps=sc.build();cur=0;view=sc.view;document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===view));show()}
+$('scen').innerHTML=SC.map((x,i)=>`<button class="tab" data-s="${x.id}"><small>${i}</small>${x.name}</button>`).join('');
+$('scen').onclick=e=>{const b=e.target.closest('.tab');b&&start(b.dataset.s)};
+document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+$('steps').onclick=e=>{const li=e.target.closest('li');if(li){cur=+li.dataset.i;show()}};
+$('next').onclick=()=>{if(cur<steps.length-1){cur++;show()}};$('back').onclick=()=>{if(cur>0){cur--;show()}};$('again').onclick=()=>{cur=0;show()};
+$('simplBtn').onclick=()=>{sel=null;render();side('simpl')};
+addEventListener('keydown',e=>{if(e.key==='ArrowRight')$('next').click();if(e.key==='ArrowLeft')$('back').click()});
+start('intro');
+</script></body></html>
