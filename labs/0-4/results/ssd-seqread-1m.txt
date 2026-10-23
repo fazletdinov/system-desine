@@ -5,12 +5,16 @@ docker: 29.9.2
 диски (lsblk -d -o NAME,MODEL,ROTA,TRAN):
   NAME    MODEL                   ROTA TRAN
   nvme0n1 Samsung SSD 990 PRO 1TB    0 nvme
-дата: 2026-10-23T06:36Z
-fio: fio-3.39, --rw=read --bs=1M --size=4g --runtime=20 --direct=1 --ioengine=libaio --iodepth=1
-операций: 64370, IOPS: 3218, полоса: 3374 МБ/с
-slat среднее: 128.4 мкс, lat (slat + clat) среднее: 309.9 мкс
-clat мкс: min 48.9, среднее 181.5, p50 177.152, p90 211.968, p99 254.976, p99.9 321.536, max 2695.6
-RESULT ssd_seq1m_p50_us 177.152 us
-RESULT ssd_seq1m_p99_us 254.976 us
-RESULT ssd_seq1m_mean_us 181.5 us
-RESULT ssd_seq1m_lat_mean_us 309.9 us
+transparent hugepages: always [madvise] never
+дата: 2026-10-23T06:54Z
+fio: fio-3.39, --rw=read --bs=1M --size=4g --runtime=20 --direct=1 --ioengine=libaio --iodepth=1 --clat_percentiles=1 --lat_percentiles=1
+операций: 69813, IOPS: 3490, полоса: 3660 МБ/с
+slat мкс: среднее 101.3
+lat  мкс: min 231.2, среднее 285.4, p50 259.072, p90 329.728, p99 790.528, p99.9 2768.896, max 4518.1
+clat мкс: min 0.8, среднее 184.1, p50 164.864, p90 201.728, p99 643.072, p99.9 2637.824, max 4416.3
+RESULT ssd_seq1m_p50_us 164.864 us
+RESULT ssd_seq1m_p99_us 643.072 us
+RESULT ssd_seq1m_mean_us 184.1 us
+RESULT ssd_seq1m_lat_p50_us 259.072 us
+RESULT ssd_seq1m_lat_p99_us 790.528 us
+RESULT ssd_seq1m_lat_mean_us 285.4 us

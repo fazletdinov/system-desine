@@ -5,9 +5,7 @@ docker: 29.9.2
 диски (lsblk -d -o NAME,MODEL,ROTA,TRAN):
   NAME    MODEL                   ROTA TRAN
   nvme0n1 Samsung SSD 990 PRO 1TB    0 nvme
-дата: 2026-10-23T06:36Z
-go version: go1.27.3
-GOMAXPROCS: 12
-NumCPU: 12
-последовательное чтение 1 МБ из буфера 256 МиБ: 57.7 мкс (18.2 ГБ/с; медиана 7 замеров по 4096 МБ)
-RESULT ram_seq_1mb_us 57.7 us
+transparent hugepages: always [madvise] never
+дата: 2026-10-23T06:54Z
+последовательное чтение 1 МБ из буфера 256 МиБ: 59.0 мкс (17.8 ГБ/с; медиана 7 замеров по 4096 МБ)
+RESULT ram_seq_1mb_us 59.0 us

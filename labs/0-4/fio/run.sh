@@ -42,20 +42,25 @@ rm -f /data/.odirect-probe
 # а не пропускная способность очереди NVMe. time_based — ровно runtime секунд, файл идёт по кругу.
 fio --name="$key" --filename="$file" --size="$size" \
 	--direct=1 --ioengine=libaio --iodepth=1 --rw="$rw" --bs="$bs" \
-	--runtime="$runtime" --time_based --output-format=json --output="/data/$key.json" >/dev/null
+	--runtime="$runtime" --time_based --clat_percentiles=1 --lat_percentiles=1 --output-format=json --output="/data/$key.json" >/dev/null
 
 j=/data/$key.json
-echo "fio: $(jq -r '."fio version"' "$j"), --rw=$rw --bs=$bs --size=$size --runtime=$runtime --direct=1 --ioengine=libaio --iodepth=1"
-# clat — от отправки запроса в устройство до его завершения; slat — время самой отправки
-# (io_submit). Для 4 КБ slat — единицы микросекунд. Для 1 МБ — нет: ядро режет запрос на куски
-# по max_sectors_kb (у NVMe часто 128 КБ) и отправка занимает заметное время, поэтому печатаем
-# и lat = slat + clat — время чтения 1 МБ, которое видит программа.
-jq -r '.jobs[0].read as $r | $r.clat_ns as $c |
+echo "fio: $(jq -r '."fio version"' "$j"), --rw=$rw --bs=$bs --size=$size --runtime=$runtime --direct=1 --ioengine=libaio --iodepth=1 --clat_percentiles=1 --lat_percentiles=1"
+# lat = slat + clat — время одного чтения, которое видит программа: от вызова io_submit до
+# завершения. slat — сама отправка, clat — от отправки до завершения. Для 4 КБ slat — единицы
+# микросекунд. Для 1 МБ — нет: ядро режет запрос на куски по max_sectors_kb (у NVMe часто 128 КБ),
+# и отправка восьми кусков занимает заметное время. Шкала урока берёт lat, clat — для сравнения.
+jq -r '.jobs[0].read as $r | $r.clat_ns as $c | $r.lat_ns as $l |
+	def us: . / 1e3 | . * 10 | round / 10;
+	def pct($h; $p): $h.percentile[$p] / 1e3;
 	"операций: \($r.total_ios), IOPS: \($r.iops | floor), полоса: \($r.bw_bytes / 1e6 | floor) МБ/с",
-	"slat среднее: \($r.slat_ns.mean / 1e3 | . * 10 | round / 10) мкс, lat (slat + clat) среднее: \($r.lat_ns.mean / 1e3 | . * 10 | round / 10) мкс",
-	"clat мкс: min \($c.min / 1e3 | . * 10 | round / 10), среднее \($c.mean / 1e3 | . * 10 | round / 10), p50 \($c.percentile."50.000000" / 1e3), p90 \($c.percentile."90.000000" / 1e3), p99 \($c.percentile."99.000000" / 1e3), p99.9 \($c.percentile."99.900000" / 1e3), max \($c.max / 1e3 | . * 10 | round / 10)"' "$j"
-jq -r --arg k "$key" '.jobs[0].read.clat_ns as $c |
-	"RESULT \($k)_p50_us \($c.percentile."50.000000" / 1e3) us",
-	"RESULT \($k)_p99_us \($c.percentile."99.000000" / 1e3) us",
-	"RESULT \($k)_mean_us \($c.mean / 1e3 | . * 10 | round / 10) us",
-	"RESULT \($k)_lat_mean_us \(.jobs[0].read.lat_ns.mean / 1e3 | . * 10 | round / 10) us"' "$j"
+	"slat мкс: среднее \($r.slat_ns.mean | us)",
+	"lat  мкс: min \($l.min | us), среднее \($l.mean | us), p50 \(pct($l; "50.000000")), p90 \(pct($l; "90.000000")), p99 \(pct($l; "99.000000")), p99.9 \(pct($l; "99.900000")), max \($l.max | us)",
+	"clat мкс: min \($c.min | us), среднее \($c.mean | us), p50 \(pct($c; "50.000000")), p90 \(pct($c; "90.000000")), p99 \(pct($c; "99.000000")), p99.9 \(pct($c; "99.900000")), max \($c.max | us)"' "$j"
+jq -r --arg k "$key" '.jobs[0].read as $r |
+	"RESULT \($k)_p50_us \($r.clat_ns.percentile."50.000000" / 1e3) us",
+	"RESULT \($k)_p99_us \($r.clat_ns.percentile."99.000000" / 1e3) us",
+	"RESULT \($k)_mean_us \($r.clat_ns.mean / 1e3 | . * 10 | round / 10) us",
+	"RESULT \($k)_lat_p50_us \($r.lat_ns.percentile."50.000000" / 1e3) us",
+	"RESULT \($k)_lat_p99_us \($r.lat_ns.percentile."99.000000" / 1e3) us",
+	"RESULT \($k)_lat_mean_us \($r.lat_ns.mean / 1e3 | . * 10 | round / 10) us"' "$j"

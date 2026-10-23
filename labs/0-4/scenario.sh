@@ -35,10 +35,10 @@ docker info >/dev/null 2>&1 || fail "Docker установлен, но демо�
 # Полный прогон — длительности из урока: файл fio 4 ГБ (больше любого DRAM-кэша SSD на запись
 # раскладки и заведомо не «горячий»), 20 с на замер, 5 с на каждый метод pg_test_fsync, 50 пингов.
 if [ "$check" = 1 ]; then
-	fio_size=256m fio_secs=2 fsync_secs=1 pings=10
+	fio_size=256m fio_secs=2 fsync_secs=1 pings=10 hot_pings=200
 	out=$(mktemp -d)
 else
-	fio_size=4g fio_secs=20 fsync_secs=5 pings=50
+	fio_size=4g fio_secs=20 fsync_secs=5 pings=50 hot_pings=500
 	out=0-4/results
 	mkdir -p "$out"
 fi
@@ -85,6 +85,8 @@ header=$(
 	# Все диски, кроме loop (major 7): по ROTA видно, есть ли HDD (1 — вращающийся).
 	echo "диски (lsblk -d -o NAME,MODEL,ROTA,TRAN):"
 	lsblk -d -e 7 -o NAME,MODEL,ROTA,TRAN | sed 's/^/  /'
+	# THP: при always куча Go может попасть на страницы 2 МиБ, и промахов TLB в замере RAM станет меньше.
+	echo "transparent hugepages: $(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo нет данных)"
 	echo "дата: $(date -u +%Y-%m-%dT%H:%MZ)"
 	echo
 )
@@ -114,13 +116,33 @@ in_range() {
 check_flag=()
 [ "$check" = 1 ] && check_flag=(-check)
 
-# --- 1. память: Go, один поток, без Docker ---
+# less_than <файл> <ключ a> <ключ b> — a < b: уровни памяти идут по возрастанию задержки.
+less_than() {
+	local a b
+	a=$(result "$1" "$2")
+	b=$(result "$1" "$3")
+	awk -v a="$a" -v b="$b" 'BEGIN { exit !(a < b) }' ||
+		fail "$1: $2 = $a не меньше $3 = $b — замер попал не в тот уровень кэша (см. README)"
+	ok "$2 < $3 ($a < $b)"
+}
+
+# --- 1. память: Go, один поток на одном ядре, без Docker ---
 go build -o "$bin/mem" ./0-4/mem
-save mem-latency.txt "$("$bin/mem" -mode latency "${check_flag[@]}")"
-result mem-latency.txt l1_random_ns >/dev/null
-result mem-latency.txt l2_random_ns >/dev/null
+# taskset -c 2 закрепляет замер за одним ядром: без этого планировщик может перенести поток на
+# другое ядро с холодными L1 и L2 (а у гибридных CPU — на E-ядро). Ядро 2, а не 0: на ядро 0
+# ОС обычно направляет больше прерываний.
+pin=()
+command -v taskset >/dev/null && pin=(taskset -c 2)
+o=$("${pin[@]}" "$bin/mem" -mode latency "${check_flag[@]}") || fail "mem -mode latency упал:
+$o"
+save mem-latency.txt "$o"
+less_than mem-latency.txt l1_random_ns l2_random_ns
+less_than mem-latency.txt l2_random_ns ram_random_ns
+result mem-latency.txt l2_512k_random_ns >/dev/null
 in_range mem-latency.txt ram_random_ns 30 300 нс
-save mem-seq-1mb.txt "$("$bin/mem" -mode seq "${check_flag[@]}")"
+o=$("${pin[@]}" "$bin/mem" -mode seq "${check_flag[@]}") || fail "mem -mode seq упал:
+$o"
+save mem-seq-1mb.txt "$o"
 in_range mem-seq-1mb.txt ram_seq_1mb_us 10 500 мкс
 
 # --- 2. SSD: fio в контейнере, файл на диске хоста, O_DIRECT, один запрос в полёте ---
@@ -140,63 +162,92 @@ $o"
 fio_run ssd-randread-4k.txt ssd_rand4k randread 4k
 fio_run ssd-seqread-1m.txt ssd_seq1m read 1M
 rm -f "$LAB04_DATA/fio-test.dat"
-in_range ssd-randread-4k.txt ssd_rand4k_p50_us 5 2000 мкс
-result ssd-randread-4k.txt ssd_rand4k_p99_us >/dev/null
-result ssd-randread-4k.txt ssd_rand4k_mean_us >/dev/null
-result ssd-seqread-1m.txt ssd_seq1m_p50_us >/dev/null
-result ssd-seqread-1m.txt ssd_seq1m_p99_us >/dev/null
-result ssd-seqread-1m.txt ssd_seq1m_mean_us >/dev/null
-result ssd-randread-4k.txt ssd_rand4k_lat_mean_us >/dev/null
-result ssd-seqread-1m.txt ssd_seq1m_lat_mean_us >/dev/null
+in_range ssd-randread-4k.txt ssd_rand4k_lat_p50_us 5 2000 мкс
+for k in p50_us p99_us mean_us lat_p50_us lat_p99_us lat_mean_us; do
+	result ssd-randread-4k.txt "ssd_rand4k_$k" >/dev/null
+	result ssd-seqread-1m.txt "ssd_seq1m_$k" >/dev/null
+done
 
 # --- 3. fsync: pg_test_fsync из образа PostgreSQL 18.6 на том же каталоге ---
 o=$("${compose[@]}" run --rm -T fsync -f /data/pg_test_fsync.out -s "$fsync_secs" 2>&1) ||
 	fail "pg_test_fsync упал:
 $o"
-# Берём строку fdatasync из раздела «one 8kB write»: fdatasync — wal_sync_method по умолчанию
-# в PostgreSQL на Linux, а одна запись 8 КБ — одна страница WAL при COMMIT. Время — из ops/sec:
-# в usecs/op pg_test_fsync округляет до целых микросекунд.
-ops=$(printf '%s\n' "$o" | awk '/using one 8kB write/ { s = 1 } s && $1 == "fdatasync" { print $2; exit }')
-[ -n "$ops" ] || fail "в выводе pg_test_fsync нет строки fdatasync:
+# Строки раздела «one 8kB write». fsync_ms — fdatasync: это wal_sync_method по умолчанию в
+# PostgreSQL на Linux, а одна запись 8 КБ — одна страница WAL при COMMIT. fsync_full_ms — fsync
+# той же записи: он сбрасывает ещё и метаданные файла (время изменения), а на ext4 это коммит
+# журнала ФС. Время — из ops/sec: в usecs/op pg_test_fsync округляет до целых микросекунд.
+ops_of() {
+	printf '%s\n' "$o" | awk -v m="$1" '/using one 8kB write/ { s = 1 } /using two 8kB writes/ { s = 0 } s && $1 == m { print $2; exit }'
+}
+ops=$(ops_of fdatasync)
+ops_full=$(ops_of fsync)
+if [ -z "$ops" ] || [ -z "$ops_full" ]; then
+	fail "в выводе pg_test_fsync нет строк fdatasync и fsync:
 $o"
+fi
 save fsync.txt "$o
 
-строка замера: раздел «Compare file sync methods using one 8kB write», метод fdatasync (wal_sync_method по умолчанию на Linux)
-RESULT fsync_ms $(awk -v o="$ops" 'BEGIN { printf "%.3f", 1000 / o }') ms"
+строки замера: раздел «Compare file sync methods using one 8kB write»; fsync_ms — метод fdatasync
+(wal_sync_method по умолчанию на Linux), fsync_full_ms — метод fsync
+RESULT fsync_ms $(awk -v o="$ops" 'BEGIN { printf "%.3f", 1000 / o }') ms
+RESULT fsync_full_ms $(awk -v o="$ops_full" 'BEGIN { printf "%.3f", 1000 / o }') ms"
 in_range fsync.txt fsync_ms 0.01 50 мс
+result fsync.txt fsync_full_ms >/dev/null
 
 # --- 4. сеть: ping между двумя контейнерами одной bridge-сети и по localhost ---
-# Пауза 0,2 с вместо секунды по умолчанию — быстрее и всё ещё не флуд. Между пакетами процессор
-# успевает уснуть, и в RTT входит его пробуждение (см. README). Средний RTT — из итоговой строки
-# «round-trip min/avg/max = a/b/c ms» busybox ping, в микросекундах.
-rtt_us() {
-	printf '%s\n' "$1" | sed -nE 's|^round-trip min/avg/max = [0-9.]+/([0-9.]+)/.*|\1|p' |
-		awk '{ printf "%.1f", $1 * 1000 }'
+# Два режима. Плотный (основные ключи): пауза 2 мс — процессор не успевает глубоко уснуть, это ближе
+# к цене самого сетевого стека. Редкий (*_idle_us): пауза 0,2 с — между пакетами ядро уходит в
+# глубокий C-state, и в RTT входит пробуждение; так выглядит RTT редкого запроса. Плотный режим —
+# с паузой меньше 0,2 с, busybox ping разрешает его только root: в контейнере pinger он root.
+# Число — медиана времени по строкам «time=… ms» каждого пакета, а не среднее итоговой строки:
+# единичные выбросы на сотни микросекунд (прерывание, вытеснение) сдвигают среднее, а не медиану.
+median_us() {
+	printf '%s\n' "$1" | sed -nE 's/^.* time=([0-9.]+) ms$/\1/p' | sort -g |
+		awk '{ v[NR] = $1 } END { if (NR) printf "%.1f", v[int((NR + 1) / 2)] * 1000 }'
 }
-# ping_run <адрес> — вывод ping из контейнера pinger; печатает его и проверяет итоговую строку.
+# ping_run <адрес> <пакетов> <пауза> — вывод ping из контейнера pinger; проверяет, что ответы были.
 ping_run() {
 	local o
-	o=$("${compose[@]}" run --rm -T pinger ping -c "$pings" -i 0.2 "$1" 2>&1) || fail "ping $1:
+	o=$("${compose[@]}" run --rm -T pinger ping -c "$2" -i "$3" "$1" 2>&1) || fail "ping $1:
 $o"
-	[ -n "$(rtt_us "$o")" ] || fail "ping $1: нет итоговой строки round-trip:
+	[ -n "$(median_us "$o")" ] || fail "ping $1: нет ни одной строки time=:
 $o"
 	printf '%s\n' "$o"
 }
-c=$(ping_run peer)
-l=$(ping_run 127.0.0.1)
-save net-rtt.txt "Это не ЦОД — нижняя граница сетевого стека одной машины: пакет не выходит в провод,
-а проходит veth → мост docker → veth внутри одного ядра.
+ch=$(ping_run peer "$hot_pings" 0.002)
+lh=$(ping_run 127.0.0.1 "$hot_pings" 0.002)
+ci=$(ping_run peer "$pings" 0.2)
+li=$(ping_run 127.0.0.1 "$pings" 0.2)
+save net-rtt.txt "Плотный режим (пауза 2 мс) — нижняя граница сетевого стека одной машины, это не ЦОД:
+пакет не выходит в провод, а проходит veth → мост docker → veth внутри одного ядра.
+Число — медиана по пакетам; ниже — итоговые строки ping (все $hot_pings строк пакетов не печатаем).
 
-\$ ping -c $pings -i 0.2 peer        # из контейнера pinger в контейнер peer, одна bridge-сеть
-$c
+\$ ping -c $hot_pings -i 0.002 peer        # из контейнера pinger в контейнер peer, одна bridge-сеть
+$(printf '%s\n' "$ch" | tail -n 3)
+медиана: $(median_us "$ch") мкс
 
-\$ ping -c $pings -i 0.2 127.0.0.1   # loopback внутри контейнера pinger
-$l
+\$ ping -c $hot_pings -i 0.002 127.0.0.1   # loopback внутри контейнера pinger
+$(printf '%s\n' "$lh" | tail -n 3)
+медиана: $(median_us "$lh") мкс
 
-RESULT rtt_container_us $(rtt_us "$c") us
-RESULT rtt_localhost_us $(rtt_us "$l") us"
+Редкий режим (пауза 0,2 с): между пакетами процессор засыпает, в RTT входит его пробуждение.
+
+\$ ping -c $pings -i 0.2 peer
+$ci
+медиана: $(median_us "$ci") мкс
+
+\$ ping -c $pings -i 0.2 127.0.0.1
+$li
+медиана: $(median_us "$li") мкс
+
+RESULT rtt_container_us $(median_us "$ch") us
+RESULT rtt_localhost_us $(median_us "$lh") us
+RESULT rtt_container_idle_us $(median_us "$ci") us
+RESULT rtt_localhost_idle_us $(median_us "$li") us"
 in_range net-rtt.txt rtt_container_us 5 500 мкс
 in_range net-rtt.txt rtt_localhost_us 1 500 мкс
+result net-rtt.txt rtt_container_idle_us >/dev/null
+result net-rtt.txt rtt_localhost_idle_us >/dev/null
 
 [ "$check" = 1 ] || ok "результаты записаны в $out/"
 echo "Лаба 0.4: все проверки прошли."

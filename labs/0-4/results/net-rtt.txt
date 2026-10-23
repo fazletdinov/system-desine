@@ -5,123 +5,143 @@ docker: 29.9.2
 диски (lsblk -d -o NAME,MODEL,ROTA,TRAN):
   NAME    MODEL                   ROTA TRAN
   nvme0n1 Samsung SSD 990 PRO 1TB    0 nvme
-дата: 2026-10-23T06:36Z
-Это не ЦОД — нижняя граница сетевого стека одной машины: пакет не выходит в провод,
-а проходит veth → мост docker → veth внутри одного ядра.
+transparent hugepages: always [madvise] never
+дата: 2026-10-23T06:54Z
+Плотный режим (пауза 2 мс) — нижняя граница сетевого стека одной машины, это не ЦОД:
+пакет не выходит в провод, а проходит veth → мост docker → veth внутри одного ядра.
+Число — медиана по пакетам; ниже — итоговые строки ping (все 500 строк пакетов не печатаем).
 
-$ ping -c 50 -i 0.2 peer        # из контейнера pinger в контейнер peer, одна bridge-сеть
+$ ping -c 500 -i 0.002 peer        # из контейнера pinger в контейнер peer, одна bridge-сеть
+--- peer ping statistics ---
+500 packets transmitted, 500 packets received, 0% packet loss
+round-trip min/avg/max = 0.005/0.032/0.152 ms
+медиана: 28.0 мкс
+
+$ ping -c 500 -i 0.002 127.0.0.1   # loopback внутри контейнера pinger
+--- 127.0.0.1 ping statistics ---
+500 packets transmitted, 500 packets received, 0% packet loss
+round-trip min/avg/max = 0.005/0.025/0.121 ms
+медиана: 24.0 мкс
+
+Редкий режим (пауза 0,2 с): между пакетами процессор засыпает, в RTT входит его пробуждение.
+
+$ ping -c 50 -i 0.2 peer
 PING peer (172.21.0.2): 56 data bytes
-64 bytes from 172.21.0.2: seq=0 ttl=64 time=0.203 ms
-64 bytes from 172.21.0.2: seq=1 ttl=64 time=0.101 ms
-64 bytes from 172.21.0.2: seq=2 ttl=64 time=0.088 ms
-64 bytes from 172.21.0.2: seq=3 ttl=64 time=0.043 ms
-64 bytes from 172.21.0.2: seq=4 ttl=64 time=0.057 ms
-64 bytes from 172.21.0.2: seq=5 ttl=64 time=0.057 ms
-64 bytes from 172.21.0.2: seq=6 ttl=64 time=0.057 ms
-64 bytes from 172.21.0.2: seq=7 ttl=64 time=0.097 ms
-64 bytes from 172.21.0.2: seq=8 ttl=64 time=0.077 ms
-64 bytes from 172.21.0.2: seq=9 ttl=64 time=0.092 ms
-64 bytes from 172.21.0.2: seq=10 ttl=64 time=0.042 ms
-64 bytes from 172.21.0.2: seq=11 ttl=64 time=0.148 ms
-64 bytes from 172.21.0.2: seq=12 ttl=64 time=0.067 ms
-64 bytes from 172.21.0.2: seq=13 ttl=64 time=0.051 ms
-64 bytes from 172.21.0.2: seq=14 ttl=64 time=0.064 ms
-64 bytes from 172.21.0.2: seq=15 ttl=64 time=0.076 ms
-64 bytes from 172.21.0.2: seq=16 ttl=64 time=0.104 ms
-64 bytes from 172.21.0.2: seq=17 ttl=64 time=0.216 ms
-64 bytes from 172.21.0.2: seq=18 ttl=64 time=0.074 ms
-64 bytes from 172.21.0.2: seq=19 ttl=64 time=0.060 ms
-64 bytes from 172.21.0.2: seq=20 ttl=64 time=0.064 ms
-64 bytes from 172.21.0.2: seq=21 ttl=64 time=0.074 ms
-64 bytes from 172.21.0.2: seq=22 ttl=64 time=0.147 ms
-64 bytes from 172.21.0.2: seq=23 ttl=64 time=0.066 ms
-64 bytes from 172.21.0.2: seq=24 ttl=64 time=0.135 ms
-64 bytes from 172.21.0.2: seq=25 ttl=64 time=0.134 ms
-64 bytes from 172.21.0.2: seq=26 ttl=64 time=0.121 ms
-64 bytes from 172.21.0.2: seq=27 ttl=64 time=0.057 ms
-64 bytes from 172.21.0.2: seq=28 ttl=64 time=0.037 ms
-64 bytes from 172.21.0.2: seq=29 ttl=64 time=0.049 ms
-64 bytes from 172.21.0.2: seq=30 ttl=64 time=0.062 ms
-64 bytes from 172.21.0.2: seq=31 ttl=64 time=0.041 ms
-64 bytes from 172.21.0.2: seq=32 ttl=64 time=0.045 ms
-64 bytes from 172.21.0.2: seq=33 ttl=64 time=0.103 ms
-64 bytes from 172.21.0.2: seq=34 ttl=64 time=0.090 ms
-64 bytes from 172.21.0.2: seq=35 ttl=64 time=0.057 ms
-64 bytes from 172.21.0.2: seq=36 ttl=64 time=0.044 ms
-64 bytes from 172.21.0.2: seq=37 ttl=64 time=0.108 ms
-64 bytes from 172.21.0.2: seq=38 ttl=64 time=0.072 ms
-64 bytes from 172.21.0.2: seq=39 ttl=64 time=0.055 ms
-64 bytes from 172.21.0.2: seq=40 ttl=64 time=0.186 ms
-64 bytes from 172.21.0.2: seq=41 ttl=64 time=0.050 ms
-64 bytes from 172.21.0.2: seq=42 ttl=64 time=0.063 ms
-64 bytes from 172.21.0.2: seq=43 ttl=64 time=0.044 ms
-64 bytes from 172.21.0.2: seq=44 ttl=64 time=0.105 ms
-64 bytes from 172.21.0.2: seq=45 ttl=64 time=0.116 ms
-64 bytes from 172.21.0.2: seq=46 ttl=64 time=0.063 ms
-64 bytes from 172.21.0.2: seq=47 ttl=64 time=0.113 ms
-64 bytes from 172.21.0.2: seq=48 ttl=64 time=0.086 ms
-64 bytes from 172.21.0.2: seq=49 ttl=64 time=0.133 ms
+64 bytes from 172.21.0.2: seq=0 ttl=64 time=0.115 ms
+64 bytes from 172.21.0.2: seq=1 ttl=64 time=0.121 ms
+64 bytes from 172.21.0.2: seq=2 ttl=64 time=0.047 ms
+64 bytes from 172.21.0.2: seq=3 ttl=64 time=0.055 ms
+64 bytes from 172.21.0.2: seq=4 ttl=64 time=0.043 ms
+64 bytes from 172.21.0.2: seq=5 ttl=64 time=0.042 ms
+64 bytes from 172.21.0.2: seq=6 ttl=64 time=0.131 ms
+64 bytes from 172.21.0.2: seq=7 ttl=64 time=0.135 ms
+64 bytes from 172.21.0.2: seq=8 ttl=64 time=0.157 ms
+64 bytes from 172.21.0.2: seq=9 ttl=64 time=0.131 ms
+64 bytes from 172.21.0.2: seq=10 ttl=64 time=0.125 ms
+64 bytes from 172.21.0.2: seq=11 ttl=64 time=0.129 ms
+64 bytes from 172.21.0.2: seq=12 ttl=64 time=0.056 ms
+64 bytes from 172.21.0.2: seq=13 ttl=64 time=0.046 ms
+64 bytes from 172.21.0.2: seq=14 ttl=64 time=0.040 ms
+64 bytes from 172.21.0.2: seq=15 ttl=64 time=0.130 ms
+64 bytes from 172.21.0.2: seq=16 ttl=64 time=0.089 ms
+64 bytes from 172.21.0.2: seq=17 ttl=64 time=0.158 ms
+64 bytes from 172.21.0.2: seq=18 ttl=64 time=0.132 ms
+64 bytes from 172.21.0.2: seq=19 ttl=64 time=0.120 ms
+64 bytes from 172.21.0.2: seq=20 ttl=64 time=0.125 ms
+64 bytes from 172.21.0.2: seq=21 ttl=64 time=0.128 ms
+64 bytes from 172.21.0.2: seq=22 ttl=64 time=0.135 ms
+64 bytes from 172.21.0.2: seq=23 ttl=64 time=0.125 ms
+64 bytes from 172.21.0.2: seq=24 ttl=64 time=0.164 ms
+64 bytes from 172.21.0.2: seq=25 ttl=64 time=0.128 ms
+64 bytes from 172.21.0.2: seq=26 ttl=64 time=0.134 ms
+64 bytes from 172.21.0.2: seq=27 ttl=64 time=0.125 ms
+64 bytes from 172.21.0.2: seq=28 ttl=64 time=0.041 ms
+64 bytes from 172.21.0.2: seq=29 ttl=64 time=0.037 ms
+64 bytes from 172.21.0.2: seq=30 ttl=64 time=0.128 ms
+64 bytes from 172.21.0.2: seq=31 ttl=64 time=0.036 ms
+64 bytes from 172.21.0.2: seq=32 ttl=64 time=0.046 ms
+64 bytes from 172.21.0.2: seq=33 ttl=64 time=0.140 ms
+64 bytes from 172.21.0.2: seq=34 ttl=64 time=0.048 ms
+64 bytes from 172.21.0.2: seq=35 ttl=64 time=0.134 ms
+64 bytes from 172.21.0.2: seq=36 ttl=64 time=0.128 ms
+64 bytes from 172.21.0.2: seq=37 ttl=64 time=0.130 ms
+64 bytes from 172.21.0.2: seq=38 ttl=64 time=0.045 ms
+64 bytes from 172.21.0.2: seq=39 ttl=64 time=0.126 ms
+64 bytes from 172.21.0.2: seq=40 ttl=64 time=0.114 ms
+64 bytes from 172.21.0.2: seq=41 ttl=64 time=0.131 ms
+64 bytes from 172.21.0.2: seq=42 ttl=64 time=0.125 ms
+64 bytes from 172.21.0.2: seq=43 ttl=64 time=0.129 ms
+64 bytes from 172.21.0.2: seq=44 ttl=64 time=0.126 ms
+64 bytes from 172.21.0.2: seq=45 ttl=64 time=0.126 ms
+64 bytes from 172.21.0.2: seq=46 ttl=64 time=0.057 ms
+64 bytes from 172.21.0.2: seq=47 ttl=64 time=0.109 ms
+64 bytes from 172.21.0.2: seq=48 ttl=64 time=0.135 ms
+64 bytes from 172.21.0.2: seq=49 ttl=64 time=0.040 ms
 
 --- peer ping statistics ---
 50 packets transmitted, 50 packets received, 0% packet loss
-round-trip min/avg/max = 0.037/0.085/0.216 ms
+round-trip min/avg/max = 0.036/0.103/0.164 ms
+медиана: 125.0 мкс
 
-$ ping -c 50 -i 0.2 127.0.0.1   # loopback внутри контейнера pinger
+$ ping -c 50 -i 0.2 127.0.0.1
 PING 127.0.0.1 (127.0.0.1): 56 data bytes
-64 bytes from 127.0.0.1: seq=0 ttl=64 time=0.046 ms
-64 bytes from 127.0.0.1: seq=1 ttl=64 time=0.034 ms
-64 bytes from 127.0.0.1: seq=2 ttl=64 time=0.037 ms
-64 bytes from 127.0.0.1: seq=3 ttl=64 time=0.027 ms
-64 bytes from 127.0.0.1: seq=4 ttl=64 time=0.036 ms
-64 bytes from 127.0.0.1: seq=5 ttl=64 time=0.033 ms
-64 bytes from 127.0.0.1: seq=6 ttl=64 time=0.041 ms
-64 bytes from 127.0.0.1: seq=7 ttl=64 time=0.038 ms
-64 bytes from 127.0.0.1: seq=8 ttl=64 time=0.035 ms
-64 bytes from 127.0.0.1: seq=9 ttl=64 time=0.027 ms
-64 bytes from 127.0.0.1: seq=10 ttl=64 time=0.044 ms
-64 bytes from 127.0.0.1: seq=11 ttl=64 time=0.037 ms
-64 bytes from 127.0.0.1: seq=12 ttl=64 time=0.035 ms
-64 bytes from 127.0.0.1: seq=13 ttl=64 time=0.029 ms
-64 bytes from 127.0.0.1: seq=14 ttl=64 time=0.045 ms
-64 bytes from 127.0.0.1: seq=15 ttl=64 time=0.038 ms
-64 bytes from 127.0.0.1: seq=16 ttl=64 time=0.048 ms
-64 bytes from 127.0.0.1: seq=17 ttl=64 time=0.031 ms
-64 bytes from 127.0.0.1: seq=18 ttl=64 time=0.069 ms
-64 bytes from 127.0.0.1: seq=19 ttl=64 time=0.029 ms
-64 bytes from 127.0.0.1: seq=20 ttl=64 time=0.058 ms
-64 bytes from 127.0.0.1: seq=21 ttl=64 time=0.055 ms
-64 bytes from 127.0.0.1: seq=22 ttl=64 time=0.075 ms
-64 bytes from 127.0.0.1: seq=23 ttl=64 time=0.039 ms
-64 bytes from 127.0.0.1: seq=24 ttl=64 time=0.105 ms
-64 bytes from 127.0.0.1: seq=25 ttl=64 time=0.060 ms
-64 bytes from 127.0.0.1: seq=26 ttl=64 time=0.058 ms
-64 bytes from 127.0.0.1: seq=27 ttl=64 time=0.063 ms
-64 bytes from 127.0.0.1: seq=28 ttl=64 time=0.076 ms
-64 bytes from 127.0.0.1: seq=29 ttl=64 time=0.045 ms
-64 bytes from 127.0.0.1: seq=30 ttl=64 time=0.078 ms
-64 bytes from 127.0.0.1: seq=31 ttl=64 time=0.045 ms
-64 bytes from 127.0.0.1: seq=32 ttl=64 time=0.057 ms
-64 bytes from 127.0.0.1: seq=33 ttl=64 time=0.065 ms
-64 bytes from 127.0.0.1: seq=34 ttl=64 time=0.048 ms
-64 bytes from 127.0.0.1: seq=35 ttl=64 time=0.073 ms
-64 bytes from 127.0.0.1: seq=36 ttl=64 time=0.040 ms
-64 bytes from 127.0.0.1: seq=37 ttl=64 time=0.045 ms
-64 bytes from 127.0.0.1: seq=38 ttl=64 time=0.070 ms
-64 bytes from 127.0.0.1: seq=39 ttl=64 time=0.077 ms
-64 bytes from 127.0.0.1: seq=40 ttl=64 time=0.039 ms
-64 bytes from 127.0.0.1: seq=41 ttl=64 time=0.056 ms
-64 bytes from 127.0.0.1: seq=42 ttl=64 time=0.064 ms
-64 bytes from 127.0.0.1: seq=43 ttl=64 time=0.082 ms
-64 bytes from 127.0.0.1: seq=44 ttl=64 time=0.045 ms
-64 bytes from 127.0.0.1: seq=45 ttl=64 time=0.047 ms
+64 bytes from 127.0.0.1: seq=0 ttl=64 time=0.065 ms
+64 bytes from 127.0.0.1: seq=1 ttl=64 time=0.053 ms
+64 bytes from 127.0.0.1: seq=2 ttl=64 time=0.044 ms
+64 bytes from 127.0.0.1: seq=3 ttl=64 time=0.054 ms
+64 bytes from 127.0.0.1: seq=4 ttl=64 time=0.046 ms
+64 bytes from 127.0.0.1: seq=5 ttl=64 time=0.041 ms
+64 bytes from 127.0.0.1: seq=6 ttl=64 time=0.113 ms
+64 bytes from 127.0.0.1: seq=7 ttl=64 time=0.104 ms
+64 bytes from 127.0.0.1: seq=8 ttl=64 time=0.038 ms
+64 bytes from 127.0.0.1: seq=9 ttl=64 time=0.100 ms
+64 bytes from 127.0.0.1: seq=10 ttl=64 time=0.101 ms
+64 bytes from 127.0.0.1: seq=11 ttl=64 time=0.041 ms
+64 bytes from 127.0.0.1: seq=12 ttl=64 time=0.037 ms
+64 bytes from 127.0.0.1: seq=13 ttl=64 time=0.043 ms
+64 bytes from 127.0.0.1: seq=14 ttl=64 time=0.100 ms
+64 bytes from 127.0.0.1: seq=15 ttl=64 time=0.097 ms
+64 bytes from 127.0.0.1: seq=16 ttl=64 time=0.096 ms
+64 bytes from 127.0.0.1: seq=17 ttl=64 time=0.105 ms
+64 bytes from 127.0.0.1: seq=18 ttl=64 time=0.105 ms
+64 bytes from 127.0.0.1: seq=19 ttl=64 time=0.092 ms
+64 bytes from 127.0.0.1: seq=20 ttl=64 time=0.094 ms
+64 bytes from 127.0.0.1: seq=21 ttl=64 time=0.122 ms
+64 bytes from 127.0.0.1: seq=22 ttl=64 time=0.123 ms
+64 bytes from 127.0.0.1: seq=23 ttl=64 time=0.098 ms
+64 bytes from 127.0.0.1: seq=24 ttl=64 time=0.064 ms
+64 bytes from 127.0.0.1: seq=25 ttl=64 time=0.103 ms
+64 bytes from 127.0.0.1: seq=26 ttl=64 time=0.101 ms
+64 bytes from 127.0.0.1: seq=27 ttl=64 time=0.121 ms
+64 bytes from 127.0.0.1: seq=28 ttl=64 time=0.103 ms
+64 bytes from 127.0.0.1: seq=29 ttl=64 time=0.125 ms
+64 bytes from 127.0.0.1: seq=30 ttl=64 time=0.116 ms
+64 bytes from 127.0.0.1: seq=31 ttl=64 time=0.107 ms
+64 bytes from 127.0.0.1: seq=32 ttl=64 time=0.118 ms
+64 bytes from 127.0.0.1: seq=33 ttl=64 time=0.124 ms
+64 bytes from 127.0.0.1: seq=34 ttl=64 time=0.109 ms
+64 bytes from 127.0.0.1: seq=35 ttl=64 time=0.113 ms
+64 bytes from 127.0.0.1: seq=36 ttl=64 time=0.099 ms
+64 bytes from 127.0.0.1: seq=37 ttl=64 time=0.124 ms
+64 bytes from 127.0.0.1: seq=38 ttl=64 time=0.108 ms
+64 bytes from 127.0.0.1: seq=39 ttl=64 time=0.110 ms
+64 bytes from 127.0.0.1: seq=40 ttl=64 time=0.101 ms
+64 bytes from 127.0.0.1: seq=41 ttl=64 time=0.104 ms
+64 bytes from 127.0.0.1: seq=42 ttl=64 time=0.083 ms
+64 bytes from 127.0.0.1: seq=43 ttl=64 time=0.099 ms
+64 bytes from 127.0.0.1: seq=44 ttl=64 time=0.138 ms
+64 bytes from 127.0.0.1: seq=45 ttl=64 time=0.106 ms
 64 bytes from 127.0.0.1: seq=46 ttl=64 time=0.080 ms
-64 bytes from 127.0.0.1: seq=47 ttl=64 time=0.057 ms
-64 bytes from 127.0.0.1: seq=48 ttl=64 time=0.041 ms
-64 bytes from 127.0.0.1: seq=49 ttl=64 time=0.082 ms
+64 bytes from 127.0.0.1: seq=47 ttl=64 time=0.039 ms
+64 bytes from 127.0.0.1: seq=48 ttl=64 time=0.114 ms
+64 bytes from 127.0.0.1: seq=49 ttl=64 time=0.142 ms
 
 --- 127.0.0.1 ping statistics ---
 50 packets transmitted, 50 packets received, 0% packet loss
-round-trip min/avg/max = 0.027/0.051/0.105 ms
+round-trip min/avg/max = 0.037/0.093/0.142 ms
+медиана: 101.0 мкс
 
-RESULT rtt_container_us 85.0 us
-RESULT rtt_localhost_us 51.0 us
+RESULT rtt_container_us 28.0 us
+RESULT rtt_localhost_us 24.0 us
+RESULT rtt_container_idle_us 125.0 us
+RESULT rtt_localhost_idle_us 101.0 us
