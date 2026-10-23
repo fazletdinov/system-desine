@@ -15,6 +15,7 @@ import {
   LATENCY_QUIZ,
   LATENCY_SOURCE,
   MODE_LABEL,
+  RANGE_LINKS,
   barWidth,
   baselineOf,
   compare,
@@ -42,10 +43,12 @@ const KIND_COLOR: Record<LatencyKind, string> = {
   network: 'var(--viz-network)',
 }
 
-// Вторая строка под полосой: реальный диапазон и замер автора; без замера — откуда число модели.
+// Вторая строка под полосой: откуда главное число, число модели (если главное — замер) и диапазон.
+// «реально» — только у диапазона с документом; без него — «оценка».
 const realLine = (l: LatencyItem): string => {
-  const parts = l.range ? [`реально ${latencyRange(l.range, mode.value)}`] : []
-  parts.push(l.author ? `у автора ${latencyValue(l.author.ns, mode.value)}` : l.typical.source)
+  const parts = [l.typical.source]
+  if (l.author) parts.push(`модель Scott ${latencyValue(l.model.ns, mode.value)}`)
+  if (l.range) parts.push(`${l.range.estimate ? 'оценка' : 'реально'} ${latencyRange(l.range, mode.value)}`)
   return parts.join(' · ')
 }
 
@@ -104,9 +107,15 @@ const onKey = (e: KeyboardEvent): void => {
           </li>
         </ol>
         <p class="note">
-          <CaptionText :caption="LATENCY_NOTE" /> Крупные числа — модель:
-          <a :href="LATENCY_SOURCE.url" target="_blank" rel="noopener">{{ LATENCY_SOURCE.title }}</a>. «У автора» — лаба 0.4 (labs/0-4/results/).
+          <CaptionText :caption="LATENCY_NOTE" /> «У автора» — лаба 0.4 (labs/0-4/results/). Модель:
+          <a :href="LATENCY_SOURCE.url" target="_blank" rel="noopener">{{ LATENCY_SOURCE.title }}</a>.
         </p>
+        <details class="sources">
+          <summary>Источники диапазонов</summary>
+          <ul>
+            <li v-for="k in RANGE_LINKS" :key="k.url"><a :href="k.url" target="_blank" rel="noopener">{{ k.title }}</a></li>
+          </ul>
+        </details>
       </ExplainAside>
       <StepQuiz :quiz="LATENCY_QUIZ" />
     </section>
@@ -125,11 +134,12 @@ const onKey = (e: KeyboardEvent): void => {
 /* Рамка той же толщины у всех строк: точка отсчёта и выбранная строка меняют только цвет, без сдвига раскладки. */
 .row { padding: 6px 8px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; }
 .row:hover { border-color: var(--vp-c-divider); }
-.row:focus-visible { outline: 2px solid var(--viz-active); outline-offset: 2px; }
-/* Точка отсчёта — рамкой, а не заливкой: на заливке --viz-muted в светлой теме даёт 4,33:1 (инвентаризация, M7). */
-.row.base { border-color: var(--viz-active); }
+.row:focus-visible { outline: 2px solid var(--viz-text); outline-offset: 2px; }
+/* Точка отсчёта — рамкой, а не заливкой: на заливке --viz-muted в светлой теме даёт 4,33:1 (инвентаризация, M7).
+   Цвет рамки — --viz-active-border: у --viz-active на светлом фоне ~2:1, а рамке нужно ≥ 3:1. */
+.row.base { border-color: var(--viz-active-border); }
 .row.picked { border-style: dashed; border-color: var(--viz-text); }
-.row.base.picked { border-style: solid; border-color: var(--viz-active); box-shadow: inset 0 0 0 1px var(--viz-text); }
+.row.base.picked { border-style: solid; border-color: var(--viz-active-border); box-shadow: inset 0 0 0 1px var(--viz-text); }
 .row-head { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
 .value { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .track { height: 10px; margin: 6px 0 4px; border-radius: 5px; background: var(--vp-c-divider); }
@@ -138,6 +148,11 @@ const onKey = (e: KeyboardEvent): void => {
 .messenger { display: block; }
 .note { margin: 8px 0 0; color: var(--viz-muted); font-size: 13px; }
 /* Ссылка — цветом основного текста с подчёркиванием: синий текст на тёмно-синем фоне плохо читается (§4.4). */
-.note a { color: var(--viz-text); text-decoration: underline; }
+.note a, .sources a { color: var(--viz-text); text-decoration: underline; }
+.sources { margin: 6px 0 0; color: var(--viz-muted); font-size: 13px; }
+.sources summary { cursor: pointer; }
+.sources summary:focus-visible { outline: 2px solid var(--viz-text); outline-offset: 2px; }
+.sources ul { margin: 6px 0 0; padding-left: 18px; }
+.sources li { overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
 </style>

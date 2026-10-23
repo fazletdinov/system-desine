@@ -50,12 +50,17 @@ describe.each(themes)('палитра текста схем, тема $name', ({
   })
 })
 
-// Шкала задержек: точка отсчёта выделена рамкой --viz-active, фон строки остаётся фоном песочницы (bg-soft).
+// Шкала задержек: точка отсчёта выделена рамкой --viz-active-border, фон строки остаётся фоном песочницы (bg-soft).
 // Поэтому текст в ней — те же --viz-text и --viz-muted на bg-soft; заливка --viz-active-line-bg давала 4,33:1.
 describe.each(themes)('шкала задержек, тема $name', ({ selector, softBg }) => {
   const all = tokens(selector)
 
   it.each(['--viz-text', '--viz-muted'])('%s в строке точки отсчёта и под полосами (фон bg-soft) ≥ 4,5:1', (name) => {
     expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  // WCAG 1.4.11: рамка и кольцо фокуса — неконтрастный элемент, порог 3:1.
+  it.each(['--viz-active-border', '--viz-text'])('%s — рамка точки отсчёта и кольцо фокуса на bg-soft ≥ 3:1', (name) => {
+    expect(contrastRatio(all[name]!, softBg)).toBeGreaterThanOrEqual(3)
   })
 })

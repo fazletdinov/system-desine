@@ -34,7 +34,7 @@ describe('explainLatency', () => {
   it('«Здесь» для RAM при точке отсчёта L1 — отношение из compare()', () => {
     const e = explainLatency('row:ram', { mode: 'real', baselineId: 'l1' })!
     expect(captionText(e.here!)).toContain(compare(byId('ram'), byId('l1')))
-    expect(captionText(e.here!)).toContain('в 100 раз медленнее')
+    expect(captionText(e.here!)).toContain('в 65 раз медленнее')
   })
 
   it('«Здесь» показывает значение в выбранном масштабе', () => {
@@ -46,6 +46,15 @@ describe('explainLatency', () => {
     for (const l of LATENCIES) {
       const s = explainLatency(`row:${l.id}`, { mode: 'real', baselineId: 'ram' })!.sections.find((x) => x.heading === 'В мессенджере')!
       expect(captionText(s.body).toLowerCase()).toContain(l.messenger.toLowerCase())
+    }
+  })
+
+  it('«В настоящей системе» называет число модели как экстраполяцию; оценки — словом «Оценка»', () => {
+    for (const l of LATENCIES) {
+      const real = captionText(explainLatency(`row:${l.id}`, { mode: 'real', baselineId: 'ram' })!.real!)
+      expect(real, l.id).toMatch(/^Модель Scott: /)
+      expect(real, l.id).toContain(l.range!.estimate ? 'Оценка: ' : 'Реально: ')
+      if (l.range!.links) expect(real, l.id).toContain('ссылки — под шкалой')
     }
   })
 
@@ -68,7 +77,7 @@ describe('explainLatency', () => {
   })
 
   it('неизвестная точка отсчёта не роняет объяснение: берётся первая строка', () => {
-    expect(captionText(explainLatency('row:ram', { mode: 'real', baselineId: 'zz' })!.here!)).toContain('в 100 раз медленнее')
+    expect(captionText(explainLatency('row:ram', { mode: 'real', baselineId: 'zz' })!.here!)).toContain('в 65 раз медленнее')
   })
 })
 

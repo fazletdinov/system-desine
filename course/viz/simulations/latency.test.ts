@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { loadGlossaryFile } from '../../glossary/load'
 import { captionTermIds, captionText } from '../core/caption'
-import { LATENCIES, LATENCY_CONTEXT, LATENCY_NOTE, LATENCY_QUIZ, MIN_BAR, barWidth, compare, humanSeconds } from './latency'
+import { LATENCIES, LATENCY_CONTEXT, LATENCY_NOTE, LATENCY_QUIZ, MIN_BAR, RANGE_LINKS, barWidth, compare, humanSeconds } from './latency'
 import { LAB_04, type LabValue } from './latency-lab'
 
 const byId = (id: string) => LATENCIES.find((l) => l.id === id)!
@@ -30,6 +30,26 @@ describe('LATENCIES', () => {
 
   it('порядок строк прежний', () => {
     expect(LATENCIES.map((l) => l.id)).toEqual(['l1', 'l2', 'ram', 'ram-1mb', 'ssd-random', 'ssd-1mb', 'dc-rtt', 'hdd-1mb', 'hdd-seek', 'intercontinental'])
+  })
+
+  it('главное число — замер автора, где он есть; число модели Scott — отдельно и прежнее', () => {
+    expect(LATENCIES.map((l) => l.model.ns)).toEqual([1, 4, 100, 3_000, 16_000, 49_000, 500_000, 825_000, 2_000_000, 150_000_000])
+    for (const l of LATENCIES) {
+      if (l.author) expect(l.typical, l.id).toEqual({ ns: l.author.ns, source: 'у автора, лаба 0.4' })
+      else expect(l.typical, l.id).toEqual(l.model)
+      expect(l.model.source, l.id).toMatch(/^модель Scott/)
+    }
+  })
+
+  it('диапазон без ссылки на документ подписан как оценка; ссылки — https и без повторов в RANGE_LINKS', () => {
+    for (const l of LATENCIES) {
+      const r = l.range!
+      if (!r.estimate) expect(r.links?.length ?? 0, l.id).toBeGreaterThan(0)
+      if (r.estimate) expect(r.source, l.id).toMatch(/оценка|расчёт/)
+      for (const k of r.links ?? []) expect(k.url).toMatch(/^https:\/\//)
+    }
+    expect(new Set(RANGE_LINKS.map((k) => k.url)).size).toBe(RANGE_LINKS.length)
+    expect(RANGE_LINKS.length).toBe(6)
   })
 
   it('у каждой строки — источник типичного значения, реальный диапазон и место в мессенджере', () => {
@@ -98,16 +118,19 @@ describe('humanSeconds', () => {
 
 describe('compare', () => {
   it.each([
-    ['ssd-random', 'ram', 'в 160 раз медленнее'],
-    ['l1', 'ram', 'в 100 раз быстрее'],
+    // Замеры автора: SSD в ~640 раз медленнее RAM, а не в 160 (модель).
+    ['ssd-random', 'ram', 'в 636 раз медленнее'],
+    ['l1', 'ram', 'в 65 раз быстрее'],
     ['ram', 'ram', 'это и есть точка отсчёта'],
+    // Обе сетевые строки — модель: отношение прежнее.
     ['intercontinental', 'dc-rtt', 'в 300 раз медленнее'],
     // «раза» после 2–4 и дробей, но «раз» после 12–14 и остальных
     ['hdd-seek', 'dc-rtt', 'в 4 раза медленнее'],
     ['hdd-1mb', 'dc-rtt', 'в 1,7 раза медленнее'],
     ['l2', 'ram', 'в 25 раз быстрее'],
-    ['ram-1mb', 'hdd-seek', 'в 667 раз быстрее'],
-    ['ssd-random', 'ssd-1mb', 'в 3,1 раза быстрее'],
+    ['ram-1mb', 'hdd-seek', 'в 34 раза быстрее'],
+    ['ssd-random', 'ssd-1mb', 'в 4,1 раза быстрее'],
+    ['dc-rtt', 'ram', 'в 4\u00a0992 раза медленнее'],
   ])('%s относительно %s → %s', (a, b, expected) => {
     expect(compare(byId(a), byId(b))).toBe(expected)
   })
