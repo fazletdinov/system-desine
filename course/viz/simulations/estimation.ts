@@ -112,9 +112,9 @@ export function estimate(raw: EstimationInput): EstimationStep[] {
     { id: 'messages-per-day', label: STEP_LABEL['messages-per-day'], formula: 'DAU × сообщений на пользователя', expression: `${n(i.dau)} × ${n(i.messagesPerUser)} = ${n(perDay)}`, value: perDay, unit: 'messages' },
     { id: 'avg-rps', label: STEP_LABEL['avg-rps'], formula: 'сообщений в день ÷ 86 400 секунд', expression: `${n(perDay)} ÷ ${n(SECONDS_PER_DAY)} ≈ ${n(avgRps)}`, value: avgRps, unit: 'rps' },
     { id: 'peak-rps', label: STEP_LABEL['peak-rps'], formula: 'средняя × коэффициент пика', expression: `${n(avgRps)} × ${n(i.peakFactor)} ≈ ${n(peakRps)}`, value: peakRps, unit: 'rps' },
-    { id: 'storage-per-day', label: STEP_LABEL['storage-per-day'], formula: 'сообщений в день × размер сообщения', expression: `${n(perDay)} × ${n(i.messageBytes)} Б = ${formatBytes(storageDay)}`, value: storageDay, unit: 'bytes' },
+    { id: 'storage-per-day', label: STEP_LABEL['storage-per-day'], formula: 'сообщений в день × размер сообщения', expression: `${n(perDay)} × ${n(i.messageBytes)}\u00A0Б = ${formatBytes(storageDay)}`, value: storageDay, unit: 'bytes' },
     { id: 'storage-total', label: STEP_LABEL['storage-total'], formula: 'в день × дней хранения × коэффициент репликации', expression: `${formatBytes(storageDay)} × ${n(i.retentionDays)} × ${n(i.replicationFactor)} = ${formatBytes(storageTotal)}`, value: storageTotal, unit: 'bytes' },
-    { id: 'peak-ingress', label: STEP_LABEL['peak-ingress'], formula: 'пиковый RPS × размер сообщения', expression: `${n(peakRps)} × ${n(i.messageBytes)} Б ≈ ${formatBytes(peakIngress)}/с`, value: peakIngress, unit: 'bytes-per-sec' },
+    { id: 'peak-ingress', label: STEP_LABEL['peak-ingress'], formula: 'пиковый RPS × размер сообщения', expression: `${n(peakRps)} × ${n(i.messageBytes)}\u00A0Б ≈ ${formatBytes(peakIngress)}/с`, value: peakIngress, unit: 'bytes-per-sec' },
   ]
 }
 
@@ -158,7 +158,7 @@ export const ESTIMATION_HONESTY: Caption = 'Входные числа — доп
 export const ESTIMATION_QUIZ: StepQuiz = {
   question: 'Поставьте коэффициент репликации 1. Почему RPS и трафик в калькуляторе не изменились, а в реальной системе изменятся?',
   answer: markedCaption(
-    'Калькулятор считает только то, что приходит от пользователей, а копии он учитывает одним множителем места в шаге 5. В реальной системе каждую запись нужно ещё доставить на реплики: при трёх копиях основной сервер отправляет каждое сообщение ещё двум, и внутренний трафик между серверами растёт втрое, а каждая реплика выполняет ту же запись на своём диске. С одной копией этого трафика нет — но и данные умирают вместе с диском. Подробно о репликах — в модуле 8.',
+    'Калькулятор считает только то, что приходит от пользователей, а копии он учитывает одним множителем места в шаге 5. В реальной системе каждую запись нужно ещё доставить на реплики: при трёх копиях основной сервер отправляет каждое сообщение ещё двум репликам, и весь трафик записи растёт втрое (входящий плюс две копии), а каждая реплика выполняет ту же запись на своём диске. С одной копией этого трафика нет — но и данные умирают вместе с диском. Подробно о репликах — в модуле 8.',
     new Set(),
   ),
 }

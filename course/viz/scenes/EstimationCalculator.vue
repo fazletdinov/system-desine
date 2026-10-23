@@ -127,7 +127,8 @@ function reset(): void {
 .context { margin: 0 0 4px; font-size: 14px; line-height: 1.5; }
 .honesty { margin: 0 0 12px; color: var(--viz-muted); font-size: 13px; }
 .grid { display: grid; gap: 12px 20px; min-width: 0; }
-@container estimation (min-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+/* 1100, а не 900: с 900 px справа встаёт ещё и панель объяснения (340 px), и три колонки по ~250 px тесны. */
+@container estimation (min-width: 1100px) { .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .inputs, .steps { min-width: 0; }
 /* Рамка той же толщины у всех: выбор меняет только цвет и стиль, раскладка не прыгает. */
 .field, .step { border: 2px solid transparent; border-radius: 8px; cursor: pointer; }
