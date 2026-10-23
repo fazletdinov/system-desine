@@ -1,0 +1,47 @@
+машина: 12th Gen Intel(R) Core(TM) i5-12400, 12 логических процессоров, ОЗУ 31Gi, Ubuntu 24.04.5 LTS, ядро 7.0.0-38-generic
+go: go version go1.27.3 linux/amd64
+docker: 29.9.2
+каталог данных: ФС ext4 на /dev/nvme0n1p2, диск: nvme0n1 Samsung SSD 990 PRO 1TB, ROTA=0, TRAN=nvme
+диски (lsblk -d -o NAME,MODEL,ROTA,TRAN):
+  NAME    MODEL                   ROTA TRAN
+  nvme0n1 Samsung SSD 990 PRO 1TB    0 nvme
+дата: 2026-10-23T06:36Z
+5 seconds per test
+O_DIRECT supported on this platform for open_datasync and open_sync.
+
+Compare file sync methods using one 8kB write:
+(in "wal_sync_method" preference order, except fdatasync is Linux's default)
+        open_datasync                       263.059 ops/sec    3801 usecs/op
+        fdatasync                           745.381 ops/sec    1342 usecs/op
+        fsync                               202.201 ops/sec    4946 usecs/op
+        fsync_writethrough                              n/a
+        open_sync                           195.780 ops/sec    5108 usecs/op
+
+Compare file sync methods using two 8kB writes:
+(in "wal_sync_method" preference order, except fdatasync is Linux's default)
+        open_datasync                       135.908 ops/sec    7358 usecs/op
+        fdatasync                           788.788 ops/sec    1268 usecs/op
+        fsync                               167.687 ops/sec    5963 usecs/op
+        fsync_writethrough                              n/a
+        open_sync                            94.822 ops/sec   10546 usecs/op
+
+Compare open_sync with different write sizes:
+(This is designed to compare the cost of writing 16kB in different write
+open_sync sizes.)
+         1 * 16kB open_sync write           170.277 ops/sec    5873 usecs/op
+         2 *  8kB open_sync writes           94.950 ops/sec   10532 usecs/op
+         4 *  4kB open_sync writes           45.422 ops/sec   22016 usecs/op
+         8 *  2kB open_sync writes           21.868 ops/sec   45729 usecs/op
+        16 *  1kB open_sync writes           12.149 ops/sec   82313 usecs/op
+
+Test if fsync on non-write file descriptor is honored:
+(If the times are similar, fsync() can sync data written on a different
+descriptor.)
+        write, fsync, close                 197.353 ops/sec    5067 usecs/op
+        write, close, fsync                 198.618 ops/sec    5035 usecs/op
+
+Non-sync'ed 8kB writes:
+        write                           3039643.944 ops/sec       0 usecs/op
+
+строка замера: раздел «Compare file sync methods using one 8kB write», метод fdatasync (wal_sync_method по умолчанию на Linux)
+RESULT fsync_ms 1.342 ms
