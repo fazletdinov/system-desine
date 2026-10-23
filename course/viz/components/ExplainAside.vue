@@ -18,13 +18,14 @@ watch(() => props.explanation, (e) => { if (e !== null) showSimplifications.valu
 <template>
   <div class="explain-aside">
     <div class="aside-grid">
-    <div class="aside-main"><slot /></div>
-    <div class="aside-panel">
-      <ExplainPanel :explanation="showSimplifications && simplifications ? simplifications : explanation" :fallback="fallback" />
-      <button v-if="simplifications" type="button" class="simplify" :aria-pressed="showSimplifications" @click="showSimplifications = !showSimplifications">
-        Что в модели упрощено
-      </button>
-    </div>
+      <!-- Любой клик в песочнице уводит из «Что упрощено»: повторный выбор того же элемента не меняет explanation, и watch бы не сработал. -->
+      <div class="aside-main" @click.capture="showSimplifications = false"><slot /></div>
+      <div class="aside-panel">
+        <ExplainPanel :explanation="showSimplifications && simplifications ? simplifications : explanation" :fallback="fallback" />
+        <button v-if="simplifications" type="button" class="simplify" :aria-pressed="showSimplifications" @click="showSimplifications = !showSimplifications">
+          Что в модели упрощено
+        </button>
+      </div>
     </div>
   </div>
 </template>
