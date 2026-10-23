@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatBytes, formatMs, formatNs, formatNumber, formatSeconds, plural } from './format'
+import { formatBytes, formatMs, formatNs, formatNumber, formatSeconds, keepDigitGroups, plural } from './format'
 
 const NBSP = '\u00A0'
 
@@ -74,5 +74,17 @@ describe('plural', () => {
     [112, 'листьев'],
   ])('%s → %s', (n, expected) => {
     expect(plural(n, 'лист', 'листа', 'листьев')).toBe(expected)
+  })
+})
+
+describe('keepDigitGroups', () => {
+  it.each([
+    ['Те же 16 384 строки', 'Те же 16\u00A0384 строки'],
+    ['≈8 800 км и 200 000 км/с', '≈8\u00A0800 км и 200\u00A0000 км/с'],
+    ['1 и 400 — чата 2', '1 и 400 — чата 2'],
+    ['шаг 1 из 15', 'шаг 1 из 15'],
+    ['число 12 3456', 'число 12 3456'],
+  ])('«%s» → без переноса внутри числа', (src, expected) => {
+    expect(keepDigitGroups(src)).toBe(expected)
   })
 })

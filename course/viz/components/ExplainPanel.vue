@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Explanation } from '../core/explain'
 import CaptionText from './CaptionText.vue'
+import { keepDigitGroups } from '../core/format'
 
 withDefaults(defineProps<{ explanation: Explanation | null; fallback?: string }>(), {
   fallback: 'Кликните на элемент схемы — здесь появится объяснение',
@@ -11,10 +12,10 @@ withDefaults(defineProps<{ explanation: Explanation | null; fallback?: string }>
   <aside class="explain-panel">
     <p v-if="explanation === null" class="fallback">{{ fallback }}</p>
     <template v-else>
-      <h4 class="title" aria-live="polite">{{ explanation.title }}</h4>
+      <h4 class="title" aria-live="polite">{{ keepDigitGroups(explanation.title) }}</h4>
       <p class="kind">{{ explanation.kind }}</p>
       <section v-for="(s, i) in explanation.sections" :key="`${i}-${s.heading}`" class="section">
-        <h5 class="heading">{{ s.heading }}</h5>
+        <h5 class="heading">{{ keepDigitGroups(s.heading) }}</h5>
         <p class="body"><CaptionText :caption="s.body" /></p>
       </section>
       <section v-if="explanation.here !== undefined" class="box here">
