@@ -6,7 +6,7 @@ services:
   db:
     # Тег для человека, digest — для воспроизводимости: тег 18.6-trixie могут перепубликовать
     # с новой Debian-базой, а digest указывает ровно на тот образ, на котором сняты results/.
-    image: postgres:18.6-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    image: postgres:18.6-trixie@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
     environment:
       POSTGRES_USER: lab
       # Пароль в открытом виде допустим только здесь: база одноразовая и слушает лишь 127.0.0.1.
